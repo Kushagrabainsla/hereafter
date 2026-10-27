@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#080e19" />
+    <title>Hereafter — San Jose map viewer</title>
+  </head>
+  <body>
+    <div id="app">
+      <main id="map" aria-label="3D map of the selected arena"></main>
+
+      <section class="panel controls-panel" aria-labelledby="app-title">
+        <div class="eyebrow">Phase 01 / Map viewer</div>
+        <h1 id="app-title">Hereafter</h1>
+        <p class="tagline">Fight where you stand.</p>
+
+        <form id="arena-form">
+          <div class="section-heading">Arena</div>
+          <div class="field-grid">
+            <label>Latitude <input id="latitude" name="latitude" type="number" min="-85" max="85" step="any" required /></label>
+            <label>Longitude <input id="longitude" name="longitude" type="number" min="-180" max="180" step="any" required /></label>
+          </div>
+          <label>Side length <span class="unit">meters</span>
+            <input id="size" name="size" type="number" min="300" max="500" step="10" required />
+          </label>
+          <button class="primary-button" type="submit">Go to arena <span aria-hidden="true">↗</span></button>
+          <p id="form-error" class="form-error" role="alert" hidden></p>
+        </form>
+
+        <div class="controls-help">
+          <div class="section-heading">Explore</div>
+          <p>Click the map to look around. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move, <kbd>Q</kbd>/<kbd>E</kbd> descend/ascend, <kbd>Shift</kbd> speeds up, <kbd>Esc</kbd> releases the mouse.</p>
+        </div>
+      </section>
+
+      <section class="panel diagnostics-panel" aria-labelledby="diagnostics-title">
+        <div class="panel-heading"><span id="diagnostics-title">Diagnostics</span><span class="live-dot" aria-hidden="true"></span></div>
+        <dl>
+          <div><dt>Tiles</dt><dd id="tile-status">Waiting</dd></div>
+          <div><dt>Pending</dt><dd id="pending-tiles">—</dd></div>
+          <div><dt>FPS</dt><dd id="fps">—</dd></div>
+          <div><dt>Camera</dt><dd id="camera-coordinates">—</dd></div>
+          <div><dt>Graphics</dt><dd id="graphics-status">Checking</dd></div>
+        </dl>
+      </section>
+
+      <div id="notice" class="notice" role="status" aria-live="polite">
+        <span id="notice-label" class="notice-label">Preparing viewer</span>
+        <p id="notice-message">Checking browser graphics support…</p>
+      </div>
+
+      <div class="bottom-label" aria-hidden="true">BOUNDED PROTOTYPE ARENA · NO GAMEPLAY YET</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
