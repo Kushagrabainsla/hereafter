@@ -1,4 +1,4 @@
-import { toLocal, type Arena, type ArenaData, type Point } from "./arena";
+import { DEFAULT_ARENA, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 
 interface BuildingCollider {
   outline: Point[];
@@ -19,6 +19,12 @@ export interface StreetFurniture {
   north: number;
   kind: "planter" | "hydrant";
   radius: number;
+}
+
+export interface CoverObject {
+  east: number;
+  north: number;
+  yaw: number;
 }
 
 function pointInsidePolygon(east: number, north: number, outline: Point[]): boolean {
@@ -44,6 +50,7 @@ function distanceToSegmentSquared(east: number, north: number, a: Point, b: Poin
 export class CollisionWorld {
   private buildings: BuildingCollider[];
   readonly furniture: StreetFurniture[];
+  readonly cover: CoverObject[];
 
   constructor(private data: ArenaData) {
     this.buildings = data.buildings.map(({ outline }) => ({
@@ -54,6 +61,33 @@ export class CollisionWorld {
       maxNorth: Math.max(...outline.map(([, north]) => north)),
     }));
     this.furniture = this.makeStreetFurniture();
+    this.cover = this.makeCover();
+  }
+
+  private makeCover(): CoverObject[] {
+    const result: CoverObject[] = [];
+    const [centerEast, centerNorth] = toLocal(DEFAULT_ARENA.latitude, DEFAULT_ARENA.longitude);
+    for (const road of this.data.roads) {
+      if (road.width < 8) continue;
+      const [a, b] = road.points;
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const length = Math.hypot(dx, dz);
+      if (length < 19) continue;
+      for (const [index, fraction] of [0.28, 0.72].entries()) {
+        const side = (road.id + index) % 2 ? 1 : -1;
+        const offset = Math.min(road.width / 2 - 1.6, 3.8) * side;
+        const east = a[0] + dx * fraction - dz / length * offset;
+        const north = a[1] + dz * fraction + dx / length * offset;
+        if (Math.abs(east - centerEast) > DEFAULT_ARENA.sizeMeters / 2 - 5
+          || Math.abs(north - centerNorth) > DEFAULT_ARENA.sizeMeters / 2 - 5
+          || this.blockedStructure(east, north, 2)
+          || this.furniture.some((item) => Math.hypot(item.east - east, item.north - north) < 3)
+          || result.some((item) => Math.hypot(item.east - east, item.north - north) < 9)) continue;
+        result.push({ east, north, yaw: Math.atan2(-dz, dx) });
+      }
+    }
+    return result.slice(0, 10);
   }
 
   private blockedStructure(east: number, north: number, radius: number): boolean {
@@ -90,9 +124,30 @@ export class CollisionWorld {
     return furniture;
   }
 
-  blocked(east: number, north: number, radius: number): boolean {
-    if (this.blockedStructure(east, north, radius)) return true;
+  private blockedCover(east: number, north: number, radius: number): boolean {
+    return this.cover.some((item) => {
+      const dx = east - item.east;
+      const dz = north - item.north;
+      const along = dx * Math.cos(item.yaw) - dz * Math.sin(item.yaw);
+      const across = dx * Math.sin(item.yaw) + dz * Math.cos(item.yaw);
+      return Math.abs(along) < 1.65 + radius && Math.abs(across) < 0.35 + radius;
+    });
+  }
+
+  private blockedFurniture(east: number, north: number, radius: number): boolean {
     return this.furniture.some((item) => (east - item.east) ** 2 + (north - item.north) ** 2 < (radius + item.radius) ** 2);
+  }
+
+  blocked(east: number, north: number, radius: number): boolean {
+    return this.blockedStructure(east, north, radius)
+      || this.blockedFurniture(east, north, radius)
+      || this.blockedCover(east, north, radius);
+  }
+
+  blocksShot(east: number, north: number, height: number, radius: number): boolean {
+    if (this.blockedStructure(east, north, radius)) return true;
+    if (height - terrainHeight(this.data, east, north) > 1.13) return false;
+    return this.blockedFurniture(east, north, radius) || this.blockedCover(east, north, radius);
   }
 
   insideArena(east: number, north: number, arena: Arena, radius = 0): boolean {

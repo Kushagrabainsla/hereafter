@@ -19,7 +19,7 @@ npm run dev
 
 Open the URL printed by Vite. No API key or billing account is needed. The 3D arena asset is bundled with the site. The browser needs WebGPU or WebGL 2; Three.js uses WebGPU when available and falls back to WebGL 2.
 
-You spawn at walking height on a clear street in a 240 × 240 m playable block, with visible first-person hands and a field knife. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and hold C or Ctrl to crouch. Click and drag on the map with a trackpad or mouse to move the view; a short click attacks. Press F to attack from the keyboard. Double-click the map for FPS mouse look and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
+You spawn at walking height on a clear street in a 140 × 140 m playable block, with visible first-person hands and a field knife. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and hold C or Ctrl to crouch. Click and drag on the map with a trackpad or mouse to move the view; a short click attacks. Press F to attack from the keyboard. Double-click the map for FPS mouse look and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
 
 Pistols and carbines appear at marked spots on the street. Walk close and press E to collect one; collected weapons return after 30 seconds. Use 1, 2, or 3 to equip the knife, pistol, or carbine, and R to reload a gun. The HUD shows health, ammo, kills, and deaths. After elimination, wait three seconds and press Enter to respawn with the knife.
 
@@ -33,9 +33,11 @@ Run `npm run build` for a local production build. Run `npm run build:pages` to b
 
 ## Arena data
 
-`public/arena/san-jose.json` contains building outlines and heights, road segments, park outlines, tree locations, and a small terrain height grid. The site does not call OpenStreetMap or USGS at runtime. To refresh the same San Jose extract, run `npm run build:arena` from the repository root. That build step makes one bounded OpenStreetMap data request and 25 USGS elevation point requests. The resulting file is about 220 KB.
+`public/arena/san-jose.json` contains the full source extract. The default game loads `public/arena/san-jose-block.json`, a smaller build with the playable block and a 65 m visual buffer. The site does not call OpenStreetMap or USGS at runtime. To refresh both files, run `npm run build:arena` from the repository root. That build step makes one bounded OpenStreetMap data request and 25 USGS elevation point requests. Run `npm run build:block` to rebuild only the block from the existing full extract.
 
-Ground, grass, asphalt, pavement, walls, roofs, bark, leaf silhouettes, and the daylight sky use bundled CC0 art from [Poly Haven](https://polyhaven.com/license), with normal maps on key surfaces. Ground-floor storefronts use two generated photo textures. Building windows, doors, awnings, ledges, facade trim, streetlights, curbs, crosswalks, manholes, drains, planters, and hydrants are geometry. Planters and hydrants block movement. Trees have layered leaf cards with subtle wind motion, and the first-person gloved hands swing with movement and react to jumps and landings. WebGPU and WebGL 2 both use dynamic shadows and the detailed materials on the target class of MacBooks and Windows graphics laptops. The browser makes no texture API requests; the underlying map data remains the same.
+Ground, grass, asphalt, pavement, walls, roofs, bark, leaf silhouettes, the daylight sky, and detailed concrete cover use bundled CC0 art from [Poly Haven](https://polyhaven.com/license), with normal maps on key surfaces. Ground-floor storefronts use two generated photo textures. Building windows, doors, awnings, ledges, facade trim, streetlights, curbs, crosswalks, manholes, drains, planters, and hydrants are geometry. Trees have layered leaf cards with subtle wind motion, and the first-person gloved hands react to walking, turning, jumping, and landing. WebGPU and WebGL 2 both use dynamic shadows and the detailed materials. The browser makes no texture API requests; the underlying map data remains the same.
+
+Buildings and roads are grouped into spatial cells for view culling. Render resolution adjusts after sustained slow or fast frame rates. The performance label's hover text shows draw calls, triangles, and resolution. Add `?renderer=webgl` to the URL to test WebGL 2. See [rendering notes](docs/rendering.md) for measurements and the next fidelity steps.
 
 The adapted OpenStreetMap data in this asset is offered under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). In-game attribution links to [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). USGS 3DEP elevation data is public domain. This repository's software code does not yet have a selected license.
 
@@ -44,7 +46,7 @@ The adapted OpenStreetMap data in this asset is offered under the [Open Database
 - The arena is geographically based on real roads and building footprints, but its buildings, windows, trees, and street furniture are still approximations. Some building heights are inferred where the data has no height tag.
 - The terrain is interpolated from a 5 × 5 USGS height grid. Walking follows this coarse ground surface.
 - Only the San Jose pilot extract is bundled. A new city needs a new data build and level design.
-- Building footprints, tree trunks, street furniture, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, fully trusted movement, and robust host migration belong to later phases.
+- Building footprints, tree trunks, street furniture, concrete cover, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, fully trusted movement, and robust host migration belong to later phases.
 - GitHub Pages has [site-size and bandwidth limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits); the current arena is small enough for the intended prototype.
 
 ## Project status

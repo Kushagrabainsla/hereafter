@@ -269,10 +269,13 @@ window.setInterval(() => {
   if (!viewer || !match) return;
   const pose = viewer.playerPose();
   match.setPose(selfId, pose);
-  if (peerRoom) {
-    peerRoom.sendPose(pose);
-    peerRoom.tickCombat();
-  } else match.tick();
+  peerRoom?.sendPose(pose);
+}, 50);
+
+window.setInterval(() => {
+  if (!viewer || !match) return;
+  if (peerRoom) peerRoom.tickCombat();
+  else match.tick();
   const pickup = nearestPickup();
   pickupHint.hidden = !pickup || (match.player(selfId)?.health ?? 0) <= 0;
   if (pickup) pickupHint.textContent = `Press E to pick up ${WEAPONS[pickup.weapon].label}`;
@@ -288,6 +291,7 @@ void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
   onMetrics(metrics) {
     performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
+    performanceLabel.title = `${metrics.drawCalls} draw calls · ${metrics.triangles.toLocaleString()} triangles · ${metrics.pixelRatio.toFixed(2)}× resolution`;
   },
 }).then((created) => {
   viewer = created;

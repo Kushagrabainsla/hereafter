@@ -1,4 +1,4 @@
-import { BoxGeometry, BufferGeometry, CapsuleGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, PerspectiveCamera } from "three/webgpu";
+import { BoxGeometry, BufferGeometry, CapsuleGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, Vector3 } from "three/webgpu";
 import { type PlayerMotion } from "./playerController";
 
 function part(geometry: BufferGeometry, material: MeshStandardMaterial): Mesh {
@@ -16,8 +16,13 @@ export class PlayerHands {
   private airborneBlend = 0;
   private landing = 0;
   private wasAirborne = false;
+  private view = new Vector3();
+  private previousHeading: number | null = null;
+  private previousPitch = 0;
+  private turnLag = 0;
+  private pitchLag = 0;
 
-  constructor(camera: PerspectiveCamera) {
+  constructor(private camera: PerspectiveCamera) {
     const sleeve = new MeshStandardMaterial({ color: 0x354751, roughness: 0.96, depthTest: false, depthWrite: false });
     const cuff = new MeshStandardMaterial({ color: 0x19242a, roughness: 0.92, depthTest: false, depthWrite: false });
     const glove = new MeshStandardMaterial({ color: 0x414849, roughness: 0.89, depthTest: false, depthWrite: false });
@@ -71,6 +76,20 @@ export class PlayerHands {
 
   update(seconds: number, motion: PlayerMotion): void {
     const delta = Math.min(seconds, 0.1);
+    this.camera.getWorldDirection(this.view);
+    const heading = Math.atan2(this.view.x, this.view.z);
+    const pitch = Math.asin(Math.max(-1, Math.min(1, this.view.y)));
+    if (this.previousHeading !== null) {
+      const headingChange = Math.atan2(Math.sin(heading - this.previousHeading), Math.cos(heading - this.previousHeading));
+      const pitchChange = pitch - this.previousPitch;
+      this.turnLag = Math.max(-0.08, Math.min(0.08, this.turnLag - headingChange * 0.5));
+      this.pitchLag = Math.max(-0.055, Math.min(0.055, this.pitchLag - pitchChange * 0.45));
+    }
+    this.previousHeading = heading;
+    this.previousPitch = pitch;
+    const settle = Math.exp(-delta * 8);
+    this.turnLag *= settle;
+    this.pitchLag *= settle;
     this.breath += delta;
     const target = motion.moving && !motion.airborne ? 1 : 0;
     this.sway += (target - this.sway) * Math.min(1, delta * 8);
@@ -83,9 +102,9 @@ export class PlayerHands {
     const swing = Math.sin(this.stride) * amplitude;
     const breathing = Math.sin(this.breath * 1.7) * 0.006;
     const lift = this.airborneBlend * 0.095 - (motion.crouching ? 0.055 : 0) - this.landing * 0.04;
-    this.left.position.set(-0.45 - swing * 0.08, -0.67 + lift + swing * 0.25 + breathing, -0.86 + swing * 0.7 + this.airborneBlend * 0.045);
-    this.right.position.set(0.45 - swing * 0.08, -0.67 + lift - swing * 0.25 + breathing, -0.86 - swing * 0.7 + this.airborneBlend * 0.045);
-    this.left.rotation.set(-0.08 + swing * 1.3 - this.airborneBlend * 0.2, swing * 0.22, -0.035 - swing * 0.35);
-    this.right.rotation.set(-0.08 - swing * 1.3 - this.airborneBlend * 0.2, -swing * 0.22, 0.035 + swing * 0.35);
+    this.left.position.set(-0.45 - swing * 0.08 + this.turnLag, -0.67 + lift + swing * 0.25 + breathing + this.pitchLag, -0.86 + swing * 0.7 + this.airborneBlend * 0.045);
+    this.right.position.set(0.45 - swing * 0.08 + this.turnLag, -0.67 + lift - swing * 0.25 + breathing + this.pitchLag, -0.86 - swing * 0.7 + this.airborneBlend * 0.045);
+    this.left.rotation.set(-0.08 + swing * 1.3 - this.airborneBlend * 0.2, swing * 0.22 - this.turnLag * 0.6, -0.035 - swing * 0.35);
+    this.right.rotation.set(-0.08 - swing * 1.3 - this.airborneBlend * 0.2, -swing * 0.22 - this.turnLag * 0.6, 0.035 + swing * 0.35);
   }
 }

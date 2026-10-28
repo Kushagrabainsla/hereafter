@@ -14,6 +14,7 @@ import { WeaponVisuals } from "../game/weaponVisuals";
 import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
+import { addCover } from "./cover";
 import { addBuildingDoors, addBuildingWindows, addFacadeTrim, addStorefronts, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
 
 export type MapState = "loading" | "ready" | "error";
@@ -21,6 +22,9 @@ export type MapState = "loading" | "ready" | "error";
 export interface MapMetrics {
   fps: number;
   renderer: string;
+  drawCalls: number;
+  triangles: number;
+  pixelRatio: number;
 }
 
 export interface MapViewerEvents {
@@ -89,10 +93,10 @@ function addParks(scene: Scene, data: ArenaData, textures: SurfaceTextures): voi
   }
 }
 
-function roadGeometry(data: ArenaData, walkway: boolean): BufferGeometry {
+function roadGeometry(data: ArenaData, roads: ArenaData["roads"], walkway: boolean): BufferGeometry {
   const vertices: number[] = [];
   const uvs: number[] = [];
-  for (const road of data.roads) {
+  for (const road of roads) {
     const isWalkway = ["footway", "path", "steps", "pedestrian", "cycleway", "platform"].includes(road.kind);
     if (isWalkway !== walkway) continue;
     const [a, b] = road.points;
@@ -124,11 +128,25 @@ function roadGeometry(data: ArenaData, walkway: boolean): BufferGeometry {
 }
 
 function addRoads(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
-  const asphalt = new Mesh(roadGeometry(data, false), new MeshStandardMaterial({ map: textures.asphalt, normalMap: textures.asphaltNormal, normalScale: new Vector2(0.5, 0.5), roughness: 0.96, side: DoubleSide }));
-  const pavement = new Mesh(roadGeometry(data, true), new MeshStandardMaterial({ map: textures.pavement, normalMap: textures.pavementNormal, normalScale: new Vector2(0.4, 0.4), roughness: 0.94, side: DoubleSide }));
-  asphalt.receiveShadow = true;
-  pavement.receiveShadow = true;
-  scene.add(asphalt, pavement);
+  const asphaltMaterial = new MeshStandardMaterial({ map: textures.asphalt, normalMap: textures.asphaltNormal, normalScale: new Vector2(0.5, 0.5), roughness: 0.96, side: DoubleSide });
+  const pavementMaterial = new MeshStandardMaterial({ map: textures.pavement, normalMap: textures.pavementNormal, normalScale: new Vector2(0.4, 0.4), roughness: 0.94, side: DoubleSide });
+  const cells = new Map<string, ArenaData["roads"]>();
+  for (const road of data.roads) {
+    const [a, b] = road.points;
+    const key = `${Math.floor((a[0] + b[0]) / 128)}:${Math.floor((a[1] + b[1]) / 128)}`;
+    const cell = cells.get(key) ?? [];
+    cell.push(road);
+    cells.set(key, cell);
+  }
+  for (const roads of cells.values()) {
+    for (const walkway of [false, true]) {
+      const geometry = roadGeometry(data, roads, walkway);
+      if (geometry.getAttribute("position").count === 0) { geometry.dispose(); continue; }
+      const mesh = new Mesh(geometry, walkway ? pavementMaterial : asphaltMaterial);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+  }
   const marks: number[] = [];
   for (const road of data.roads) {
     if (road.width < 8) continue;
@@ -236,8 +254,8 @@ function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures):
   ];
   const walls = wallTypes.map(({ map, normal, tint }) => new MeshStandardMaterial({ color: tint, map, normalMap: normal, normalScale: new Vector2(0.36, 0.36), roughness: 0.91, side: DoubleSide }));
   const roof = new MeshStandardMaterial({ map: textures.roof, roughness: 0.95, side: DoubleSide });
-  const wallGeometry: BufferGeometry[][] = walls.map(() => []);
-  const roofGeometry: BufferGeometry[] = [];
+  const wallGeometry = new Map<string, BufferGeometry[]>();
+  const roofGeometry = new Map<string, BufferGeometry[]>();
   for (const building of data.buildings) {
     if (building.outline.length < 3) continue;
     const shape = shapeFromOutline(building.outline);
@@ -247,30 +265,34 @@ function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures):
     const ground = terrainHeight(data, east, north);
     geometry.translate(0, ground, 0);
     geometry.clearGroups();
-    wallGeometry[building.id % walls.length].push(geometry);
+    const cell = `${Math.floor(east / 64)}:${Math.floor(north / 64)}`;
+    const wallKey = `${cell}:${building.id % walls.length}`;
+    wallGeometry.set(wallKey, [...(wallGeometry.get(wallKey) ?? []), geometry]);
     const cap = new ShapeGeometry(shape);
     cap.rotateX(-Math.PI / 2);
     cap.translate(0, ground + building.height + 0.02, 0);
-    roofGeometry.push(cap);
+    roofGeometry.set(cell, [...(roofGeometry.get(cell) ?? []), cap]);
   }
-  wallGeometry.forEach((geometries, index) => {
+  wallGeometry.forEach((geometries, key) => {
     const merged = mergeGeometries(geometries, false);
     geometries.forEach((geometry) => geometry.dispose());
     if (merged) {
-      const mesh = new Mesh(merged, walls[index]);
+      const mesh = new Mesh(merged, walls[Number(key.split(":").at(-1))]);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
     }
   });
-  const mergedRoofs = mergeGeometries(roofGeometry, false);
-  roofGeometry.forEach((geometry) => geometry.dispose());
-  if (mergedRoofs) {
-    const mesh = new Mesh(mergedRoofs, roof);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-  }
+  roofGeometry.forEach((geometries) => {
+    const merged = mergeGeometries(geometries, false);
+    geometries.forEach((geometry) => geometry.dispose());
+    if (merged) {
+      const mesh = new Mesh(merged, roof);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
+  });
 }
 
 function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): (time: number) => void {
@@ -397,7 +419,7 @@ function disposeGroup(group: Group): void {
 export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
   events.onStatus("loading", "Loading the bundled San Jose arena and materials…");
   const [data, textures, skyHdri] = await Promise.all([
-    loadArenaData(),
+    loadArenaData(arena),
     loadSurfaceTextures(),
     new RGBELoader().loadAsync(`${import.meta.env.BASE_URL}textures/san-jose-sky.hdr`).catch(() => null),
   ]);
@@ -409,7 +431,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     scene.environmentIntensity = 0.24;
   }
   scene.background = sky;
-  scene.fog = new FogExp2(0xc5d2d2, 0.0021);
+  scene.fog = new FogExp2(0xc5d2d2, 0.0035);
   scene.add(new HemisphereLight(0xe7f2ff, 0x716b62, 1.2));
   const fill = new DirectionalLight(0xc5d8e8, 0.3);
   fill.position.set(180, 110, -150);
@@ -418,10 +440,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   sun.position.set(-180, 300, 130);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -160;
-  sun.shadow.camera.right = 160;
-  sun.shadow.camera.top = 160;
-  sun.shadow.camera.bottom = -160;
+  sun.shadow.camera.left = -125;
+  sun.shadow.camera.right = 125;
+  sun.shadow.camera.top = 125;
+  sun.shadow.camera.bottom = -125;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 700;
   sun.shadow.bias = -0.0002;
@@ -431,6 +453,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   addParks(scene, data, textures);
   addRoads(scene, data, textures);
   addBuildings(scene, data, textures);
+  await addCover(scene, data);
   const storefrontEdges = addStorefronts(scene, data, arena, [textures.storefrontStone, textures.storefrontCafe]);
   const glassTexture = addBuildingWindows(scene, data, arena, storefrontEdges);
   addBuildingDoors(scene, data, arena, storefrontEdges);
@@ -445,8 +468,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.add(boundary);
 
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
-  const renderer = new WebGPURenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const renderer = new WebGPURenderer({ antialias: true, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
+  const maximumPixelRatio = Math.min(window.devicePixelRatio, 2);
+  const minimumPixelRatio = Math.min(maximumPixelRatio, 1.25);
+  let pixelRatio = maximumPixelRatio;
+  renderer.setPixelRatio(pixelRatio);
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
   renderer.shadowMap.type = PCFSoftShadowMap;
@@ -476,12 +502,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let previousFrame = 0;
   let lastMetrics = performance.now();
   let readySent = false;
+  let slowSamples = 0;
+  let fastSamples = 0;
   renderer.setAnimationLoop((time) => {
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
     remotePlayers.update(delta);
     hands.update(delta, player.motion());
-    weaponVisuals.update(delta);
+    weaponVisuals.update(delta, player.motion());
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
@@ -495,9 +523,28 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       readySent = true;
     }
     if (time - lastMetrics >= 500) {
+      const fps = Math.round(frames * 1000 / (time - lastMetrics));
+      slowSamples = !document.hidden && fps < 45 ? slowSamples + 1 : 0;
+      fastSamples = !document.hidden && fps >= 57 ? fastSamples + 1 : 0;
+      if (slowSamples >= 6 && pixelRatio > minimumPixelRatio) {
+        pixelRatio = Math.max(minimumPixelRatio, pixelRatio - 0.25);
+        renderer.setPixelRatio(pixelRatio);
+        resize();
+        slowSamples = 0;
+        fastSamples = 0;
+      } else if (fastSamples >= 24 && pixelRatio < maximumPixelRatio) {
+        pixelRatio = Math.min(maximumPixelRatio, pixelRatio + 0.25);
+        renderer.setPixelRatio(pixelRatio);
+        resize();
+        slowSamples = 0;
+        fastSamples = 0;
+      }
       events.onMetrics({
-        fps: Math.round(frames * 1000 / (time - lastMetrics)),
+        fps,
         renderer: rendererName,
+        drawCalls: renderer.info.render.drawCalls,
+        triangles: renderer.info.render.triangles,
+        pixelRatio,
       });
       frames = 0;
       lastMetrics = time;

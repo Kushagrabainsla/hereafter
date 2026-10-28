@@ -53,12 +53,13 @@ export function makeWeaponPickups(data: ArenaData, arena: Arena): WeaponPickup[]
   return pickups;
 }
 
-function visibleBetween(collision: CollisionWorld, from: PlayerPose, target: PlayerPose, distance: number): boolean {
+function visibleBetween(collision: CollisionWorld, from: PlayerPose, target: PlayerPose, distance: number, fromY: number, targetY: number): boolean {
   for (let step = 0.9; step < distance - 0.6; step += 0.65) {
     const t = step / distance;
     const east = from.east + (target.east - from.east) * t;
     const north = from.north + (target.north - from.north) * t;
-    if (collision.blocked(east, north, 0.08)) return false;
+    const height = fromY + (targetY - fromY) * t;
+    if (collision.blocksShot(east, north, height, 0.08)) return false;
   }
   return true;
 }
@@ -67,7 +68,6 @@ export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker
   const definition = WEAPONS[weapon];
   const horizontal = Math.hypot(target.east - attacker.east, target.north - attacker.north);
   if (horizontal > definition.range + 0.7 || horizontal < 0.2) return null;
-  if (!visibleBetween(collision, attacker, target, horizontal)) return null;
   const heading = attacker.heading * Math.PI / 180;
   const pitch = attacker.pitch * Math.PI / 180;
   const dx = Math.sin(heading) * Math.cos(pitch);
@@ -75,6 +75,7 @@ export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker
   const dz = Math.cos(heading) * Math.cos(pitch);
   const eyeY = terrainHeight(data, attacker.east, attacker.north) + (attacker.crouching ? 1.12 : 1.72) + attacker.jumpHeight;
   const targetY = terrainHeight(data, target.east, target.north) + (target.crouching ? 0.7 : 1.1) + target.jumpHeight;
+  if (!visibleBetween(collision, attacker, target, horizontal, eyeY, targetY)) return null;
   const vx = target.east - attacker.east;
   const vy = targetY - eyeY;
   const vz = target.north - attacker.north;

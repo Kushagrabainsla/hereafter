@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "build:pages": "npm run typecheck && vite build --mode pages",
-    "build:arena": "node scripts/build-arena.mjs",
+    "build:arena": "node scripts/build-arena.mjs && node scripts/build-block.mjs",
+    "build:block": "node scripts/build-block.mjs",
     "preview": "vite preview",
     "preview:pages": "vite preview --mode pages"
   },

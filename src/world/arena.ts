@@ -28,7 +28,7 @@ export interface ArenaData {
 export const DEFAULT_ARENA: Arena = {
   latitude: 37.337261,
   longitude: -121.890152,
-  sizeMeters: 240,
+  sizeMeters: 140,
 };
 
 // The bundled geometry is projected around this fixed origin, independent of the playable area.
@@ -101,8 +101,11 @@ export function terrainHeight(data: ArenaData, east: number, north: number): num
   return south * (1 - tz) + northValue * tz - elevation.baseMeters;
 }
 
-export async function loadArenaData(): Promise<ArenaData> {
-  const response = await fetch(`${import.meta.env.BASE_URL}arena/san-jose.json`);
+export async function loadArenaData(arena: Arena = DEFAULT_ARENA): Promise<ArenaData> {
+  const isDefault = arena.latitude === DEFAULT_ARENA.latitude && arena.longitude === DEFAULT_ARENA.longitude
+    && arena.sizeMeters === DEFAULT_ARENA.sizeMeters;
+  const file = isDefault ? "san-jose-block.json" : "san-jose.json";
+  const response = await fetch(`${import.meta.env.BASE_URL}arena/${file}`);
   if (!response.ok) throw new Error(`Arena asset returned HTTP ${response.status}`);
   const data = await response.json() as ArenaData;
   if (data.version !== 1 || !Array.isArray(data.buildings) || !Array.isArray(data.roads) || data.elevation?.meters.length !== 25) {

@@ -4,6 +4,7 @@ import {
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type WeaponKind, type WeaponPickup } from "./combatRules";
+import { type PlayerMotion } from "./playerController";
 
 function add(group: Group, geometry: BoxGeometry | CylinderGeometry | ExtrudeGeometry | SphereGeometry | TorusGeometry, material: MeshStandardMaterial, x: number, y: number, z: number): Mesh {
   const mesh = new Mesh(geometry, material);
@@ -63,6 +64,8 @@ export class WeaponVisuals {
   private active: WeaponKind = "knife";
   private recoil = 0;
   private time = 0;
+  private stride = 0;
+  private movementBlend = 0;
 
   constructor(camera: PerspectiveCamera, scene: Scene, data: ArenaData, pickupData: WeaponPickup[]) {
     for (const kind of ["knife", "pistol", "rifle"] as const) {
@@ -110,14 +113,20 @@ export class WeaponVisuals {
 
   attack(): void { this.recoil = 1; }
 
-  update(seconds: number): void {
+  update(seconds: number, motion: PlayerMotion): void {
     this.time += seconds;
+    this.movementBlend += ((motion.moving && !motion.airborne ? 1 : 0) - this.movementBlend) * Math.min(1, seconds * 8);
+    if (motion.moving) this.stride += motion.speed * seconds * (motion.running ? 1.55 : 1.25);
     this.recoil = Math.max(0, this.recoil - seconds * (this.active === "knife" ? 4.5 : 7));
     const held = this.held.get(this.active);
     if (held) {
-      held.position.y = (this.active === "knife" ? -0.53 : -0.37) + Math.sin(this.time * 1.8) * 0.006 - this.recoil * (this.active === "knife" ? 0.08 : 0.035);
+      const step = Math.sin(this.stride) * this.movementBlend;
+      const lift = Math.abs(Math.cos(this.stride)) * this.movementBlend;
+      const amplitude = motion.running ? 0.018 : 0.009;
+      held.position.x = (this.active === "knife" ? 0.43 : 0.3) + step * amplitude;
+      held.position.y = (this.active === "knife" ? -0.53 : -0.37) + Math.sin(this.time * 1.8) * 0.006 + lift * amplitude - this.recoil * (this.active === "knife" ? 0.08 : 0.035);
       held.rotation.x = (this.active === "knife" ? -0.26 : -0.08) + this.recoil * (this.active === "knife" ? 0.8 : 0.19);
-      held.rotation.z = (this.active === "knife" ? 0.18 : 0) - this.recoil * (this.active === "knife" ? 0.55 : 0.04);
+      held.rotation.z = (this.active === "knife" ? 0.18 : 0) + step * amplitude * 0.8 - this.recoil * (this.active === "knife" ? 0.55 : 0.04);
     }
     for (const pickup of this.pickups.values()) {
       pickup.ring.rotation.z += seconds * 0.5;
