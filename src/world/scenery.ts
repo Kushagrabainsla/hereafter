@@ -1,7 +1,7 @@
 import {
   BoxGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Group, InstancedMesh,
   MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Scene, SphereGeometry,
-  SRGBColorSpace,
+  SRGBColorSpace, type Texture,
 } from "three/webgpu";
 import { terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { CollisionWorld } from "./collision";
@@ -23,6 +23,124 @@ function polygonArea(outline: Point[]): number {
     area += a[0] * b[1] - b[0] * a[1];
   }
   return area / 2;
+}
+
+function distanceToRoad(east: number, north: number, data: ArenaData): number {
+  let nearest = Infinity;
+  for (const road of data.roads) {
+    if (road.width < 8) continue;
+    const [a, b] = road.points;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const lengthSquared = dx * dx + dz * dz;
+    const t = lengthSquared ? Math.max(0, Math.min(1, ((east - a[0]) * dx + (north - a[1]) * dz) / lengthSquared)) : 0;
+    nearest = Math.min(nearest, Math.hypot(east - a[0] - t * dx, north - a[1] - t * dz) - road.width / 2);
+  }
+  return nearest;
+}
+
+export function addStorefronts(scene: Scene, data: ArenaData, arena: Arena, textures: [Texture, Texture]): Map<number, Set<number>> {
+  const selected = new Map<number, Set<number>>();
+  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
+  const entries: { east: number; north: number; ground: number; yaw: number; style: number }[] = [];
+  for (const building of data.buildings) {
+    if (building.outline.length < 3 || building.height < 5) continue;
+    const [buildingEast, buildingNorth] = building.outline.reduce(([x, z], point) =>
+      [x + point[0] / building.outline.length, z + point[1] / building.outline.length], [0, 0]);
+    if (Math.abs(buildingEast - centerEast) > arena.sizeMeters / 2 + 10
+      || Math.abs(buildingNorth - centerNorth) > arena.sizeMeters / 2 + 10) continue;
+    const side = polygonArea(building.outline) > 0 ? 1 : -1;
+    const facades: { edge: number; a: Point; b: Point; normalEast: number; normalNorth: number; distance: number; length: number }[] = [];
+    for (let edge = 0; edge < building.outline.length; edge += 1) {
+      const a = building.outline[edge];
+      const b = building.outline[(edge + 1) % building.outline.length];
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const length = Math.hypot(dx, dz);
+      if (length < 5) continue;
+      const normalEast = side * dz / length;
+      const normalNorth = -side * dx / length;
+      const east = (a[0] + b[0]) / 2;
+      const north = (a[1] + b[1]) / 2;
+      const distance = distanceToRoad(east + normalEast * 2, north + normalNorth * 2, data);
+      if (distance < 12) facades.push({ edge, a, b, normalEast, normalNorth, distance, length });
+    }
+    for (const facade of facades.sort((a, b) => a.distance - b.distance).slice(0, 2)) {
+      selected.set(building.id, (selected.get(building.id) ?? new Set<number>()).add(facade.edge));
+      const count = Math.min(6, Math.max(1, Math.floor(facade.length / 7)));
+      for (let panel = 0; panel < count; panel += 1) {
+        const t = (panel + 0.5) / count;
+        entries.push({
+          east: facade.a[0] + (facade.b[0] - facade.a[0]) * t + facade.normalEast * 0.075,
+          north: facade.a[1] + (facade.b[1] - facade.a[1]) * t + facade.normalNorth * 0.075,
+          ground: terrainHeight(data, buildingEast, buildingNorth),
+          yaw: Math.atan2(facade.normalEast, facade.normalNorth),
+          style: (building.id + panel + facade.edge) % 2,
+        });
+      }
+    }
+  }
+  const transform = new Object3D();
+  for (let style = 0; style < 2; style += 1) {
+    const facades = entries.filter((entry) => entry.style === style);
+    if (!facades.length) continue;
+    const mesh = new InstancedMesh(
+      new PlaneGeometry(4.2, 3),
+      new MeshStandardMaterial({ map: textures[style], emissiveMap: textures[style], emissive: 0xffffff, emissiveIntensity: 0.12, roughness: 0.5, metalness: 0.08, side: DoubleSide }),
+      facades.length,
+    );
+    facades.forEach(({ east, north, ground, yaw }, index) => {
+      transform.position.set(east, ground + 1.5, north);
+      transform.rotation.set(0, yaw, 0);
+      transform.scale.set(1, 1, 1);
+      transform.updateMatrix();
+      mesh.setMatrixAt(index, transform.matrix);
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    scene.add(mesh);
+  }
+  return selected;
+}
+
+export function addFacadeTrim(scene: Scene, data: ArenaData, arena: Arena): void {
+  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
+  const entries: { east: number; north: number; height: number; length: number; yaw: number; color: number }[] = [];
+  for (const building of data.buildings) {
+    if (building.outline.length < 3 || building.height < 5) continue;
+    const [centerX, centerZ] = building.outline.reduce(([x, z], point) =>
+      [x + point[0] / building.outline.length, z + point[1] / building.outline.length], [0, 0]);
+    if (Math.abs(centerX - centerEast) > arena.sizeMeters / 2 + 20
+      || Math.abs(centerZ - centerNorth) > arena.sizeMeters / 2 + 20) continue;
+    const ground = terrainHeight(data, centerX, centerZ);
+    const side = polygonArea(building.outline) > 0 ? 1 : -1;
+    for (let edge = 0; edge < building.outline.length; edge += 1) {
+      const a = building.outline[edge];
+      const b = building.outline[(edge + 1) % building.outline.length];
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const length = Math.hypot(dx, dz);
+      if (length < 2) continue;
+      const east = (a[0] + b[0]) / 2 + side * dz / length * 0.09;
+      const north = (a[1] + b[1]) / 2 - side * dx / length * 0.09;
+      const yaw = Math.atan2(dx, dz);
+      const color = [0xc8c4b8, 0x77736d, 0xaaa9a1][building.id % 3];
+      entries.push({ east, north, height: ground + building.height - 0.22, length, yaw, color });
+      if (building.id % 3 !== 0) entries.push({ east, north, height: ground + 3.05, length, yaw, color });
+    }
+  }
+  if (!entries.length) return;
+  const mesh = new InstancedMesh(new BoxGeometry(0.16, 0.13, 1), new MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), entries.length);
+  const transform = new Object3D();
+  entries.forEach(({ east, north, height, length, yaw, color }, index) => {
+    transform.position.set(east, height, north);
+    transform.rotation.set(0, yaw, 0);
+    transform.scale.set(1, 1, length);
+    transform.updateMatrix();
+    mesh.setMatrixAt(index, transform.matrix);
+    mesh.setColorAt(index, new Color(color));
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  scene.add(mesh);
 }
 
 function windowTexture(): CanvasTexture {
@@ -50,7 +168,7 @@ function windowTexture(): CanvasTexture {
   return texture;
 }
 
-export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena): CanvasTexture {
+export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena, storefrontEdges: Map<number, Set<number>>): CanvasTexture {
   const maxWindows = 8000;
   const windows: WindowPosition[] = [];
   const [arenaEast, arenaNorth] = toLocal(arena.latitude, arena.longitude);
@@ -88,6 +206,7 @@ export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena):
         if (height + 0.9 > ground + building.height) break;
         for (let column = 0; column < columns; column += 1) {
           const along = (column + 0.5) / columns;
+          if (floor === 0 && storefrontEdges.get(building.id)?.has(edge)) continue;
           const tint = (building.id * 13 + edge * 17 + floor * 7 + column * 11) % 13;
           windows.push({
             east: ax + dx * along + normalEast * 0.055,
@@ -149,10 +268,11 @@ export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena):
   return glassTexture;
 }
 
-export function addBuildingDoors(scene: Scene, data: ArenaData, arena: Arena): void {
+export function addBuildingDoors(scene: Scene, data: ArenaData, arena: Arena, storefrontEdges: Map<number, Set<number>>): void {
   const entries: { east: number; north: number; ground: number; yaw: number; id: number }[] = [];
   const [arenaEast, arenaNorth] = toLocal(arena.latitude, arena.longitude);
   for (const building of data.buildings) {
+    if (storefrontEdges.has(building.id)) continue;
     if (building.outline.length < 3 || building.height < 3.4) continue;
     const outline = building.outline;
     const side = polygonArea(outline) > 0 ? 1 : -1;

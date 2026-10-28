@@ -1,16 +1,17 @@
 import {
   ACESFilmicToneMapping, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight,
-  DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FogExp2, Group, HemisphereLight, InstancedMesh,
+  DoubleSide, EquirectangularReflectionMapping, ExtrudeGeometry, Float32BufferAttribute, FogExp2, Group, HemisphereLight, InstancedMesh,
   LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, PCFSoftShadowMap,
   Object3D, PerspectiveCamera, PlaneGeometry, Scene, Shape, ShapeGeometry, SphereGeometry, Vector2, Vector3,
   WebGPURenderer,
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { PlayerController } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
-import { addBuildingDoors, addBuildingWindows, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
+import { addBuildingDoors, addBuildingWindows, addFacadeTrim, addStorefronts, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
 
 export type MapState = "loading" | "ready" | "error";
 
@@ -97,7 +98,8 @@ function roadGeometry(data: ArenaData, walkway: boolean): BufferGeometry {
     };
     vertices.push(...vertex(0), ...vertex(2), ...vertex(1));
     vertices.push(...vertex(1), ...vertex(2), ...vertex(3));
-    uvs.push(0, 0, 0, length, road.width, 0, road.width, 0, 0, length, road.width, length);
+    const uv = (index: number): Point => corners[index];
+    uvs.push(...uv(0), ...uv(2), ...uv(1), ...uv(1), ...uv(2), ...uv(3));
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
@@ -263,9 +265,9 @@ function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): (ti
   const branches = new InstancedMesh(new CylinderGeometry(0.07, 0.13, 2.7, 6), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length * 2);
   const crowns = new InstancedMesh(new SphereGeometry(1, 10, 8), new MeshStandardMaterial({ map: textures.canopy, roughness: 1 }), data.trees.length * 4);
   const leafCards = new InstancedMesh(
-    new PlaneGeometry(3.1, 2.8),
-    new MeshBasicMaterial({ map: textures.leaves, alphaMap: textures.leavesAlpha, alphaTest: 0.54, side: DoubleSide, depthWrite: true }),
-    data.trees.length * 24,
+    new PlaneGeometry(2.25, 2.05),
+    new MeshStandardMaterial({ map: textures.leaves, alphaMap: textures.leavesAlpha, alphaTest: 0.48, roughness: 1, side: DoubleSide, depthWrite: true }),
+    data.trees.length * 36,
   );
   const cardPositions: { x: number; y: number; z: number; yaw: number; tree: number; scale: number }[] = [];
   const transform = new Object3D();
@@ -293,17 +295,17 @@ function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): (ti
       crowns.setMatrixAt(index * 4 + cluster, transform.matrix);
       crowns.setColorAt(index * 4 + cluster, new Color([0xb5c9a4, 0x94b398, 0xc4cba0, 0xa2ba9b][(index + cluster) % 4]));
     }
-    for (let card = 0; card < 24; card += 1) {
-      const layer = Math.floor(card / 8);
+    for (let card = 0; card < 36; card += 1) {
+      const layer = Math.floor(card / 9);
       const angle = card * 2.39996 + index * 0.42;
-      const spread = layer === 0 ? 1.35 : layer === 1 ? 2.2 : 1.6;
+      const spread = layer === 0 ? 1.2 : layer === 1 ? 2.05 : layer === 2 ? 1.7 : 0.9;
       cardPositions.push({
         x: east + Math.cos(angle) * spread,
-        y: ground + 6.1 + layer * 1.2 + (card % 3) * 0.18,
+        y: ground + 5.8 + layer * 0.85 + (card % 3) * 0.16,
         z: north + Math.sin(angle) * spread,
         yaw: angle + Math.PI / 2,
         tree: index,
-        scale: 0.78 + ((index * 3 + card * 7) % 6) / 20,
+        scale: 0.83 + ((index * 3 + card * 7) % 6) / 24,
       });
     }
   });
@@ -379,13 +381,25 @@ function disposeGroup(group: Group): void {
 
 export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
   events.onStatus("loading", "Loading the bundled San Jose arena and materials…");
-  const [data, textures] = await Promise.all([loadArenaData(), loadSurfaceTextures()]);
+  const [data, textures, skyHdri] = await Promise.all([
+    loadArenaData(),
+    loadSurfaceTextures(),
+    new RGBELoader().loadAsync(`${import.meta.env.BASE_URL}textures/san-jose-sky.hdr`).catch(() => null),
+  ]);
   const scene = new Scene();
-  const sky = createSkyTexture();
+  const sky = skyHdri ?? createSkyTexture();
+  if (skyHdri) {
+    skyHdri.mapping = EquirectangularReflectionMapping;
+    scene.environment = skyHdri;
+    scene.environmentIntensity = 0.24;
+  }
   scene.background = sky;
-  scene.fog = new FogExp2(0xcbdad7, 0.0015);
-  scene.add(new HemisphereLight(0xe7f2ff, 0x716b62, 1.45));
-  const sun = new DirectionalLight(0xffe7c5, 2.5);
+  scene.fog = new FogExp2(0xc5d2d2, 0.0021);
+  scene.add(new HemisphereLight(0xe7f2ff, 0x716b62, 1.2));
+  const fill = new DirectionalLight(0xc5d8e8, 0.3);
+  fill.position.set(180, 110, -150);
+  scene.add(fill);
+  const sun = new DirectionalLight(0xffe7c5, 2.15);
   sun.position.set(-180, 300, 130);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -402,8 +416,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   addParks(scene, data, textures);
   addRoads(scene, data, textures);
   addBuildings(scene, data, textures);
-  const glassTexture = addBuildingWindows(scene, data, arena);
-  addBuildingDoors(scene, data, arena);
+  const storefrontEdges = addStorefronts(scene, data, arena, [textures.storefrontStone, textures.storefrontCafe]);
+  const glassTexture = addBuildingWindows(scene, data, arena, storefrontEdges);
+  addBuildingDoors(scene, data, arena, storefrontEdges);
+  addFacadeTrim(scene, data, arena);
   const updateTrees = addTrees(scene, data, textures);
   addStreetLights(scene, data);
   let roadDetails = makeRoadDetails(data, arena);
@@ -417,7 +433,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const renderer = new WebGPURenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.3;
+  renderer.toneMappingExposure = 1.08;
   renderer.shadowMap.type = PCFSoftShadowMap;
   renderer.shadowMap.enabled = true;
   await renderer.init();

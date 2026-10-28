@@ -18,6 +18,8 @@ export interface SurfaceTextures {
   canopy: Texture;
   leaves: Texture;
   leavesAlpha: Texture;
+  storefrontStone: Texture;
+  storefrontCafe: Texture;
   dispose: () => void;
 }
 
@@ -62,25 +64,29 @@ export async function loadSurfaceTextures(): Promise<SurfaceTextures> {
     texture.anisotropy = 4;
     return texture;
   };
-  const [grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, leaves, leavesAlpha] = await Promise.all([
+  const [grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, leaves, leavesAlpha, storefrontStone, storefrontCafe] = await Promise.all([
     color("grass_ground", 10),
-    color("asphalt_01", 5), normal("asphalt_01", 5),
+    color("asphalt_02", 5), normal("asphalt_02", 5),
     color("concrete_pavement_02", 4), normal("concrete_pavement_02", 4),
     color("plastered_wall_04", 5), normal("plastered_wall_04", 5),
     color("concrete_wall_003", 5), normal("concrete_wall_003", 5),
     color("brick_wall_001", 2), normal("brick_wall_001", 2),
     color("grey_roof_tiles", 5), color("bark_platanus", 2),
     color("tree_leaves", 1), loader.loadAsync(`${import.meta.env.BASE_URL}textures/tree_leaves_alpha.png`),
+    loader.loadAsync(`${import.meta.env.BASE_URL}textures/storefront-stone.jpg`),
+    loader.loadAsync(`${import.meta.env.BASE_URL}textures/storefront-cafe.jpg`),
   ]);
+  storefrontStone.colorSpace = storefrontCafe.colorSpace = SRGBColorSpace;
+  storefrontStone.anisotropy = storefrontCafe.anisotropy = 4;
   const ground = grass.clone();
   ground.needsUpdate = true;
   leaves.repeat.set(0.56, 1);
   leavesAlpha.repeat.set(0.56, 1);
   const canopy = foliageTexture();
-  const textures = [ground, grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, canopy, leaves, leavesAlpha];
+  const textures = [ground, grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, canopy, leaves, leavesAlpha, storefrontStone, storefrontCafe];
   return {
     ground, grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal,
-    concrete, concreteNormal, brick, brickNormal, roof, bark, canopy, leaves, leavesAlpha,
+    concrete, concreteNormal, brick, brickNormal, roof, bark, canopy, leaves, leavesAlpha, storefrontStone, storefrontCafe,
     dispose: () => textures.forEach((texture) => texture.dispose()),
   };
 }
