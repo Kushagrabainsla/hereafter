@@ -16,6 +16,7 @@ const formError = element<HTMLParagraphElement>("form-error");
 const mapStatus = element<HTMLElement>("map-status");
 const graphicsStatus = element<HTMLElement>("graphics-status");
 const fps = element<HTMLElement>("fps");
+const movementState = element<HTMLElement>("movement-state");
 const cameraCoordinates = element<HTMLElement>("camera-coordinates");
 const buildingCount = element<HTMLElement>("building-count");
 const roadCount = element<HTMLElement>("road-count");
@@ -50,6 +51,7 @@ void createMapViewer(element("map"), arena, {
     graphicsStatus.textContent = metrics.renderer;
     buildingCount.textContent = String(metrics.buildings);
     roadCount.textContent = String(metrics.roads);
+    movementState.textContent = metrics.player.activity;
     const { latitude, longitude, heading } = metrics.player;
     cameraCoordinates.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)} · ${Math.round(heading)}°`;
   },

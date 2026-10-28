@@ -7,7 +7,9 @@ import {
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
+import { PlayerHands } from "../game/playerHands";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
+import { createSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 
 export type MapState = "loading" | "ready" | "error";
 
@@ -44,7 +46,8 @@ function centroid(outline: Point[]): Point {
   return [east / outline.length, north / outline.length];
 }
 
-function addTerrain(scene: Scene, data: ArenaData): void {
+function addTerrain(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
+  textures.ground.repeat.set(data.extentMeters * 2 / 12, data.extentMeters * 2 / 12);
   const geometry = new PlaneGeometry(data.extentMeters * 2, data.extentMeters * 2, 42, 42);
   geometry.rotateX(-Math.PI / 2);
   const position = geometry.getAttribute("position");
@@ -52,12 +55,12 @@ function addTerrain(scene: Scene, data: ArenaData): void {
     position.setY(index, terrainHeight(data, position.getX(index), position.getZ(index)));
   }
   geometry.computeVertexNormals();
-  const ground = new Mesh(geometry, new MeshStandardMaterial({ color: 0x33545b, roughness: 1, side: DoubleSide }));
+  const ground = new Mesh(geometry, new MeshStandardMaterial({ map: textures.ground, roughness: 1, side: DoubleSide }));
   scene.add(ground);
 }
 
-function addParks(scene: Scene, data: ArenaData): void {
-  const material = new MeshStandardMaterial({ color: 0x5a8066, roughness: 1, side: DoubleSide });
+function addParks(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
+  const material = new MeshStandardMaterial({ map: textures.grass, roughness: 1, side: DoubleSide });
   for (const park of data.parks) {
     if (park.outline.length < 3) continue;
     const geometry = new ShapeGeometry(shapeFromOutline(park.outline));
@@ -70,6 +73,7 @@ function addParks(scene: Scene, data: ArenaData): void {
 
 function roadGeometry(data: ArenaData, walkway: boolean): BufferGeometry {
   const vertices: number[] = [];
+  const uvs: number[] = [];
   for (const road of data.roads) {
     const isWalkway = ["footway", "path", "steps", "pedestrian", "cycleway", "platform"].includes(road.kind);
     if (isWalkway !== walkway) continue;
@@ -91,22 +95,48 @@ function roadGeometry(data: ArenaData, walkway: boolean): BufferGeometry {
     };
     vertices.push(...vertex(0), ...vertex(2), ...vertex(1));
     vertices.push(...vertex(1), ...vertex(2), ...vertex(3));
+    uvs.push(0, 0, 0, length, road.width, 0, road.width, 0, 0, length, road.width, length);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
   geometry.computeVertexNormals();
   return geometry;
 }
 
-function addRoads(scene: Scene, data: ArenaData): void {
-  scene.add(new Mesh(roadGeometry(data, false), new MeshBasicMaterial({ color: 0x233544, side: DoubleSide })));
-  scene.add(new Mesh(roadGeometry(data, true), new MeshBasicMaterial({ color: 0x93a49d, side: DoubleSide })));
+function addRoads(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
+  scene.add(new Mesh(roadGeometry(data, false), new MeshBasicMaterial({ map: textures.asphalt, side: DoubleSide })));
+  scene.add(new Mesh(roadGeometry(data, true), new MeshBasicMaterial({ map: textures.pavement, side: DoubleSide })));
+  const marks: number[] = [];
+  for (const road of data.roads) {
+    if (road.width < 8) continue;
+    const [a, b] = road.points;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const length = Math.hypot(dx, dz);
+    if (length < 8) continue;
+    const east = dx / length;
+    const north = dz / length;
+    for (let distance = 3; distance + 2 < length; distance += 7) {
+      const point = (along: number, side: number): number[] => {
+        const x = a[0] + east * along - north * side;
+        const z = a[1] + north * along + east * side;
+        return [x, terrainHeight(data, x, z) + 0.145, z];
+      };
+      marks.push(...point(distance, -0.07), ...point(distance + 2, -0.07), ...point(distance, 0.07));
+      marks.push(...point(distance, 0.07), ...point(distance + 2, -0.07), ...point(distance + 2, 0.07));
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute(marks, 3));
+  geometry.computeVertexNormals();
+  scene.add(new Mesh(geometry, new MeshBasicMaterial({ color: 0xd6d3bc, side: DoubleSide })));
 }
 
-function addBuildings(scene: Scene, data: ArenaData): void {
-  const walls = [0x8faab1, 0xb9b4a2, 0x7595a3, 0xc2a993, 0x9aa9a2]
-    .map((color) => new MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.04, side: DoubleSide }));
-  const roof = new MeshStandardMaterial({ color: 0x4b6470, roughness: 0.9, side: DoubleSide });
+function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
+  const walls = [0xf2ece0, 0xdde8e6, 0xe2e8ef, 0xf1ded2, 0xe2ebdf]
+    .map((color) => new MeshStandardMaterial({ color, map: textures.facade, roughness: 0.88, metalness: 0.02, side: DoubleSide }));
+  const roof = new MeshStandardMaterial({ color: 0xc7d1d2, map: textures.roof, roughness: 0.95, side: DoubleSide });
   const wallGeometry: BufferGeometry[][] = walls.map(() => []);
   const roofGeometry: BufferGeometry[] = [];
   for (const building of data.buildings) {
@@ -134,10 +164,12 @@ function addBuildings(scene: Scene, data: ArenaData): void {
   if (mergedRoofs) scene.add(new Mesh(mergedRoofs, roof));
 }
 
-function addTrees(scene: Scene, data: ArenaData): void {
+function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
   if (data.trees.length === 0) return;
-  const trunks = new InstancedMesh(new CylinderGeometry(0.28, 0.4, 4, 6), new MeshStandardMaterial({ color: 0x5a5141 }), data.trees.length);
-  const crowns = new InstancedMesh(new ConeGeometry(3.2, 9, 7), new MeshStandardMaterial({ color: 0x688e71, roughness: 1 }), data.trees.length);
+  textures.bark.repeat.set(1, 1);
+  textures.leaves.repeat.set(1, 1);
+  const trunks = new InstancedMesh(new CylinderGeometry(0.28, 0.4, 4, 6), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length);
+  const crowns = new InstancedMesh(new ConeGeometry(3.2, 9, 7), new MeshStandardMaterial({ map: textures.leaves, roughness: 1 }), data.trees.length);
   const transform = new Object3D();
   data.trees.forEach(([east, north], index) => {
     const ground = terrainHeight(data, east, north);
@@ -201,11 +233,12 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const sun = new DirectionalLight(0xffe2b9, 2.2);
   sun.position.set(-180, 250, 120);
   scene.add(sun);
-  addTerrain(scene, data);
-  addParks(scene, data);
-  addRoads(scene, data);
-  addBuildings(scene, data);
-  addTrees(scene, data);
+  const textures = createSurfaceTextures();
+  addTerrain(scene, data, textures);
+  addParks(scene, data, textures);
+  addRoads(scene, data, textures);
+  addBuildings(scene, data, textures);
+  addTrees(scene, data, textures);
   let boundary = makeBoundary(data, arena);
   scene.add(boundary);
 
@@ -215,6 +248,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   await renderer.init();
   container.appendChild(renderer.domElement);
   const player = new PlayerController(camera, renderer.domElement, data, arena);
+  scene.add(camera);
+  const hands = new PlayerHands(camera);
   const rendererName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL 2";
   const resize = (): void => {
     const width = Math.max(1, container.clientWidth);
@@ -231,7 +266,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let previousFrame = 0;
   let lastMetrics = performance.now();
   renderer.setAnimationLoop((time) => {
-    player.update(previousFrame ? (time - previousFrame) / 1000 : 0);
+    const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
+    player.update(delta);
+    hands.update(delta, player.motion());
     previousFrame = time;
     renderer.render(scene, camera);
     frames += 1;
@@ -268,6 +305,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       observer.disconnect();
       player.destroy();
       disposeScene(scene);
+      textures.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

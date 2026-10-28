@@ -7,6 +7,15 @@ export interface PlayerPose {
   longitude: number;
   heightAboveGround: number;
   heading: number;
+  activity: "Idle" | "Walking" | "Running" | "Jumping" | "Crouching";
+}
+
+export interface PlayerMotion {
+  moving: boolean;
+  running: boolean;
+  crouching: boolean;
+  airborne: boolean;
+  speed: number;
 }
 
 const EYE_HEIGHT = 1.72;
@@ -20,6 +29,13 @@ export class PlayerController {
   private pitch = -4;
   private jumpHeight = 0;
   private verticalSpeed = 0;
+  private eyeHeight = EYE_HEIGHT;
+  private stride = 0;
+  private bobAmount = 0;
+  private speed = 0;
+  private moving = false;
+  private running = false;
+  private crouching = false;
   private keys = new Set<string>();
   private dragging = false;
   private lastX = 0;
@@ -51,25 +67,44 @@ export class PlayerController {
     this.pitch = -4;
     this.jumpHeight = 0;
     this.verticalSpeed = 0;
+    this.eyeHeight = EYE_HEIGHT;
+    this.stride = 0;
+    this.bobAmount = 0;
+    this.speed = 0;
+    this.moving = false;
+    this.running = false;
+    this.crouching = false;
     this.keys.clear();
     this.applyPose();
   }
 
   pose(): PlayerPose {
-    return { ...toCoordinates(this.east, this.north), heightAboveGround: EYE_HEIGHT + this.jumpHeight, heading: this.heading };
+    const activity = this.jumpHeight > 0 ? "Jumping" : this.crouching ? "Crouching" : this.running ? "Running" : this.moving ? "Walking" : "Idle";
+    return { ...toCoordinates(this.east, this.north), heightAboveGround: this.eyeHeight + this.jumpHeight, heading: this.heading, activity };
+  }
+
+  motion(): PlayerMotion {
+    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: this.jumpHeight > 0, speed: this.speed };
   }
 
   update(seconds: number): void {
     const delta = Math.min(seconds, 0.1);
     const forward = Number(this.keys.has("w") || this.keys.has("arrowup")) - Number(this.keys.has("s") || this.keys.has("arrowdown"));
     const strafe = Number(this.keys.has("d") || this.keys.has("arrowright")) - Number(this.keys.has("a") || this.keys.has("arrowleft"));
+    this.crouching = this.keys.has("c") || this.keys.has("control");
+    const wantsRun = this.keys.has("shift") && !this.crouching;
+    const beforeEast = this.east;
+    const beforeNorth = this.north;
     if (forward || strafe) {
       const heading = this.heading * Math.PI / 180;
-      const speed = (this.keys.has("shift") ? 7.5 : 4.5) * delta / Math.max(1, Math.hypot(forward, strafe));
+      const speed = (this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5) * delta / Math.max(1, Math.hypot(forward, strafe));
       const changeEast = (Math.sin(heading) * forward + Math.cos(heading) * strafe) * speed;
       const changeNorth = (Math.cos(heading) * forward - Math.sin(heading) * strafe) * speed;
       this.move(changeEast, changeNorth);
     }
+    this.speed = delta > 0 ? Math.hypot(this.east - beforeEast, this.north - beforeNorth) / delta : 0;
+    this.moving = this.speed > 0.1;
+    this.running = this.moving && wantsRun;
     if (this.verticalSpeed !== 0 || this.jumpHeight > 0) {
       this.jumpHeight += this.verticalSpeed * delta;
       this.verticalSpeed -= 14 * delta;
@@ -77,6 +112,14 @@ export class PlayerController {
         this.jumpHeight = 0;
         this.verticalSpeed = 0;
       }
+    }
+    this.eyeHeight += ((this.crouching ? 1.12 : EYE_HEIGHT) - this.eyeHeight) * Math.min(1, delta * 10);
+    this.bobAmount += ((this.moving && this.jumpHeight === 0 ? 1 : 0) - this.bobAmount) * Math.min(1, delta * 8);
+    if (this.moving) this.stride += this.speed * delta * (this.running ? 2.1 : 1.7);
+    const targetFov = this.running ? 80 : this.crouching ? 72 : 75;
+    if (Math.abs(this.camera.fov - targetFov) > 0.01) {
+      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 7);
+      this.camera.updateProjectionMatrix();
     }
     this.applyPose();
   }
@@ -147,12 +190,12 @@ export class PlayerController {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     const key = event.key.toLowerCase();
-    if (!["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", " ", "r"].includes(key)) return;
+    if (!["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " ", "r"].includes(key)) return;
     if (document.activeElement instanceof HTMLInputElement) return;
     event.preventDefault();
     if (key === "r") this.reset(this.arena);
     else if (key === " ") {
-      if (!this.keys.has(key) && this.jumpHeight === 0) this.verticalSpeed = 5.2;
+      if (!this.keys.has(key) && this.jumpHeight === 0 && !this.crouching) this.verticalSpeed = 5.2;
       this.keys.add(key);
     } else this.keys.add(key);
   };
@@ -169,7 +212,8 @@ export class PlayerController {
   private applyPose(): void {
     const heading = this.heading * Math.PI / 180;
     const pitch = this.pitch * Math.PI / 180;
-    this.camera.position.set(this.east, terrainHeight(this.data, this.east, this.north) + EYE_HEIGHT + this.jumpHeight, this.north);
+    const bob = Math.sin(this.stride * 2) * this.bobAmount * (this.running ? 0.045 : 0.025);
+    this.camera.position.set(this.east, terrainHeight(this.data, this.east, this.north) + this.eyeHeight + this.jumpHeight + bob, this.north);
     this.camera.lookAt(
       this.east + Math.sin(heading) * Math.cos(pitch),
       this.camera.position.y + Math.sin(pitch),

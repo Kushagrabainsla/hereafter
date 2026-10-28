@@ -10,7 +10,7 @@
     <div id="app">
       <main id="map" aria-label="First-person 3D view of the San Jose prototype arena"></main>
       <div class="crosshair" aria-hidden="true"></div>
-      <div class="movement-hint" aria-hidden="true">ARROW KEYS / WASD TO WALK <span>·</span> CLICK + DRAG TO LOOK</div>
+      <div class="movement-hint" aria-hidden="true">ARROWS / WASD WALK <span>·</span> SHIFT RUN <span>·</span> SPACE JUMP <span>·</span> C CROUCH</div>
 
       <section class="panel controls-panel" aria-labelledby="app-title">
         <div class="eyebrow"><span class="eyebrow-line"></span> Phase 01 / Player movement</div>
@@ -37,7 +37,7 @@
 
         <div class="controls-help">
           <div class="section-heading">Explore <span>Desktop</span></div>
-          <p>Walk with the <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> keys or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. Click and drag on the map with your trackpad to look around. Hold <kbd>Shift</kbd> to run, press <kbd>Space</kbd> to jump, or <kbd>R</kbd> to respawn. Double-click for mouse lock; <kbd>Esc</kbd> releases it.</p>
+          <p>Walk with <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. Hold <kbd>Shift</kbd> to run, press <kbd>Space</kbd> to jump, hold <kbd>C</kbd> or <kbd>Ctrl</kbd> to crouch, and press <kbd>R</kbd> to respawn. Click and drag with your trackpad to look. Double-click for mouse lock; <kbd>Esc</kbd> releases it.</p>
         </div>
       </section>
 
@@ -49,6 +49,7 @@
           <div><dt>Arena</dt><dd id="map-status">Loading</dd></div>
           <div><dt>Renderer</dt><dd id="graphics-status">Checking</dd></div>
           <div><dt>FPS</dt><dd id="fps">—</dd></div>
+          <div><dt>Movement</dt><dd id="movement-state">Idle</dd></div>
           <div><dt>Player</dt><dd id="camera-coordinates">—</dd></div>
           <div><dt>Buildings</dt><dd id="building-count">—</dd></div>
           <div><dt>Road segments</dt><dd id="road-count">—</dd></div>

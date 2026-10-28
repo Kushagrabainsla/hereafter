@@ -19,13 +19,15 @@ npm run dev
 
 Open the URL printed by Vite. No API key or billing account is needed. The 3D arena asset is bundled with the site. The browser needs WebGPU or WebGL 2; Three.js uses WebGPU when available and falls back to WebGL 2.
 
-You spawn at walking height on a clear street. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and press R to respawn. Click and drag on the map with a trackpad or mouse to look around. Double-click the map for mouse lock and press Esc to release it. The form adjusts the arena center and side length within the bundled San Jose extract; the URL keeps those settings for sharing.
+You spawn at walking height on a clear street with visible first-person hands. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, hold C or Ctrl to crouch, and press R to respawn. Click and drag on the map with a trackpad or mouse to look around. Double-click the map for mouse lock and press Esc to release it. The form adjusts the arena center and side length within the bundled San Jose extract; the URL keeps those settings for sharing.
 
 Run `npm run build` for a local production build. Run `npm run build:pages` to build with the `/hereafter/` path prefix for GitHub Pages, then `npm run preview:pages` to inspect that build locally.
 
 ## Arena data
 
 `public/arena/san-jose.json` contains building outlines and heights, road segments, park outlines, tree locations, and a small terrain height grid. The site does not call OpenStreetMap or USGS at runtime. To refresh the same San Jose extract, run `npm run build:arena` from the repository root. That build step makes one bounded OpenStreetMap data request and 25 USGS elevation point requests. The resulting file is about 220 KB.
+
+Ground, grass, asphalt, pavement, facades, roofs, bark, and foliage use deterministic procedural textures generated in the browser. They are bundled as code and make no network requests. These details improve the stylized arena; the underlying map data remains the same.
 
 The adapted OpenStreetMap data in this asset is offered under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). In-game attribution links to [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). USGS 3DEP elevation data is public domain. This repository's software code does not yet have a selected license.
 
