@@ -1,15 +1,16 @@
 import {
-  BoxGeometry, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DirectionalLight,
+  ACESFilmicToneMapping, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight,
   DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FogExp2, Group, HemisphereLight, InstancedMesh,
-  LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial,
-  Object3D, PerspectiveCamera, PlaneGeometry, Scene, Shape, ShapeGeometry, Vector3,
+  LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, PCFSoftShadowMap,
+  Object3D, PerspectiveCamera, PlaneGeometry, Scene, Shape, ShapeGeometry, SphereGeometry, Vector2, Vector3,
   WebGPURenderer,
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
-import { createSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
+import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
+import { addBuildingDoors, addBuildingWindows, addStreetLights, createSkyTexture } from "./scenery";
 
 export type MapState = "loading" | "ready" | "error";
 
@@ -56,6 +57,7 @@ function addTerrain(scene: Scene, data: ArenaData, textures: SurfaceTextures): v
   }
   geometry.computeVertexNormals();
   const ground = new Mesh(geometry, new MeshStandardMaterial({ map: textures.ground, roughness: 1, side: DoubleSide }));
+  ground.receiveShadow = true;
   scene.add(ground);
 }
 
@@ -67,7 +69,9 @@ function addParks(scene: Scene, data: ArenaData, textures: SurfaceTextures): voi
     geometry.rotateX(-Math.PI / 2);
     const [east, north] = centroid(park.outline);
     geometry.translate(0, terrainHeight(data, east, north) + 0.08, 0);
-    scene.add(new Mesh(geometry, material));
+    const surface = new Mesh(geometry, material);
+    surface.receiveShadow = true;
+    scene.add(surface);
   }
 }
 
@@ -105,8 +109,11 @@ function roadGeometry(data: ArenaData, walkway: boolean): BufferGeometry {
 }
 
 function addRoads(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
-  scene.add(new Mesh(roadGeometry(data, false), new MeshBasicMaterial({ map: textures.asphalt, side: DoubleSide })));
-  scene.add(new Mesh(roadGeometry(data, true), new MeshBasicMaterial({ map: textures.pavement, side: DoubleSide })));
+  const asphalt = new Mesh(roadGeometry(data, false), new MeshStandardMaterial({ map: textures.asphalt, normalMap: textures.asphaltNormal, normalScale: new Vector2(0.5, 0.5), roughness: 0.96, side: DoubleSide }));
+  const pavement = new Mesh(roadGeometry(data, true), new MeshStandardMaterial({ map: textures.pavement, normalMap: textures.pavementNormal, normalScale: new Vector2(0.4, 0.4), roughness: 0.94, side: DoubleSide }));
+  asphalt.receiveShadow = true;
+  pavement.receiveShadow = true;
+  scene.add(asphalt, pavement);
   const marks: number[] = [];
   for (const road of data.roads) {
     if (road.width < 8) continue;
@@ -134,9 +141,15 @@ function addRoads(scene: Scene, data: ArenaData, textures: SurfaceTextures): voi
 }
 
 function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
-  const walls = [0xf2ece0, 0xdde8e6, 0xe2e8ef, 0xf1ded2, 0xe2ebdf]
-    .map((color) => new MeshStandardMaterial({ color, map: textures.facade, roughness: 0.88, metalness: 0.02, side: DoubleSide }));
-  const roof = new MeshStandardMaterial({ color: 0xc7d1d2, map: textures.roof, roughness: 0.95, side: DoubleSide });
+  const wallTypes = [
+    { map: textures.plaster, normal: textures.plasterNormal, tint: 0xf4f1e9 },
+    { map: textures.concrete, normal: textures.concreteNormal, tint: 0xe8e2d7 },
+    { map: textures.brick, normal: textures.brickNormal, tint: 0xffffff },
+    { map: textures.plaster, normal: textures.plasterNormal, tint: 0xdce7e5 },
+    { map: textures.plaster, normal: textures.plasterNormal, tint: 0xe4d7cb },
+  ];
+  const walls = wallTypes.map(({ map, normal, tint }) => new MeshStandardMaterial({ color: tint, map, normalMap: normal, normalScale: new Vector2(0.36, 0.36), roughness: 0.91, side: DoubleSide }));
+  const roof = new MeshStandardMaterial({ map: textures.roof, roughness: 0.95, side: DoubleSide });
   const wallGeometry: BufferGeometry[][] = walls.map(() => []);
   const roofGeometry: BufferGeometry[] = [];
   for (const building of data.buildings) {
@@ -157,30 +170,60 @@ function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures):
   wallGeometry.forEach((geometries, index) => {
     const merged = mergeGeometries(geometries, false);
     geometries.forEach((geometry) => geometry.dispose());
-    if (merged) scene.add(new Mesh(merged, walls[index]));
+    if (merged) {
+      const mesh = new Mesh(merged, walls[index]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    }
   });
   const mergedRoofs = mergeGeometries(roofGeometry, false);
   roofGeometry.forEach((geometry) => geometry.dispose());
-  if (mergedRoofs) scene.add(new Mesh(mergedRoofs, roof));
+  if (mergedRoofs) {
+    const mesh = new Mesh(mergedRoofs, roof);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+  }
 }
 
 function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
   if (data.trees.length === 0) return;
   textures.bark.repeat.set(1, 1);
   textures.leaves.repeat.set(1, 1);
-  const trunks = new InstancedMesh(new CylinderGeometry(0.28, 0.4, 4, 6), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length);
-  const crowns = new InstancedMesh(new ConeGeometry(3.2, 9, 7), new MeshStandardMaterial({ map: textures.leaves, roughness: 1 }), data.trees.length);
+  const trunks = new InstancedMesh(new CylinderGeometry(0.19, 0.32, 5.7, 8), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length);
+  const branches = new InstancedMesh(new CylinderGeometry(0.07, 0.13, 2.7, 6), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length * 2);
+  const crowns = new InstancedMesh(new SphereGeometry(1, 10, 8), new MeshStandardMaterial({ map: textures.leaves, roughness: 1 }), data.trees.length * 4);
   const transform = new Object3D();
   data.trees.forEach(([east, north], index) => {
     const ground = terrainHeight(data, east, north);
-    transform.position.set(east, ground + 2, north);
+    transform.position.set(east, ground + 2.85, north);
+    transform.rotation.set(0, 0, 0);
+    transform.scale.set(1, 1, 1);
     transform.updateMatrix();
     trunks.setMatrixAt(index, transform.matrix);
-    transform.position.y = ground + 8;
-    transform.updateMatrix();
-    crowns.setMatrixAt(index, transform.matrix);
+    for (let branch = 0; branch < 2; branch += 1) {
+      transform.position.set(east + (branch ? 0.65 : -0.65), ground + 5.4, north);
+      transform.rotation.set(0, 0, branch ? 0.62 : -0.62);
+      transform.updateMatrix();
+      branches.setMatrixAt(index * 2 + branch, transform.matrix);
+    }
+    for (let cluster = 0; cluster < 4; cluster += 1) {
+      const angle = cluster * Math.PI * 0.5 + (index % 4) * 0.3;
+      const spread = cluster === 0 ? 0 : 1.65;
+      transform.position.set(east + Math.cos(angle) * spread, ground + (cluster === 0 ? 8.3 : 7.1), north + Math.sin(angle) * spread);
+      transform.rotation.set(0, angle, 0);
+      const variation = 0.85 + ((index * 7 + cluster * 3) % 9) / 30;
+      transform.scale.set(2.2 * variation, 1.8 * variation, 2.1 * variation);
+      transform.updateMatrix();
+      crowns.setMatrixAt(index * 4 + cluster, transform.matrix);
+      crowns.setColorAt(index * 4 + cluster, new Color([0xb5c9a4, 0x94b398, 0xc4cba0, 0xa2ba9b][(index + cluster) % 4]));
+    }
   });
-  scene.add(trunks, crowns);
+  trunks.castShadow = true;
+  branches.castShadow = true;
+  crowns.castShadow = true;
+  scene.add(trunks, branches, crowns);
 }
 
 function makeBoundary(data: ArenaData, arena: Arena): Group {
@@ -224,33 +267,60 @@ function disposeScene(scene: Scene): void {
 }
 
 export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
-  events.onStatus("loading", "Loading the bundled San Jose arena…");
-  const data = await loadArenaData();
+  events.onStatus("loading", "Loading the bundled San Jose arena and materials…");
+  const [data, textures] = await Promise.all([loadArenaData(), loadSurfaceTextures()]);
   const scene = new Scene();
-  scene.background = new Color(0x8ba7b9);
-  scene.fog = new FogExp2(0x8ba7b9, 0.0017);
-  scene.add(new HemisphereLight(0xe4f4ff, 0x3c5360, 2.3));
-  const sun = new DirectionalLight(0xffe2b9, 2.2);
-  sun.position.set(-180, 250, 120);
+  const sky = createSkyTexture();
+  scene.background = sky;
+  scene.fog = new FogExp2(0xcbdad7, 0.0015);
+  scene.add(new HemisphereLight(0xe7f2ff, 0x716b62, 1.45));
+  const sun = new DirectionalLight(0xffe7c5, 2.5);
+  sun.position.set(-180, 300, 130);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -360;
+  sun.shadow.camera.right = 360;
+  sun.shadow.camera.top = 360;
+  sun.shadow.camera.bottom = -360;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 900;
+  sun.shadow.bias = -0.0002;
+  sun.shadow.normalBias = 0.035;
   scene.add(sun);
-  const textures = createSurfaceTextures();
   addTerrain(scene, data, textures);
   addParks(scene, data, textures);
   addRoads(scene, data, textures);
   addBuildings(scene, data, textures);
+  const glassTexture = addBuildingWindows(scene, data);
+  addBuildingDoors(scene, data);
   addTrees(scene, data, textures);
+  addStreetLights(scene, data);
   let boundary = makeBoundary(data, arena);
   scene.add(boundary);
 
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
   const renderer = new WebGPURenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.3;
+  renderer.shadowMap.type = PCFSoftShadowMap;
   await renderer.init();
+  const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
+  renderer.shadowMap.enabled = isWebGPU;
+  if (!isWebGPU) {
+    scene.traverse((object) => {
+      if (object instanceof InstancedMesh && object.userData.windowDetail) object.count = Math.min(object.count, 1200);
+      if (object instanceof Mesh && object.material instanceof MeshStandardMaterial && object.material.normalMap) {
+        object.material.normalMap = null;
+        object.material.needsUpdate = true;
+      }
+    });
+  }
   container.appendChild(renderer.domElement);
   const player = new PlayerController(camera, renderer.domElement, data, arena);
   scene.add(camera);
   const hands = new PlayerHands(camera);
-  const rendererName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL 2";
+  const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
   const resize = (): void => {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
@@ -263,8 +333,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   resize();
 
   let frames = 0;
+  let renderedFrames = 0;
   let previousFrame = 0;
   let lastMetrics = performance.now();
+  let readySent = false;
   renderer.setAnimationLoop((time) => {
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
@@ -272,6 +344,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     previousFrame = time;
     renderer.render(scene, camera);
     frames += 1;
+    renderedFrames += 1;
+    if (!readySent && renderedFrames >= 2) {
+      events.onStatus("ready", "San Jose arena loaded. Use arrow keys to move and drag on the map to look around.");
+      readySent = true;
+    }
     if (time - lastMetrics >= 500) {
       events.onMetrics({
         fps: Math.round(frames * 1000 / (time - lastMetrics)),
@@ -284,7 +361,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       lastMetrics = time;
     }
   });
-  events.onStatus("ready", "San Jose arena loaded. Use arrow keys to move and drag on the map to look around.");
 
   return {
     setArena(nextArena) {
@@ -306,6 +382,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       player.destroy();
       disposeScene(scene);
       textures.dispose();
+      glassTexture.dispose();
+      sky.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

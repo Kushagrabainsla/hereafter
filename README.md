@@ -27,13 +27,13 @@ Run `npm run build` for a local production build. Run `npm run build:pages` to b
 
 `public/arena/san-jose.json` contains building outlines and heights, road segments, park outlines, tree locations, and a small terrain height grid. The site does not call OpenStreetMap or USGS at runtime. To refresh the same San Jose extract, run `npm run build:arena` from the repository root. That build step makes one bounded OpenStreetMap data request and 25 USGS elevation point requests. The resulting file is about 220 KB.
 
-Ground, grass, asphalt, pavement, facades, roofs, bark, and foliage use deterministic procedural textures generated in the browser. They are bundled as code and make no network requests. These details improve the stylized arena; the underlying map data remains the same.
+Ground, grass, asphalt, pavement, walls, roofs, and bark now use bundled 1K CC0 photo textures from [Poly Haven](https://polyhaven.com/license), with normal maps on key surfaces. Foliage, sky, and window glass use small generated textures. Building windows and streetlights are geometry, and the WebGPU renderer adds dynamic shadows. WebGL 2 keeps the new materials and geometry with a lighter lighting path. The browser makes no texture API requests; the underlying map data remains the same.
 
 The adapted OpenStreetMap data in this asset is offered under the [Open Database License (ODbL)](https://opendatacommons.org/licenses/odbl/1-0/). In-game attribution links to [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). USGS 3DEP elevation data is public domain. This repository's software code does not yet have a selected license.
 
 ## Current limitations
 
-- The arena is geographically based on real roads and building footprints, but uses stylized geometry. Some building heights are inferred where the data has no height tag.
+- The arena is geographically based on real roads and building footprints, but its buildings, windows, trees, and street furniture are still approximations. Some building heights are inferred where the data has no height tag.
 - The terrain is interpolated from a 5 × 5 USGS height grid. Walking follows this coarse ground surface.
 - Only the San Jose pilot extract is bundled. A new city needs a new data build and level design.
 - Building footprints, tree trunks, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, shooting, rooms, and host migration belong to later phases.

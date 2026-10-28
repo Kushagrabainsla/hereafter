@@ -1,10 +1,7 @@
-import {
-  BoxGeometry, CapsuleGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
-  PerspectiveCamera,
-} from "three/webgpu";
+import { CapsuleGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, PerspectiveCamera } from "three/webgpu";
 import { type PlayerMotion } from "./playerController";
 
-function part(geometry: BoxGeometry | CapsuleGeometry | CylinderGeometry, material: MeshStandardMaterial): Mesh {
+function part(geometry: CapsuleGeometry | CylinderGeometry, material: MeshStandardMaterial): Mesh {
   const mesh = new Mesh(geometry, material);
   mesh.renderOrder = 50;
   return mesh;
@@ -20,10 +17,10 @@ export class PlayerHands {
     const sleeve = new MeshStandardMaterial({ color: 0x294958, roughness: 0.95, depthTest: false, depthWrite: false });
     const cuff = new MeshStandardMaterial({ color: 0x192f3a, roughness: 0.88, depthTest: false, depthWrite: false });
     const skin = new MeshStandardMaterial({ color: 0xb98666, roughness: 0.92, depthTest: false, depthWrite: false });
-    const details = new MeshStandardMaterial({ color: 0x9e6e54, roughness: 1, depthTest: false, depthWrite: false });
     const makeArm = (side: -1 | 1): Group => {
       const arm = new Group();
-      arm.position.set(side * 0.45, -0.52, -0.72);
+      arm.position.set(side * 0.42, -0.61, -0.86);
+      arm.scale.setScalar(0.86);
 
       const forearm = part(new CylinderGeometry(0.105, 0.16, 0.58, 9), sleeve);
       forearm.position.set(side * 0.11, -0.22, 0.13);
@@ -52,9 +49,6 @@ export class PlayerHands {
       thumb.rotation.z = side * 0.7;
       arm.add(thumb);
 
-      const seam = part(new BoxGeometry(0.1, 0.018, 0.012), details);
-      seam.position.set(side * -0.09, 0.075, -0.22);
-      arm.add(seam);
       return arm;
     };
     this.left = makeArm(-1);
@@ -69,8 +63,8 @@ export class PlayerHands {
     if (motion.moving) this.stride += motion.speed * delta * (motion.running ? 2.1 : 1.7);
     const amplitude = this.sway * (motion.running ? 0.10 : 0.055);
     const lift = motion.airborne ? 0.075 : motion.crouching ? -0.035 : 0;
-    this.left.position.y = -0.52 + lift + Math.sin(this.stride) * amplitude;
-    this.right.position.y = -0.52 + lift - Math.sin(this.stride) * amplitude;
+    this.left.position.y = -0.61 + lift + Math.sin(this.stride) * amplitude;
+    this.right.position.y = -0.61 + lift - Math.sin(this.stride) * amplitude;
     this.left.rotation.z = -0.035 - Math.sin(this.stride) * amplitude * 0.5;
     this.right.rotation.z = 0.035 + Math.sin(this.stride) * amplitude * 0.5;
   }
