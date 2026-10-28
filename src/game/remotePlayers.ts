@@ -4,6 +4,8 @@ import {
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
+import { type WeaponKind } from "./combatRules";
+import { makeWeapon } from "./weaponVisuals";
 
 interface RemoteAvatar {
   root: Group;
@@ -15,6 +17,7 @@ interface RemoteAvatar {
   pose: PlayerPose;
   heading: number;
   stride: number;
+  weapons: Map<WeaponKind, Group>;
 }
 
 function addPart(parent: Group, geometry: BoxGeometry | CapsuleGeometry | CylinderGeometry | SphereGeometry, material: MeshStandardMaterial, x: number, y: number, z: number): void {
@@ -61,14 +64,27 @@ function createAvatar(peerId: string): RemoteAvatar {
     root.add(leg);
   }
 
+  const weapons = new Map<WeaponKind, Group>();
+  for (const kind of ["knife", "pistol", "rifle"] as const) {
+    const model = makeWeapon(kind, false);
+    model.position.set(0.03, -0.69, 0.09);
+    model.rotation.set(kind === "knife" ? 0.2 : -0.08, Math.PI, kind === "knife" ? -0.18 : 0);
+    model.scale.setScalar(kind === "rifle" ? 0.75 : kind === "pistol" ? 0.68 : 0.62);
+    model.visible = kind === "knife";
+    rightArm.add(model);
+    weapons.set(kind, model);
+  }
+
   return { root, head, leftArm, rightArm, leftLeg, rightLeg, pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
-  }, heading: 0, stride: 0 };
+  }, heading: 0, stride: 0, weapons };
 }
 
 export class RemotePlayers {
   private avatars = new Map<string, RemoteAvatar>();
+  private dead = new Set<string>();
+  private equipped = new Map<string, WeaponKind>();
 
   constructor(private scene: Scene, private data: ArenaData) {}
 
@@ -81,7 +97,22 @@ export class RemotePlayers {
       this.avatars.set(peerId, avatar);
       this.scene.add(avatar.root);
     }
+    avatar.root.visible = !this.dead.has(peerId);
+    this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
     avatar.pose = pose;
+  }
+
+  setWeapon(peerId: string, weapon: WeaponKind): void {
+    this.equipped.set(peerId, weapon);
+    const avatar = this.avatars.get(peerId);
+    if (avatar) for (const [kind, model] of avatar.weapons) model.visible = kind === weapon;
+  }
+
+  setHealth(peerId: string, health: number): void {
+    if (health <= 0) this.dead.add(peerId);
+    else this.dead.delete(peerId);
+    const avatar = this.avatars.get(peerId);
+    if (avatar) avatar.root.visible = health > 0;
   }
 
   remove(peerId: string): void {
@@ -95,10 +126,14 @@ export class RemotePlayers {
       else object.material.dispose();
     });
     this.avatars.delete(peerId);
+    this.dead.delete(peerId);
+    this.equipped.delete(peerId);
   }
 
   clear(): void {
     for (const peerId of this.avatars.keys()) this.remove(peerId);
+    this.dead.clear();
+    this.equipped.clear();
   }
 
   update(seconds: number): void {

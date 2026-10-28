@@ -1,6 +1,7 @@
 import { joinRoom, selfId } from "trystero";
 import { type Arena } from "../world/arena";
 import { type PlayerPose } from "../game/playerController";
+import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v1";
 const PROTOCOL_VERSION = 1;
@@ -20,6 +21,10 @@ type PosePacket = {
   running: boolean;
   crouching: boolean;
 };
+
+type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
+type SnapshotPacket = { version: number; map: string; leader: string; state: CombatSnapshot };
+type SyncPacket = { version: number; map: string };
 
 export interface PeerRoomEvents {
   onPeers: (count: number, spawnSlot: number) => void;
@@ -46,6 +51,14 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean";
 }
 
+function validIntent(value: unknown): value is CombatIntent {
+  if (typeof value !== "object" || value === null) return false;
+  const intent = value as Partial<CombatIntent>;
+  if (intent.kind === "attack" || intent.kind === "select") return intent.weapon === "knife" || intent.weapon === "pistol" || intent.weapon === "rifle";
+  if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
+  return intent.kind === "reload" || intent.kind === "respawn";
+}
+
 export function normalizeRoomCode(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -59,19 +72,26 @@ export class PeerRoom {
   readonly code: string;
   private room;
   private poseAction;
+  private intentAction;
+  private snapshotAction;
+  private syncAction;
   private peers = new Set<string>();
   private lastSequence = new Map<string, number>();
+  private lastIntentSequence = new Map<string, number>();
   private sequence = 0;
+  private intentSequence = 0;
   private sending = false;
   private failed = false;
   private expectedMap: string;
+  private leaderId = selfId;
+  private handoffUntil = 0;
 
   private reportPeers(): void {
     const members = [selfId, ...this.peers].sort();
     this.events.onPeers(members.length, members.indexOf(selfId));
   }
 
-  constructor(code: string, arena: Arena, private events: PeerRoomEvents) {
+  constructor(code: string, arena: Arena, private match: MatchState, private events: PeerRoomEvents) {
     this.code = normalizeRoomCode(code);
     if (this.code.length < 6 || this.code.length > 24) throw new Error("Room code must be 6–24 letters or numbers.");
     this.expectedMap = mapKey(arena);
@@ -79,12 +99,15 @@ export class PeerRoom {
       onJoinError: () => this.events.onStatus("A peer could not connect. Try another network or leave and rejoin."),
     });
     this.poseAction = this.room.makeAction<PosePacket>("pose-v1");
+    this.intentAction = this.room.makeAction<IntentPacket>("combat-intent-v1");
+    this.snapshotAction = this.room.makeAction<string>("combat-state-v1");
+    this.syncAction = this.room.makeAction<SyncPacket>("combat-sync-v1");
     this.poseAction.onMessage = (value, { peerId }) => {
       if (!this.peers.has(peerId) || !validPose(value, this.expectedMap)) return;
       const previous = this.lastSequence.get(peerId) ?? -1;
       if (value.sequence <= previous) return;
       this.lastSequence.set(peerId, value.sequence);
-      this.events.onPose(peerId, {
+      const pose = {
         east: value.east,
         north: value.north,
         heading: value.heading,
@@ -93,22 +116,89 @@ export class PeerRoom {
         moving: value.moving,
         running: value.running,
         crouching: value.crouching,
-      });
+      };
+      this.match.setPose(peerId, pose);
+      this.events.onPose(peerId, pose);
+    };
+    this.intentAction.onMessage = (value, { peerId }) => {
+      if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap
+        || !Number.isSafeInteger(value.sequence) || !validIntent(value.intent)) return;
+      if (value.sequence <= (this.lastIntentSequence.get(peerId) ?? -1)) return;
+      this.lastIntentSequence.set(peerId, value.sequence);
+      if (this.match.apply(peerId, value.intent)) this.broadcastSnapshot();
+    };
+    this.snapshotAction.onMessage = (raw, { peerId }) => {
+      let value: SnapshotPacket;
+      try { value = JSON.parse(raw) as SnapshotPacket; } catch { return; }
+      if (!value || !value.state) return;
+      if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || value.leader !== peerId) return;
+      if (peerId !== this.leaderId && !(this.leaderId === selfId && Date.now() < this.handoffUntil)) return;
+      if (this.match.adopt(value.state) && this.leaderId === selfId) {
+        this.match.ensurePlayer(selfId);
+        this.broadcastSnapshot();
+      }
+    };
+    this.syncAction.onMessage = (value, { peerId }) => {
+      if (this.leaderId === selfId && this.peers.has(peerId) && value.version === PROTOCOL_VERSION && value.map === this.expectedMap) this.sendSnapshot(peerId);
     };
     this.room.onPeerJoin = (peerId) => {
+      const wasLeader = this.leaderId === selfId;
       this.peers.add(peerId);
+      if (wasLeader) {
+        this.match.ensurePlayer(peerId);
+        this.sendSnapshot(peerId);
+      }
+      this.refreshLeader();
       this.reportPeers();
       this.events.onStatus(`${this.peers.size + 1} players connected directly.`);
     };
     this.room.onPeerLeave = (peerId) => {
       this.peers.delete(peerId);
       this.lastSequence.delete(peerId);
+      this.lastIntentSequence.delete(peerId);
+      this.match.removePose(peerId);
       this.events.onPeerLeave(peerId);
+      this.refreshLeader();
       this.reportPeers();
       this.events.onStatus(this.peers.size ? `${this.peers.size + 1} players connected directly.` : "Waiting for a friend to join…");
     };
     this.reportPeers();
     this.events.onStatus("Waiting for a friend to join…");
+  }
+
+  private refreshLeader(): void {
+    const nextLeader = [selfId, ...this.peers].sort()[0];
+    if (nextLeader === this.leaderId) {
+      if (nextLeader === selfId) this.broadcastSnapshot();
+      return;
+    }
+    this.leaderId = nextLeader;
+    this.handoffUntil = Date.now() + 1800;
+    if (nextLeader === selfId) {
+      for (const peerId of this.peers) this.match.ensurePlayer(peerId);
+      window.setTimeout(() => this.broadcastSnapshot(), 500);
+    } else void this.syncAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap }, { target: nextLeader }).catch(() => undefined);
+  }
+
+  private sendSnapshot(peerId: string): void {
+    void this.snapshotAction.send(JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, state: this.match.getState() }), { target: peerId }).catch(() => undefined);
+  }
+
+  private broadcastSnapshot(): void {
+    if (this.leaderId !== selfId || !this.peers.size) return;
+    void this.snapshotAction.send(JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, state: this.match.getState() })).catch(() => undefined);
+  }
+
+  sendCombatIntent(intent: CombatIntent): void {
+    if (this.leaderId === selfId) {
+      if (this.match.apply(selfId, intent)) this.broadcastSnapshot();
+      return;
+    }
+    void this.intentAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, sequence: ++this.intentSequence, intent }, { target: this.leaderId }).catch(() => undefined);
+  }
+
+  tickCombat(): void {
+    if (this.leaderId === selfId && this.match.tick()) this.broadcastSnapshot();
   }
 
   sendPose(pose: PlayerPose): void {
@@ -139,10 +229,14 @@ export class PeerRoom {
 
   async leave(): Promise<void> {
     this.poseAction.onMessage = null;
+    this.intentAction.onMessage = null;
+    this.snapshotAction.onMessage = null;
+    this.syncAction.onMessage = null;
     this.room.onPeerJoin = null;
     this.room.onPeerLeave = null;
     await this.room.leave();
     this.peers.clear();
     this.lastSequence.clear();
+    this.lastIntentSequence.clear();
   }
 }

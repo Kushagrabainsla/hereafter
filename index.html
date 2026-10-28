@@ -10,6 +10,8 @@
     <div id="app">
       <main id="map" aria-label="First-person view of the San Jose arena"></main>
       <div class="crosshair" aria-hidden="true"></div>
+      <div id="hit-marker" class="hit-marker" aria-hidden="true">✕</div>
+      <div id="damage-flash" class="damage-flash" aria-hidden="true"></div>
 
       <div class="brand" aria-label="Hereafter, San Jose"><strong>Hereafter<span>.</span></strong><small>San Jose</small></div>
       <div class="top-actions">
@@ -22,14 +24,18 @@
           <div><span class="dialog-eyebrow">How to play</span><h1 id="controls-title">Controls</h1></div>
           <button id="close-controls" class="close-button" type="button" aria-label="Close controls">×</button>
         </div>
-        <p class="dialog-intro">Explore San Jose at street level.</p>
+        <p class="dialog-intro">Explore and fight in San Jose at street level.</p>
         <dl class="control-list">
           <div><dt>Move</dt><dd><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
           <div><dt>Look around</dt><dd>Click and drag to move the view</dd></div>
           <div><dt>Run</dt><dd>Hold <kbd>Shift</kbd></dd></div>
           <div><dt>Jump</dt><dd><kbd>Space</kbd></dd></div>
           <div><dt>Crouch</dt><dd>Hold <kbd>C</kbd> or <kbd>Ctrl</kbd></dd></div>
-          <div><dt>Respawn</dt><dd><kbd>R</kbd></dd></div>
+          <div><dt>Attack</dt><dd>Click or press <kbd>F</kbd></dd></div>
+          <div><dt>Pick up</dt><dd><kbd>E</kbd> near a weapon</dd></div>
+          <div><dt>Weapons</dt><dd><kbd>1</kbd> knife · <kbd>2</kbd> pistol · <kbd>3</kbd> rifle</dd></div>
+          <div><dt>Reload</dt><dd><kbd>R</kbd> with a gun equipped</dd></div>
+          <div><dt>Respawn</dt><dd><kbd>Enter</kbd> after elimination</dd></div>
           <div><dt>FPS mouse look</dt><dd>Double-click the world; <kbd>Esc</kbd> releases it</dd></div>
         </dl>
         <p class="dialog-footer"><span>Press <kbd>H</kbd> or <kbd>Esc</kbd> to close</span><span id="performance">Loading graphics…</span></p>
@@ -55,6 +61,16 @@
         </div>
         <p id="room-status" class="room-status" role="status" aria-live="polite">Create or join a room to play with friends.</p>
       </dialog>
+
+      <div id="combat-hud" class="combat-hud" aria-live="polite">
+        <div class="hud-health-label"><span>HEALTH</span><strong id="health-number">100</strong></div>
+        <div id="health-bar" class="health-bar" role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="health-fill"></span></div>
+        <div class="hud-weapon-row"><span id="weapon-name">Field knife</span><strong id="ammo-count">MELEE</strong></div>
+        <div id="score-label" class="score-label">0 KILLS · 0 DEATHS</div>
+      </div>
+      <div id="pickup-hint" class="pickup-hint" hidden></div>
+      <div id="combat-toast" class="combat-toast" hidden></div>
+      <div id="death-overlay" class="death-overlay" hidden><strong>ELIMINATED</strong><span id="respawn-hint">Respawn available shortly</span></div>
 
       <div id="notice" class="notice" role="status" aria-live="polite">
         <span id="notice-label" class="notice-label">Preparing arena</span>

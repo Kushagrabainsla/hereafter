@@ -10,6 +10,8 @@ import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
 import { RemotePlayers } from "../game/remotePlayers";
+import { WeaponVisuals } from "../game/weaponVisuals";
+import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 import { addBuildingDoors, addBuildingWindows, addFacadeTrim, addStorefronts, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
@@ -27,11 +29,18 @@ export interface MapViewerEvents {
 }
 
 export interface MapViewer {
+  arenaData: () => ArenaData;
   setArena: (arena: Arena) => void;
   setPaused: (paused: boolean) => void;
   playerPose: () => PlayerPose;
   setSpawnSlot: (slot: number) => void;
+  respawn: () => void;
+  setWeapon: (kind: WeaponKind) => void;
+  setTakenPickups: (taken: string[]) => void;
+  playAttack: () => void;
   setRemotePose: (peerId: string, pose: PlayerPose) => void;
+  setRemoteHealth: (peerId: string, health: number) => void;
+  setRemoteWeapon: (peerId: string, weapon: WeaponKind) => void;
   removeRemotePeer: (peerId: string) => void;
   clearRemotePeers: () => void;
   destroy: () => void;
@@ -449,6 +458,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const remotePlayers = new RemotePlayers(scene, data);
   scene.add(camera);
   const hands = new PlayerHands(camera);
+  const weaponVisuals = new WeaponVisuals(camera, scene, data, makeWeaponPickups(data, arena));
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
   const resize = (): void => {
     const width = Math.max(1, container.clientWidth);
@@ -471,6 +481,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     player.update(delta);
     remotePlayers.update(delta);
     hands.update(delta, player.motion());
+    weaponVisuals.update(delta);
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
@@ -494,6 +505,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   });
 
   return {
+    arenaData() { return data; },
     setArena(nextArena) {
       player.reset(nextArena);
       remotePlayers.clear();
@@ -519,8 +531,26 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setSpawnSlot(slot) {
       player.setSpawnSlot(slot);
     },
+    respawn() {
+      player.reset(arena);
+    },
+    setWeapon(kind) {
+      weaponVisuals.setActive(kind);
+    },
+    setTakenPickups(taken) {
+      weaponVisuals.setTaken(taken);
+    },
+    playAttack() {
+      weaponVisuals.attack();
+    },
     setRemotePose(peerId, pose) {
       remotePlayers.setPose(peerId, pose);
+    },
+    setRemoteHealth(peerId, health) {
+      remotePlayers.setHealth(peerId, health);
+    },
+    setRemoteWeapon(peerId, weapon) {
+      remotePlayers.setWeapon(peerId, weapon);
     },
     removeRemotePeer(peerId) {
       remotePlayers.remove(peerId);

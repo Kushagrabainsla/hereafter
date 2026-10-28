@@ -227,11 +227,10 @@ export class PlayerController {
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.paused) return;
     const key = event.key.toLowerCase();
-    if (!["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " ", "r"].includes(key)) return;
+    if (!["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " "].includes(key)) return;
     if (document.activeElement instanceof HTMLInputElement) return;
     event.preventDefault();
-    if (key === "r") this.reset(this.arena);
-    else if (key === " ") {
+    if (key === " ") {
       if (!this.keys.has(key) && this.jumpHeight === 0 && !this.crouching) this.verticalSpeed = 5.2;
       this.keys.add(key);
     } else this.keys.add(key);
