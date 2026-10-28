@@ -14,6 +14,13 @@ export interface SpawnPoint {
   heading: number;
 }
 
+export interface StreetFurniture {
+  east: number;
+  north: number;
+  kind: "planter" | "hydrant";
+  radius: number;
+}
+
 function pointInsidePolygon(east: number, north: number, outline: Point[]): boolean {
   let inside = false;
   for (let index = 0, previous = outline.length - 1; index < outline.length; previous = index++) {
@@ -36,6 +43,7 @@ function distanceToSegmentSquared(east: number, north: number, a: Point, b: Poin
 
 export class CollisionWorld {
   private buildings: BuildingCollider[];
+  readonly furniture: StreetFurniture[];
 
   constructor(private data: ArenaData) {
     this.buildings = data.buildings.map(({ outline }) => ({
@@ -45,9 +53,10 @@ export class CollisionWorld {
       minNorth: Math.min(...outline.map(([, north]) => north)),
       maxNorth: Math.max(...outline.map(([, north]) => north)),
     }));
+    this.furniture = this.makeStreetFurniture();
   }
 
-  blocked(east: number, north: number, radius: number): boolean {
+  private blockedStructure(east: number, north: number, radius: number): boolean {
     for (const building of this.buildings) {
       if (east < building.minEast - radius || east > building.maxEast + radius || north < building.minNorth - radius || north > building.maxNorth + radius) continue;
       if (pointInsidePolygon(east, north, building.outline)) return true;
@@ -59,6 +68,31 @@ export class CollisionWorld {
       if ((east - treeEast) ** 2 + (north - treeNorth) ** 2 < (radius + 0.35) ** 2) return true;
     }
     return false;
+  }
+
+  private makeStreetFurniture(): StreetFurniture[] {
+    const furniture: StreetFurniture[] = [];
+    for (const road of this.data.roads) {
+      if (road.width < 8) continue;
+      const [a, b] = road.points;
+      const dx = b[0] - a[0];
+      const dz = b[1] - a[1];
+      const length = Math.hypot(dx, dz);
+      if (length < 16) continue;
+      const side = road.id % 2 === 0 ? 1 : -1;
+      const east = (a[0] + b[0]) / 2 - side * dz / length * (road.width / 2 + 1.35);
+      const north = (a[1] + b[1]) / 2 + side * dx / length * (road.width / 2 + 1.35);
+      if (Math.abs(east) > 330 || Math.abs(north) > 330 || this.blockedStructure(east, north, 0.72)) continue;
+      if (furniture.some((item) => Math.hypot(item.east - east, item.north - north) < 13)) continue;
+      const kind = road.id % 4 === 0 ? "hydrant" : "planter";
+      furniture.push({ east, north, kind, radius: kind === "planter" ? 0.62 : 0.32 });
+    }
+    return furniture;
+  }
+
+  blocked(east: number, north: number, radius: number): boolean {
+    if (this.blockedStructure(east, north, radius)) return true;
+    return this.furniture.some((item) => (east - item.east) ** 2 + (north - item.north) ** 2 < (radius + item.radius) ** 2);
   }
 
   insideArena(east: number, north: number, arena: Arena, radius = 0): boolean {

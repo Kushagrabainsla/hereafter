@@ -10,7 +10,7 @@ import { PlayerController } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
-import { addBuildingDoors, addBuildingWindows, addStreetLights, createSkyTexture } from "./scenery";
+import { addBuildingDoors, addBuildingWindows, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
 
 export type MapState = "loading" | "ready" | "error";
 
@@ -367,6 +367,16 @@ function disposeScene(scene: Scene): void {
   materials.forEach((material) => material.dispose());
 }
 
+function disposeGroup(group: Group): void {
+  group.traverse((object) => {
+    if (object instanceof Mesh || object instanceof LineSegments) {
+      object.geometry.dispose();
+      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
+      else object.material.dispose();
+    }
+  });
+}
+
 export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
   events.onStatus("loading", "Loading the bundled San Jose arena and materials…");
   const [data, textures] = await Promise.all([loadArenaData(), loadSurfaceTextures()]);
@@ -392,10 +402,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   addParks(scene, data, textures);
   addRoads(scene, data, textures);
   addBuildings(scene, data, textures);
-  const glassTexture = addBuildingWindows(scene, data);
-  addBuildingDoors(scene, data);
+  const glassTexture = addBuildingWindows(scene, data, arena);
+  addBuildingDoors(scene, data, arena);
   const updateTrees = addTrees(scene, data, textures);
   addStreetLights(scene, data);
+  let roadDetails = makeRoadDetails(data, arena);
+  scene.add(roadDetails);
+  let streetFurniture = makeStreetFurniture(data, arena);
+  scene.add(streetFurniture);
   let boundary = makeBoundary(data, arena);
   scene.add(boundary);
 
@@ -459,15 +473,17 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setArena(nextArena) {
       player.reset(nextArena);
       scene.remove(boundary);
-      boundary.traverse((object) => {
-        if (object instanceof Mesh || object instanceof LineSegments) {
-          object.geometry.dispose();
-          if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
-          else object.material.dispose();
-        }
-      });
+      disposeGroup(boundary);
       boundary = makeBoundary(data, nextArena);
       scene.add(boundary);
+      scene.remove(roadDetails);
+      disposeGroup(roadDetails);
+      roadDetails = makeRoadDetails(data, nextArena);
+      scene.add(roadDetails);
+      scene.remove(streetFurniture);
+      disposeGroup(streetFurniture);
+      streetFurniture = makeStreetFurniture(data, nextArena);
+      scene.add(streetFurniture);
     },
     setPaused(paused) {
       player.setPaused(paused);

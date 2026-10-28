@@ -26,26 +26,28 @@ export interface ArenaData {
 }
 
 export const DEFAULT_ARENA: Arena = {
-  latitude: 37.3378,
-  longitude: -121.8897,
-  sizeMeters: 400,
+  latitude: 37.337261,
+  longitude: -121.890152,
+  sizeMeters: 240,
 };
 
+// The bundled geometry is projected around this fixed origin, independent of the playable area.
+const DATA_ORIGIN = { latitude: 37.3378, longitude: -121.8897 };
 const DATA_EXTENT_METERS = 350;
 const METERS_PER_LATITUDE = 111_320;
-const METERS_PER_LONGITUDE = METERS_PER_LATITUDE * Math.cos(DEFAULT_ARENA.latitude * Math.PI / 180);
+const METERS_PER_LONGITUDE = METERS_PER_LATITUDE * Math.cos(DATA_ORIGIN.latitude * Math.PI / 180);
 
 export function toLocal(latitude: number, longitude: number): Point {
   return [
-    (longitude - DEFAULT_ARENA.longitude) * METERS_PER_LONGITUDE,
-    (latitude - DEFAULT_ARENA.latitude) * METERS_PER_LATITUDE,
+    (longitude - DATA_ORIGIN.longitude) * METERS_PER_LONGITUDE,
+    (latitude - DATA_ORIGIN.latitude) * METERS_PER_LATITUDE,
   ];
 }
 
 export function toCoordinates(east: number, north: number): { latitude: number; longitude: number } {
   return {
-    latitude: DEFAULT_ARENA.latitude + north / METERS_PER_LATITUDE,
-    longitude: DEFAULT_ARENA.longitude + east / METERS_PER_LONGITUDE,
+    latitude: DATA_ORIGIN.latitude + north / METERS_PER_LATITUDE,
+    longitude: DATA_ORIGIN.longitude + east / METERS_PER_LONGITUDE,
   };
 }
 
@@ -53,13 +55,13 @@ export function validateArena(arena: Arena): string | null {
   if (!Number.isFinite(arena.latitude) || !Number.isFinite(arena.longitude)) {
     return "Enter valid latitude and longitude values.";
   }
-  if (!Number.isFinite(arena.sizeMeters) || arena.sizeMeters < 300 || arena.sizeMeters > 500) {
-    return "Arena side length must be between 300 and 500 meters.";
+  if (!Number.isFinite(arena.sizeMeters) || arena.sizeMeters < 120 || arena.sizeMeters > 500) {
+    return "Arena side length must be between 120 and 500 meters.";
   }
   const [east, north] = toLocal(arena.latitude, arena.longitude);
   const half = arena.sizeMeters / 2;
   if (Math.abs(east) + half > DATA_EXTENT_METERS || Math.abs(north) + half > DATA_EXTENT_METERS) {
-    return "This center is outside the bundled San Jose data. Keep the arena within about 100 m of the default center.";
+    return "This center is outside the bundled San Jose data.";
   }
   return null;
 }

@@ -1,9 +1,9 @@
 import {
-  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, InstancedMesh,
-  MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Scene,
+  BoxGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Group, InstancedMesh,
+  MeshBasicMaterial, MeshStandardMaterial, Object3D, PlaneGeometry, Scene, SphereGeometry,
   SRGBColorSpace,
 } from "three/webgpu";
-import { terrainHeight, type ArenaData, type Point } from "./arena";
+import { terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { CollisionWorld } from "./collision";
 
 interface WindowPosition {
@@ -12,6 +12,7 @@ interface WindowPosition {
   height: number;
   yaw: number;
   tint: number;
+  sill: boolean;
 }
 
 function polygonArea(outline: Point[]): number {
@@ -49,9 +50,10 @@ function windowTexture(): CanvasTexture {
   return texture;
 }
 
-export function addBuildingWindows(scene: Scene, data: ArenaData): CanvasTexture {
+export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena): CanvasTexture {
   const maxWindows = 8000;
   const windows: WindowPosition[] = [];
+  const [arenaEast, arenaNorth] = toLocal(arena.latitude, arena.longitude);
   const buildings = [...data.buildings].sort((a, b) => {
     const distance = (building: typeof a): number => {
       const [east, north] = building.outline[0];
@@ -93,6 +95,8 @@ export function addBuildingWindows(scene: Scene, data: ArenaData): CanvasTexture
             height,
             yaw,
             tint,
+            sill: floor < 2 && Math.abs(ax + dx * along - arenaEast) < arena.sizeMeters / 2 + 15
+              && Math.abs(az + dz * along - arenaNorth) < arena.sizeMeters / 2 + 15,
           });
           if (windows.length >= maxWindows) break;
         }
@@ -113,8 +117,14 @@ export function addBuildingWindows(scene: Scene, data: ArenaData): CanvasTexture
     new MeshStandardMaterial({ map: glassTexture, roughness: 0.2, metalness: 0.25, emissive: 0x10202a, emissiveIntensity: 0.18, side: DoubleSide }),
     windows.length,
   );
+  const sills = new InstancedMesh(
+    new BoxGeometry(1.62, 0.09, 0.18),
+    new MeshStandardMaterial({ color: 0xd4d0c6, roughness: 0.9 }),
+    windows.filter((window) => window.sill).length,
+  );
   const transform = new Object3D();
   const tints = [0xffffff, 0xe5eef4, 0xc7dee4, 0xa7c8d4, 0xf4e6bf];
+  let sillIndex = 0;
   windows.forEach((window, index) => {
     transform.position.set(window.east, window.height, window.north);
     transform.rotation.set(0, window.yaw, 0);
@@ -125,16 +135,23 @@ export function addBuildingWindows(scene: Scene, data: ArenaData): CanvasTexture
     transform.updateMatrix();
     glass.setMatrixAt(index, transform.matrix);
     glass.setColorAt(index, new Color(tints[window.tint < 2 ? 4 : window.tint % 4]));
+    if (window.sill) {
+      transform.position.set(window.east + Math.sin(window.yaw) * 0.11, window.height - 0.98, window.north + Math.cos(window.yaw) * 0.11);
+      transform.updateMatrix();
+      sills.setMatrixAt(sillIndex++, transform.matrix);
+    }
   });
   frame.instanceMatrix.needsUpdate = true;
   glass.instanceMatrix.needsUpdate = true;
+  sills.instanceMatrix.needsUpdate = true;
   if (glass.instanceColor) glass.instanceColor.needsUpdate = true;
-  scene.add(frame, glass);
+  scene.add(frame, glass, sills);
   return glassTexture;
 }
 
-export function addBuildingDoors(scene: Scene, data: ArenaData): void {
-  const entries: { east: number; north: number; ground: number; yaw: number }[] = [];
+export function addBuildingDoors(scene: Scene, data: ArenaData, arena: Arena): void {
+  const entries: { east: number; north: number; ground: number; yaw: number; id: number }[] = [];
+  const [arenaEast, arenaNorth] = toLocal(arena.latitude, arena.longitude);
   for (const building of data.buildings) {
     if (building.outline.length < 3 || building.height < 3.4) continue;
     const outline = building.outline;
@@ -153,7 +170,7 @@ export function addBuildingDoors(scene: Scene, data: ArenaData): void {
     const north = (best.a[1] + best.b[1]) / 2 + normalNorth * 0.08;
     const center = outline.reduce(([sumEast, sumNorth], [x, z]) => [sumEast + x, sumNorth + z], [0, 0]);
     const ground = terrainHeight(data, center[0] / outline.length, center[1] / outline.length);
-    entries.push({ east, north, ground, yaw: Math.atan2(normalEast, normalNorth) });
+    entries.push({ east, north, ground, yaw: Math.atan2(normalEast, normalNorth), id: building.id });
   }
   if (entries.length === 0) return;
   const frame = new InstancedMesh(new PlaneGeometry(1.75, 2.55), new MeshStandardMaterial({ color: 0x383e3e, roughness: 0.75, side: DoubleSide }), entries.length);
@@ -173,6 +190,170 @@ export function addBuildingDoors(scene: Scene, data: ArenaData): void {
     glass.setMatrixAt(index, transform.matrix);
   });
   scene.add(frame, panel, glass);
+  const awnings = entries.filter(({ east, north, id }) => id % 3 !== 0
+    && Math.abs(east - arenaEast) < arena.sizeMeters / 2 + 10
+    && Math.abs(north - arenaNorth) < arena.sizeMeters / 2 + 10);
+  if (awnings.length === 0) return;
+  const fabric = new MeshStandardMaterial({ color: 0xffffff, roughness: 0.83, side: DoubleSide });
+  const canopy = new InstancedMesh(new BoxGeometry(2.05, 0.09, 1.0), fabric, awnings.length);
+  const valance = new InstancedMesh(new BoxGeometry(2.05, 0.25, 0.055), fabric, awnings.length);
+  const colors = [0x805648, 0x556c66, 0xb59e77, 0x526a80];
+  awnings.forEach(({ east, north, ground, yaw, id }, index) => {
+    const facingEast = Math.sin(yaw);
+    const facingNorth = Math.cos(yaw);
+    transform.rotation.set(0, yaw, 0);
+    transform.position.set(east + facingEast * 0.46, ground + 2.53, north + facingNorth * 0.46);
+    transform.updateMatrix();
+    canopy.setMatrixAt(index, transform.matrix);
+    transform.position.set(east + facingEast * 0.94, ground + 2.39, north + facingNorth * 0.94);
+    transform.updateMatrix();
+    valance.setMatrixAt(index, transform.matrix);
+    canopy.setColorAt(index, new Color(colors[id % colors.length]));
+    valance.setColorAt(index, new Color(colors[id % colors.length]));
+  });
+  canopy.instanceMatrix.needsUpdate = true;
+  valance.instanceMatrix.needsUpdate = true;
+  canopy.castShadow = true;
+  scene.add(canopy, valance);
+}
+
+export function makeRoadDetails(data: ArenaData, arena: Arena): Group {
+  const group = new Group();
+  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
+  const half = arena.sizeMeters / 2 - 5;
+  const manholes: { east: number; north: number; yaw: number }[] = [];
+  const drains: { east: number; north: number; yaw: number }[] = [];
+  for (const road of data.roads) {
+    if (road.width < 8) continue;
+    const [a, b] = road.points;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const length = Math.hypot(dx, dz);
+    if (length < 15) continue;
+    const east = (a[0] + b[0]) / 2;
+    const north = (a[1] + b[1]) / 2;
+    if (Math.abs(east - centerEast) > half || Math.abs(north - centerNorth) > half) continue;
+    const yaw = Math.atan2(dx, dz);
+    if (manholes.every((entry) => Math.hypot(entry.east - east, entry.north - north) > 16)) {
+      manholes.push({ east, north, yaw });
+    }
+    for (const side of [-1, 1]) {
+      const drainEast = east - side * dz / length * (road.width / 2 - 0.34);
+      const drainNorth = north + side * dx / length * (road.width / 2 - 0.34);
+      if (drains.every((entry) => Math.hypot(entry.east - drainEast, entry.north - drainNorth) > 10)) {
+        drains.push({ east: drainEast, north: drainNorth, yaw });
+      }
+    }
+  }
+  const transform = new Object3D();
+  if (manholes.length) {
+    const outer = new InstancedMesh(new CylinderGeometry(0.49, 0.49, 0.012, 20), new MeshStandardMaterial({ color: 0x343d3d, roughness: 0.7, metalness: 0.55 }), manholes.length);
+    const inner = new InstancedMesh(new CylinderGeometry(0.4, 0.4, 0.014, 20), new MeshStandardMaterial({ color: 0x626864, roughness: 0.82, metalness: 0.4 }), manholes.length);
+    const bar = new InstancedMesh(new BoxGeometry(0.56, 0.008, 0.035), new MeshStandardMaterial({ color: 0x303938, roughness: 0.7, metalness: 0.5 }), manholes.length * 2);
+    manholes.forEach(({ east, north, yaw }, index) => {
+      const ground = terrainHeight(data, east, north) + 0.16;
+      transform.position.set(east, ground, north);
+      transform.rotation.set(0, yaw, 0);
+      transform.updateMatrix();
+      outer.setMatrixAt(index, transform.matrix);
+      transform.position.y += 0.014;
+      transform.updateMatrix();
+      inner.setMatrixAt(index, transform.matrix);
+      for (let groove = 0; groove < 2; groove += 1) {
+        const offset = groove ? 0.13 : -0.13;
+        transform.position.set(east + Math.sin(yaw) * offset, ground + 0.026, north + Math.cos(yaw) * offset);
+        transform.updateMatrix();
+        bar.setMatrixAt(index * 2 + groove, transform.matrix);
+      }
+    });
+    group.add(outer, inner, bar);
+  }
+  if (drains.length) {
+    const housing = new InstancedMesh(new BoxGeometry(0.78, 0.016, 0.43), new MeshStandardMaterial({ color: 0x293434, roughness: 0.8, metalness: 0.4 }), drains.length);
+    const slats = new InstancedMesh(new BoxGeometry(0.48, 0.008, 0.036), new MeshStandardMaterial({ color: 0x6d7470, roughness: 0.7, metalness: 0.55 }), drains.length * 4);
+    drains.forEach(({ east, north, yaw }, index) => {
+      const ground = terrainHeight(data, east, north) + 0.153;
+      transform.rotation.set(0, yaw, 0);
+      transform.position.set(east, ground, north);
+      transform.updateMatrix();
+      housing.setMatrixAt(index, transform.matrix);
+      for (let slat = 0; slat < 4; slat += 1) {
+        const offset = (slat - 1.5) * 0.11;
+        transform.position.set(east + Math.sin(yaw) * offset, ground + 0.014, north + Math.cos(yaw) * offset);
+        transform.updateMatrix();
+        slats.setMatrixAt(index * 4 + slat, transform.matrix);
+      }
+    });
+    group.add(housing, slats);
+  }
+  return group;
+}
+
+export function makeStreetFurniture(data: ArenaData, arena: Arena): Group {
+  const group = new Group();
+  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
+  const half = arena.sizeMeters / 2 - 2;
+  const positions = new CollisionWorld(data).furniture.filter(({ east, north }) =>
+    Math.abs(east - centerEast) < half && Math.abs(north - centerNorth) < half);
+  const planters = positions.filter((item) => item.kind === "planter");
+  const hydrants = positions.filter((item) => item.kind === "hydrant");
+  const transform = new Object3D();
+  if (planters.length) {
+    const pots = new InstancedMesh(new BoxGeometry(1.06, 0.55, 1.06), new MeshStandardMaterial({ color: 0x777b75, roughness: 0.95 }), planters.length);
+    const rims = new InstancedMesh(new BoxGeometry(1.13, 0.08, 1.13), new MeshStandardMaterial({ color: 0xa3a39a, roughness: 0.9 }), planters.length);
+    const soil = new InstancedMesh(new BoxGeometry(0.9, 0.025, 0.9), new MeshStandardMaterial({ color: 0x493b2d, roughness: 1 }), planters.length);
+    const shrubs = new InstancedMesh(new SphereGeometry(0.49, 9, 7), new MeshStandardMaterial({ color: 0x65815a, roughness: 1 }), planters.length * 3);
+    planters.forEach(({ east, north }, index) => {
+      const ground = terrainHeight(data, east, north);
+      transform.rotation.set(0, 0, 0);
+      transform.scale.set(1, 1, 1);
+      transform.position.set(east, ground + 0.29, north);
+      transform.updateMatrix();
+      pots.setMatrixAt(index, transform.matrix);
+      transform.position.y = ground + 0.55;
+      transform.updateMatrix();
+      rims.setMatrixAt(index, transform.matrix);
+      transform.position.y = ground + 0.59;
+      transform.updateMatrix();
+      soil.setMatrixAt(index, transform.matrix);
+      for (let leaf = 0; leaf < 3; leaf += 1) {
+        const angle = index * 1.7 + leaf * Math.PI * 2 / 3;
+        transform.position.set(east + Math.cos(angle) * 0.24, ground + 0.87 + (leaf % 2) * 0.14, north + Math.sin(angle) * 0.24);
+        transform.scale.set(0.85, 0.78 + (leaf % 2) * 0.24, 0.85);
+        transform.updateMatrix();
+        shrubs.setMatrixAt(index * 3 + leaf, transform.matrix);
+        shrubs.setColorAt(index * 3 + leaf, new Color([0x567452, 0x769169, 0x4e6c4a][(index + leaf) % 3]));
+      }
+    });
+    pots.castShadow = true;
+    shrubs.castShadow = true;
+    group.add(pots, rims, soil, shrubs);
+  }
+  if (hydrants.length) {
+    const red = new MeshStandardMaterial({ color: 0xb64134, roughness: 0.56, metalness: 0.22 });
+    const dark = new MeshStandardMaterial({ color: 0x6c332c, roughness: 0.65, metalness: 0.35 });
+    const bodies = new InstancedMesh(new CylinderGeometry(0.19, 0.25, 0.62, 10), red, hydrants.length);
+    const caps = new InstancedMesh(new CylinderGeometry(0.22, 0.22, 0.11, 10), dark, hydrants.length);
+    const nozzles = new InstancedMesh(new CylinderGeometry(0.12, 0.12, 0.62, 8), red, hydrants.length);
+    hydrants.forEach(({ east, north }, index) => {
+      const ground = terrainHeight(data, east, north);
+      transform.scale.set(1, 1, 1);
+      transform.rotation.set(0, 0, 0);
+      transform.position.set(east, ground + 0.32, north);
+      transform.updateMatrix();
+      bodies.setMatrixAt(index, transform.matrix);
+      transform.position.y = ground + 0.66;
+      transform.updateMatrix();
+      caps.setMatrixAt(index, transform.matrix);
+      transform.rotation.set(0, 0, Math.PI / 2);
+      transform.position.y = ground + 0.43;
+      transform.updateMatrix();
+      nozzles.setMatrixAt(index, transform.matrix);
+    });
+    bodies.castShadow = true;
+    group.add(bodies, caps, nozzles);
+  }
+  return group;
 }
 
 export function addStreetLights(scene: Scene, data: ArenaData): void {
