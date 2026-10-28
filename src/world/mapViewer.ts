@@ -1,7 +1,7 @@
 import {
   BoxGeometry, BufferGeometry, Color, ConeGeometry, CylinderGeometry, DirectionalLight,
   DoubleSide, ExtrudeGeometry, Float32BufferAttribute, FogExp2, Group, HemisphereLight, InstancedMesh,
-  LineBasicMaterial, LineLoop, Mesh, MeshBasicMaterial, MeshStandardMaterial,
+  LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial,
   Object3D, PerspectiveCamera, PlaneGeometry, Scene, Shape, ShapeGeometry, Vector3,
   WebGPURenderer,
 } from "three/webgpu";
@@ -160,8 +160,14 @@ function makeBoundary(data: ArenaData, arena: Arena): Group {
     [centerEast + half, centerNorth + half], [centerEast - half, centerNorth + half],
   ];
   const geometry = new BufferGeometry();
-  geometry.setFromPoints(corners.map(([east, north]) => new Vector3(east, terrainHeight(data, east, north) + 0.8, north)));
-  group.add(new LineLoop(geometry, new LineBasicMaterial({ color: 0x85e9e9 })));
+  geometry.setFromPoints(corners.flatMap(([east, north], index) => {
+    const [nextEast, nextNorth] = corners[(index + 1) % corners.length];
+    return [
+      new Vector3(east, terrainHeight(data, east, north) + 0.8, north),
+      new Vector3(nextEast, terrainHeight(data, nextEast, nextNorth) + 0.8, nextNorth),
+    ];
+  }));
+  group.add(new LineSegments(geometry, new LineBasicMaterial({ color: 0x85e9e9 })));
   const postGeometry = new BoxGeometry(1.2, 8, 1.2);
   const postMaterial = new MeshBasicMaterial({ color: 0x85e9e9 });
   for (const [east, north] of corners) {
@@ -176,7 +182,7 @@ function disposeScene(scene: Scene): void {
   const geometries = new Set<BufferGeometry>();
   const materials = new Set<{ dispose: () => void }>();
   scene.traverse((object) => {
-    if (object instanceof Mesh || object instanceof LineLoop) {
+    if (object instanceof Mesh || object instanceof LineSegments) {
       geometries.add(object.geometry);
       for (const material of Array.isArray(object.material) ? object.material : [object.material]) materials.add(material);
     }
@@ -248,7 +254,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       player.reset(nextArena);
       scene.remove(boundary);
       boundary.traverse((object) => {
-        if (object instanceof Mesh || object instanceof LineLoop) {
+        if (object instanceof Mesh || object instanceof LineSegments) {
           object.geometry.dispose();
           if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
           else object.material.dispose();
