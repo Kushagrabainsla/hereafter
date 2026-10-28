@@ -19,7 +19,7 @@ npm run dev
 
 Open the URL printed by Vite. No API key or billing account is needed. The 3D arena asset is bundled with the site. The browser needs WebGPU or WebGL 2; Three.js uses WebGPU when available and falls back to WebGL 2.
 
-You spawn at walking height on a clear street in a 240 × 240 m playable block, with visible first-person hands. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, hold C or Ctrl to crouch, and press R to respawn. Click and drag on the map with a trackpad or mouse to look around. Double-click the map for mouse lock and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
+You spawn at walking height on a clear street in a 240 × 240 m playable block, with visible first-person hands. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, hold C or Ctrl to crouch, and press R to respawn. Click and drag on the map with a trackpad or mouse to move the view with the pointer. Double-click the map for FPS mouse look and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
 
 Run `npm run build` for a local production build. Run `npm run build:pages` to build with the `/hereafter/` path prefix for GitHub Pages, then `npm run preview:pages` to inspect that build locally.
 

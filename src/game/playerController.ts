@@ -100,8 +100,8 @@ export class PlayerController {
     if (forward || strafe) {
       const heading = this.heading * Math.PI / 180;
       const speed = (this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5) * delta / Math.max(1, Math.hypot(forward, strafe));
-      const changeEast = (Math.sin(heading) * forward + Math.cos(heading) * strafe) * speed;
-      const changeNorth = (Math.cos(heading) * forward - Math.sin(heading) * strafe) * speed;
+      const changeEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * speed;
+      const changeNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * speed;
       this.move(changeEast, changeNorth);
     }
     this.speed = delta > 0 ? Math.hypot(this.east - beforeEast, this.north - beforeNorth) / delta : 0;
@@ -156,9 +156,10 @@ export class PlayerController {
     return this.collision.insideArena(east, north, this.arena, PLAYER_RADIUS) && !this.collision.blocked(east, north, PLAYER_RADIUS);
   }
 
-  private turn(dx: number, dy: number): void {
-    this.heading = (this.heading + dx * 0.18 + 360) % 360;
-    this.pitch = Math.max(-80, Math.min(80, this.pitch - dy * 0.18));
+  private turn(dx: number, dy: number, mode: "drag" | "locked"): void {
+    const direction = mode === "drag" ? 1 : -1;
+    this.heading = (this.heading + dx * 0.18 * direction + 360) % 360;
+    this.pitch = Math.max(-80, Math.min(80, this.pitch + dy * 0.18 * direction));
     this.applyPose();
   }
 
@@ -173,7 +174,7 @@ export class PlayerController {
 
   private onPointerMove = (event: PointerEvent): void => {
     if (!this.dragging || document.pointerLockElement === this.canvas) return;
-    this.turn(event.clientX - this.lastX, event.clientY - this.lastY);
+    this.turn(event.clientX - this.lastX, event.clientY - this.lastY, "drag");
     this.lastX = event.clientX;
     this.lastY = event.clientY;
   };
@@ -187,7 +188,7 @@ export class PlayerController {
   };
 
   private onLockedMouseMove = (event: MouseEvent): void => {
-    if (!this.paused && document.pointerLockElement === this.canvas) this.turn(event.movementX, event.movementY);
+    if (!this.paused && document.pointerLockElement === this.canvas) this.turn(event.movementX, event.movementY, "locked");
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
