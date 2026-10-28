@@ -2,11 +2,11 @@
 
 *Fight where you stand.*
 
-Hereafter is a planned browser-based multiplayer FPS in bounded real-world arenas. The first target is downtown San Jose, California for 2–8 players. The current Phase 1 build is an explorable single-player arena viewer; it has no combat or multiplayer yet.
+Hereafter is a planned browser-based multiplayer FPS in bounded real-world arenas. The first target is downtown San Jose, California for 2–8 players. The current build is a single-player first-person movement preview; it has no combat or multiplayer yet.
 
 The [original handoff](docs/REAL_WORLD_FPS_AGENT_HANDOFF.md) describes the staged game plan. Its Google Photorealistic 3D Tiles approach has been replaced for this first arena with a static open-data build, eliminating per-player map API requests and the Google key. See the [architecture note](docs/architecture.md) and [data sources](docs/data-sources.md).
 
-Open the [live arena viewer](https://kushagrabainsla.github.io/hereafter/).
+Open the [live arena](https://kushagrabainsla.github.io/hereafter/).
 
 ## Run locally
 
@@ -19,7 +19,7 @@ npm run dev
 
 Open the URL printed by Vite. No API key or billing account is needed. The 3D arena asset is bundled with the site. The browser needs WebGPU or WebGL 2; Three.js uses WebGPU when available and falls back to WebGL 2.
 
-The form adjusts the arena center and side length within the bundled San Jose extract. The URL keeps those settings for sharing. Click the map to capture the mouse; use WASD to fly, Q/E to change height, Shift to speed up, and Esc to release the mouse. The camera stays within the selected 300–500 m square.
+You spawn at walking height on a clear street. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and press R to respawn. Click and drag on the map with a trackpad or mouse to look around. Double-click the map for mouse lock and press Esc to release it. The form adjusts the arena center and side length within the bundled San Jose extract; the URL keeps those settings for sharing.
 
 Run `npm run build` for a local production build. Run `npm run build:pages` to build with the `/hereafter/` path prefix for GitHub Pages, then `npm run preview:pages` to inspect that build locally.
 
@@ -32,11 +32,11 @@ The adapted OpenStreetMap data in this asset is offered under the [Open Database
 ## Current limitations
 
 - The arena is geographically based on real roads and building footprints, but uses stylized geometry. Some building heights are inferred where the data has no height tag.
-- The terrain is interpolated from a 5 × 5 USGS height grid. This is adequate for the first viewer, not detailed ground collision.
+- The terrain is interpolated from a 5 × 5 USGS height grid. Walking follows this coarse ground surface.
 - Only the San Jose pilot extract is bundled. A new city needs a new data build and level design.
-- The camera is bounded but can pass through buildings. Physics, shooting, rooms, and host migration belong to later phases.
+- Building footprints, tree trunks, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, shooting, rooms, and host migration belong to later phases.
 - GitHub Pages has [site-size and bandwidth limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits); the current arena is small enough for the intended prototype.
 
 ## Project status
 
-Phase 1 map viewer is runnable. Phase 2 FPS sandbox and later multiplayer phases remain to be built.
+The Phase 1 arena and an initial part of the Phase 2 FPS sandbox are runnable. Combat and multiplayer remain to be built.

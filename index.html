@@ -8,10 +8,12 @@
   </head>
   <body>
     <div id="app">
-      <main id="map" aria-label="3D model of the San Jose prototype arena"></main>
+      <main id="map" aria-label="First-person 3D view of the San Jose prototype arena"></main>
+      <div class="crosshair" aria-hidden="true"></div>
+      <div class="movement-hint" aria-hidden="true">ARROW KEYS / WASD TO WALK <span>·</span> CLICK + DRAG TO LOOK</div>
 
       <section class="panel controls-panel" aria-labelledby="app-title">
-        <div class="eyebrow"><span class="eyebrow-line"></span> Phase 01 / Arena viewer</div>
+        <div class="eyebrow"><span class="eyebrow-line"></span> Phase 01 / Player movement</div>
         <h1 id="app-title">Hereafter<span class="title-dot">.</span></h1>
         <p class="tagline">Fight where you stand.</p>
         <div class="location-card">
@@ -35,7 +37,7 @@
 
         <div class="controls-help">
           <div class="section-heading">Explore <span>Desktop</span></div>
-          <p>Click the map to look around. <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move, <kbd>Q</kbd>/<kbd>E</kbd> change height, <kbd>Shift</kbd> speeds up, <kbd>Esc</kbd> releases the mouse.</p>
+          <p>Walk with the <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> keys or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. Click and drag on the map with your trackpad to look around. Hold <kbd>Shift</kbd> to run, press <kbd>Space</kbd> to jump, or <kbd>R</kbd> to respawn. Double-click for mouse lock; <kbd>Esc</kbd> releases it.</p>
         </div>
       </section>
 
@@ -47,7 +49,7 @@
           <div><dt>Arena</dt><dd id="map-status">Loading</dd></div>
           <div><dt>Renderer</dt><dd id="graphics-status">Checking</dd></div>
           <div><dt>FPS</dt><dd id="fps">—</dd></div>
-          <div><dt>Camera</dt><dd id="camera-coordinates">—</dd></div>
+          <div><dt>Player</dt><dd id="camera-coordinates">—</dd></div>
           <div><dt>Buildings</dt><dd id="building-count">—</dd></div>
           <div><dt>Road segments</dt><dd id="road-count">—</dd></div>
         </dl>
@@ -58,7 +60,7 @@
         <p id="notice-message">Loading open map geometry…</p>
       </div>
 
-      <div class="bottom-label">SAN JOSE PILOT <span>·</span> 400 M STARTING BOUNDS <span>·</span> NO GAMEPLAY YET</div>
+      <div class="bottom-label">SAN JOSE PILOT <span>·</span> 400 M STARTING BOUNDS <span>·</span> MOVEMENT PREVIEW</div>
       <div class="attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a><span>Terrain: USGS 3DEP</span></div>
     </div>
     <script type="module" src="/src/main.ts"></script>

@@ -6,14 +6,14 @@ import {
   WebGPURenderer,
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { CameraControls, type CameraPose } from "./cameraControls";
+import { PlayerController, type PlayerPose } from "../game/playerController";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 
 export type MapState = "loading" | "ready" | "error";
 
 export interface MapMetrics {
   fps: number;
-  camera: CameraPose;
+  player: PlayerPose;
   renderer: string;
   buildings: number;
   roads: number;
@@ -203,12 +203,12 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let boundary = makeBoundary(data, arena);
   scene.add(boundary);
 
-  const camera = new PerspectiveCamera(64, 1, 0.1, 2000);
+  const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
   const renderer = new WebGPURenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   await renderer.init();
   container.appendChild(renderer.domElement);
-  const controls = new CameraControls(camera, renderer.domElement, data, arena);
+  const player = new PlayerController(camera, renderer.domElement, data, arena);
   const rendererName = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? "WebGPU" : "WebGL 2";
   const resize = (): void => {
     const width = Math.max(1, container.clientWidth);
@@ -225,14 +225,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let previousFrame = 0;
   let lastMetrics = performance.now();
   renderer.setAnimationLoop((time) => {
-    controls.update(previousFrame ? (time - previousFrame) / 1000 : 0);
+    player.update(previousFrame ? (time - previousFrame) / 1000 : 0);
     previousFrame = time;
     renderer.render(scene, camera);
     frames += 1;
     if (time - lastMetrics >= 500) {
       events.onMetrics({
         fps: Math.round(frames * 1000 / (time - lastMetrics)),
-        camera: controls.pose(),
+        player: player.pose(),
         renderer: rendererName,
         buildings: data.buildings.length,
         roads: data.roads.length,
@@ -241,11 +241,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       lastMetrics = time;
     }
   });
-  events.onStatus("ready", "San Jose arena loaded. Click the map to explore.");
+  events.onStatus("ready", "San Jose arena loaded. Use arrow keys to move and drag on the map to look around.");
 
   return {
     setArena(nextArena) {
-      controls.reset(nextArena);
+      player.reset(nextArena);
       scene.remove(boundary);
       boundary.traverse((object) => {
         if (object instanceof Mesh || object instanceof LineLoop) {
@@ -260,7 +260,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     destroy() {
       renderer.setAnimationLoop(null);
       observer.disconnect();
-      controls.destroy();
+      player.destroy();
       disposeScene(scene);
       renderer.dispose();
       renderer.domElement.remove();

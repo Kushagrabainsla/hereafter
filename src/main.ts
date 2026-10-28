@@ -50,8 +50,8 @@ void createMapViewer(element("map"), arena, {
     graphicsStatus.textContent = metrics.renderer;
     buildingCount.textContent = String(metrics.buildings);
     roadCount.textContent = String(metrics.roads);
-    const { latitude, longitude, heightAboveGround } = metrics.camera;
-    cameraCoordinates.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)} · ${Math.round(heightAboveGround)} m AGL`;
+    const { latitude, longitude, heading } = metrics.player;
+    cameraCoordinates.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)} · ${Math.round(heading)}°`;
   },
 }).then((created) => {
   viewer = created;
