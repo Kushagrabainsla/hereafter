@@ -1,5 +1,5 @@
 import "./style.css";
-import { arenaFromUrl, arenaUrl, validateArena, type Arena } from "./world/arena";
+import { arenaFromUrl } from "./world/arena";
 import { createMapViewer, type MapViewer, type MapState } from "./world/mapViewer";
 
 function element<T extends HTMLElement>(id: string): T {
@@ -8,73 +8,51 @@ function element<T extends HTMLElement>(id: string): T {
   return found as T;
 }
 
-const form = element<HTMLFormElement>("arena-form");
-const latitudeInput = element<HTMLInputElement>("latitude");
-const longitudeInput = element<HTMLInputElement>("longitude");
-const sizeInput = element<HTMLInputElement>("size");
-const formError = element<HTMLParagraphElement>("form-error");
-const mapStatus = element<HTMLElement>("map-status");
-const graphicsStatus = element<HTMLElement>("graphics-status");
-const fps = element<HTMLElement>("fps");
-const movementState = element<HTMLElement>("movement-state");
-const cameraCoordinates = element<HTMLElement>("camera-coordinates");
-const buildingCount = element<HTMLElement>("building-count");
-const roadCount = element<HTMLElement>("road-count");
+const controlsDialog = element<HTMLDialogElement>("controls-dialog");
+const openControlsButton = element<HTMLButtonElement>("open-controls");
+const closeControlsButton = element<HTMLButtonElement>("close-controls");
+const performanceLabel = element<HTMLElement>("performance");
 const notice = element<HTMLElement>("notice");
 const noticeLabel = element<HTMLElement>("notice-label");
 const noticeMessage = element<HTMLElement>("notice-message");
+let viewer: MapViewer | null = null;
 
 function setStatus(state: MapState, message: string): void {
-  mapStatus.textContent = state === "ready" ? "Ready" : state === "loading" ? "Loading" : "Error";
-  mapStatus.dataset.state = state;
   notice.dataset.state = state;
   notice.hidden = state === "ready";
   noticeLabel.textContent = state === "error" ? "Arena unavailable" : "Preparing arena";
   noticeMessage.textContent = message;
 }
 
-function fillForm(arena: Arena): void {
-  latitudeInput.value = String(arena.latitude);
-  longitudeInput.value = String(arena.longitude);
-  sizeInput.value = String(arena.sizeMeters);
+function openControls(): void {
+  if (controlsDialog.open) return;
+  viewer?.setPaused(true);
+  controlsDialog.showModal();
 }
 
-let arena = arenaFromUrl(window.location.search);
-fillForm(arena);
-let viewer: MapViewer | null = null;
-const initialArena = arena;
+function closeControls(): void {
+  if (controlsDialog.open) controlsDialog.close();
+}
 
-void createMapViewer(element("map"), arena, {
+openControlsButton.addEventListener("click", openControls);
+closeControlsButton.addEventListener("click", closeControls);
+controlsDialog.addEventListener("close", () => viewer?.setPaused(false));
+document.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() !== "h" || event.repeat || event.altKey || event.metaKey || event.ctrlKey) return;
+  event.preventDefault();
+  if (controlsDialog.open) closeControls();
+  else openControls();
+});
+
+void createMapViewer(element("map"), arenaFromUrl(window.location.search), {
   onStatus: setStatus,
   onMetrics(metrics) {
-    fps.textContent = String(metrics.fps);
-    graphicsStatus.textContent = metrics.renderer;
-    buildingCount.textContent = String(metrics.buildings);
-    roadCount.textContent = String(metrics.roads);
-    movementState.textContent = metrics.player.activity;
-    const { latitude, longitude, heading } = metrics.player;
-    cameraCoordinates.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)} · ${Math.round(heading)}°`;
+    performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
   },
 }).then((created) => {
   viewer = created;
-  if (arena !== initialArena) created.setArena(arena);
+  if (controlsDialog.open) viewer.setPaused(true);
 }).catch(() => {
-  setStatus("error", "The arena could not load. Check the bundled data and browser WebGPU or WebGL 2 support, then reload.");
-  graphicsStatus.textContent = "Unavailable";
-});
-
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const nextArena = {
-    latitude: latitudeInput.valueAsNumber,
-    longitude: longitudeInput.valueAsNumber,
-    sizeMeters: sizeInput.valueAsNumber,
-  };
-  const error = validateArena(nextArena);
-  formError.hidden = !error;
-  formError.textContent = error ?? "";
-  if (error) return;
-  arena = nextArena;
-  history.replaceState(null, "", arenaUrl(arena));
-  viewer?.setArena(arena);
+  setStatus("error", "The world could not load. Check browser WebGPU or WebGL 2 support, then reload.");
+  performanceLabel.textContent = "Graphics unavailable";
 });

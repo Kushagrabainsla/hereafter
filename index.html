@@ -4,68 +4,40 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b1723" />
-    <title>Hereafter — San Jose arena</title>
+    <title>Hereafter — San Jose</title>
   </head>
   <body>
     <div id="app">
-      <main id="map" aria-label="First-person 3D view of the San Jose prototype arena"></main>
+      <main id="map" aria-label="First-person view of the San Jose arena"></main>
       <div class="crosshair" aria-hidden="true"></div>
-      <div class="movement-hint" aria-hidden="true">ARROWS / WASD MOVE <span>·</span> DRAG LOOK <span>·</span> SHIFT RUN <span>·</span> SPACE JUMP</div>
 
-      <section class="panel controls-panel" aria-labelledby="app-title">
-        <div class="eyebrow"><span class="eyebrow-line"></span> Phase 01 / Player movement</div>
-        <h1 id="app-title">Hereafter<span class="title-dot">.</span></h1>
-        <p class="tagline">Fight where you stand.</p>
-        <div class="location-card">
-          <span class="location-icon" aria-hidden="true">⌖</span>
-          <div><strong>Downtown San Jose</strong><small>California · Open data pilot</small></div>
-          <span class="location-live">PILOT</span>
+      <div class="brand" aria-label="Hereafter, San Jose"><strong>Hereafter<span>.</span></strong><small>San Jose</small></div>
+      <button id="open-controls" class="help-trigger" type="button" aria-haspopup="dialog" aria-controls="controls-dialog">Press <kbd>H</kbd> for controls</button>
+
+      <dialog id="controls-dialog" class="controls-dialog" aria-labelledby="controls-title">
+        <div class="dialog-header">
+          <div><span class="dialog-eyebrow">How to play</span><h1 id="controls-title">Controls</h1></div>
+          <button id="close-controls" class="close-button" type="button" aria-label="Close controls">×</button>
         </div>
-
-        <details class="settings-panel">
-          <summary>Controls & arena <span aria-hidden="true">⌄</span></summary>
-          <div class="settings-content">
-            <form id="arena-form">
-              <div class="section-heading">Arena bounds <span>01 / 01</span></div>
-              <div class="field-grid">
-                <label>Latitude <input id="latitude" name="latitude" type="number" step="any" required /></label>
-                <label>Longitude <input id="longitude" name="longitude" type="number" step="any" required /></label>
-              </div>
-              <label>Side length <span class="unit">meters</span>
-                <input id="size" name="size" type="number" min="300" max="500" step="10" required />
-              </label>
-              <button class="primary-button" type="submit">Go to arena <span aria-hidden="true">↗</span></button>
-              <p id="form-error" class="form-error" role="alert" hidden></p>
-            </form>
-            <div class="controls-help">
-              <div class="section-heading">Explore <span>Desktop</span></div>
-              <p>Walk with <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. Hold <kbd>Shift</kbd> to run, press <kbd>Space</kbd> to jump, hold <kbd>C</kbd> or <kbd>Ctrl</kbd> to crouch, and press <kbd>R</kbd> to respawn. Click and drag with your trackpad to look. Double-click for mouse lock; <kbd>Esc</kbd> releases it.</p>
-            </div>
-          </div>
-        </details>
-      </section>
-
-      <div class="top-pill"><span class="top-pill-dot"></span> OPEN DATA ARENA <span class="top-pill-divider"></span> NO MAP API FEES</div>
-
-      <details class="panel diagnostics-panel">
-        <summary class="panel-heading"><span id="diagnostics-title">Diagnostics</span><span class="fps-readout"><span id="fps">—</span> FPS</span></summary>
-        <dl>
-          <div><dt>Arena</dt><dd id="map-status">Loading</dd></div>
-          <div><dt>Renderer</dt><dd id="graphics-status">Checking</dd></div>
-          <div><dt>Movement</dt><dd id="movement-state">Idle</dd></div>
-          <div><dt>Player</dt><dd id="camera-coordinates">—</dd></div>
-          <div><dt>Buildings</dt><dd id="building-count">—</dd></div>
-          <div><dt>Road segments</dt><dd id="road-count">—</dd></div>
+        <p class="dialog-intro">Explore San Jose at street level.</p>
+        <dl class="control-list">
+          <div><dt>Move</dt><dd><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
+          <div><dt>Look around</dt><dd>Click and drag on the trackpad</dd></div>
+          <div><dt>Run</dt><dd>Hold <kbd>Shift</kbd></dd></div>
+          <div><dt>Jump</dt><dd><kbd>Space</kbd></dd></div>
+          <div><dt>Crouch</dt><dd>Hold <kbd>C</kbd> or <kbd>Ctrl</kbd></dd></div>
+          <div><dt>Respawn</dt><dd><kbd>R</kbd></dd></div>
+          <div><dt>Mouse lock</dt><dd>Double-click the world; <kbd>Esc</kbd> releases it</dd></div>
         </dl>
-      </details>
+        <p class="dialog-footer"><span>Press <kbd>H</kbd> or <kbd>Esc</kbd> to close</span><span id="performance">Loading graphics…</span></p>
+      </dialog>
 
       <div id="notice" class="notice" role="status" aria-live="polite">
         <span id="notice-label" class="notice-label">Preparing arena</span>
-        <p id="notice-message">Loading open map geometry…</p>
+        <p id="notice-message">Loading the San Jose world…</p>
       </div>
 
-      <div class="bottom-label">SAN JOSE PILOT <span>·</span> 400 M STARTING BOUNDS <span>·</span> MOVEMENT PREVIEW</div>
-      <div class="attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors · ODbL</a><span>Terrain: USGS 3DEP</span><a href="https://polyhaven.com/license" target="_blank" rel="noopener noreferrer">Textures: Poly Haven · CC0</a></div>
+      <div class="attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a><span>Terrain: USGS 3DEP</span><a href="https://polyhaven.com/license" target="_blank" rel="noopener noreferrer">Textures: Poly Haven</a></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

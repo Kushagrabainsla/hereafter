@@ -1,14 +1,6 @@
 import { PerspectiveCamera } from "three/webgpu";
-import { type Arena, type ArenaData, terrainHeight, toCoordinates } from "../world/arena";
+import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
-
-export interface PlayerPose {
-  latitude: number;
-  longitude: number;
-  heightAboveGround: number;
-  heading: number;
-  activity: "Idle" | "Walking" | "Running" | "Jumping" | "Crouching";
-}
 
 export interface PlayerMotion {
   moving: boolean;
@@ -36,6 +28,7 @@ export class PlayerController {
   private moving = false;
   private running = false;
   private crouching = false;
+  private paused = false;
   private keys = new Set<string>();
   private dragging = false;
   private lastX = 0;
@@ -78,16 +71,25 @@ export class PlayerController {
     this.applyPose();
   }
 
-  pose(): PlayerPose {
-    const activity = this.jumpHeight > 0 ? "Jumping" : this.crouching ? "Crouching" : this.running ? "Running" : this.moving ? "Walking" : "Idle";
-    return { ...toCoordinates(this.east, this.north), heightAboveGround: this.eyeHeight + this.jumpHeight, heading: this.heading, activity };
-  }
-
   motion(): PlayerMotion {
     return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: this.jumpHeight > 0, speed: this.speed };
   }
 
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (paused) {
+      this.keys.clear();
+      this.dragging = false;
+      this.speed = 0;
+      this.moving = false;
+      this.running = false;
+      this.crouching = false;
+      if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    }
+  }
+
   update(seconds: number): void {
+    if (this.paused) return;
     const delta = Math.min(seconds, 0.1);
     const forward = Number(this.keys.has("w") || this.keys.has("arrowup")) - Number(this.keys.has("s") || this.keys.has("arrowdown"));
     const strafe = Number(this.keys.has("d") || this.keys.has("arrowright")) - Number(this.keys.has("a") || this.keys.has("arrowleft"));
@@ -161,7 +163,7 @@ export class PlayerController {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || document.pointerLockElement === this.canvas) return;
+    if (this.paused || event.button !== 0 || document.pointerLockElement === this.canvas) return;
     this.canvas.focus();
     this.dragging = true;
     this.lastX = event.clientX;
@@ -185,10 +187,11 @@ export class PlayerController {
   };
 
   private onLockedMouseMove = (event: MouseEvent): void => {
-    if (document.pointerLockElement === this.canvas) this.turn(event.movementX, event.movementY);
+    if (!this.paused && document.pointerLockElement === this.canvas) this.turn(event.movementX, event.movementY);
   };
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    if (this.paused) return;
     const key = event.key.toLowerCase();
     if (!["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " ", "r"].includes(key)) return;
     if (document.activeElement instanceof HTMLInputElement) return;

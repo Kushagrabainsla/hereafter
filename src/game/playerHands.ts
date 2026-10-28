@@ -12,6 +12,10 @@ export class PlayerHands {
   private right: Group;
   private stride = 0;
   private sway = 0;
+  private breath = 0;
+  private airborneBlend = 0;
+  private landing = 0;
+  private wasAirborne = false;
 
   constructor(camera: PerspectiveCamera) {
     const sleeve = new MeshStandardMaterial({ color: 0x294958, roughness: 0.95, depthTest: false, depthWrite: false });
@@ -58,14 +62,21 @@ export class PlayerHands {
 
   update(seconds: number, motion: PlayerMotion): void {
     const delta = Math.min(seconds, 0.1);
+    this.breath += delta;
     const target = motion.moving && !motion.airborne ? 1 : 0;
     this.sway += (target - this.sway) * Math.min(1, delta * 8);
-    if (motion.moving) this.stride += motion.speed * delta * (motion.running ? 2.1 : 1.7);
-    const amplitude = this.sway * (motion.running ? 0.10 : 0.055);
-    const lift = motion.airborne ? 0.075 : motion.crouching ? -0.035 : 0;
-    this.left.position.y = -0.61 + lift + Math.sin(this.stride) * amplitude;
-    this.right.position.y = -0.61 + lift - Math.sin(this.stride) * amplitude;
-    this.left.rotation.z = -0.035 - Math.sin(this.stride) * amplitude * 0.5;
-    this.right.rotation.z = 0.035 + Math.sin(this.stride) * amplitude * 0.5;
+    if (motion.moving) this.stride += motion.speed * delta * (motion.running ? 1.55 : 1.25);
+    if (this.wasAirborne && !motion.airborne) this.landing = 1;
+    this.wasAirborne = motion.airborne;
+    this.landing = Math.max(0, this.landing - delta * 5);
+    this.airborneBlend += ((motion.airborne ? 1 : 0) - this.airborneBlend) * Math.min(1, delta * 10);
+    const amplitude = this.sway * (motion.running ? 0.14 : 0.085);
+    const swing = Math.sin(this.stride) * amplitude;
+    const breathing = Math.sin(this.breath * 1.7) * 0.006;
+    const lift = this.airborneBlend * 0.095 - (motion.crouching ? 0.055 : 0) - this.landing * 0.04;
+    this.left.position.set(-0.42 - swing * 0.08, -0.61 + lift + swing * 0.25 + breathing, -0.86 + swing * 0.7 + this.airborneBlend * 0.045);
+    this.right.position.set(0.42 - swing * 0.08, -0.61 + lift - swing * 0.25 + breathing, -0.86 - swing * 0.7 + this.airborneBlend * 0.045);
+    this.left.rotation.set(-0.08 + swing * 1.3 - this.airborneBlend * 0.2, swing * 0.22, -0.035 - swing * 0.35);
+    this.right.rotation.set(-0.08 - swing * 1.3 - this.airborneBlend * 0.2, -swing * 0.22, 0.035 + swing * 0.35);
   }
 }

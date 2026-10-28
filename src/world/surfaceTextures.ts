@@ -15,7 +15,9 @@ export interface SurfaceTextures {
   brickNormal: Texture;
   roof: Texture;
   bark: Texture;
+  canopy: Texture;
   leaves: Texture;
+  leavesAlpha: Texture;
   dispose: () => void;
 }
 
@@ -24,7 +26,7 @@ function foliageTexture(): CanvasTexture {
   canvas.width = canvas.height = 256;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas textures are unavailable");
-  context.fillStyle = "#789966";
+  context.fillStyle = "#93af79";
   context.fillRect(0, 0, 256, 256);
   let seed = 83;
   const next = (): number => {
@@ -32,7 +34,7 @@ function foliageTexture(): CanvasTexture {
     return seed / 0x100000000;
   };
   for (let index = 0; index < 4000; index += 1) {
-    context.fillStyle = ["#496f4e", "#a8bd83", "#618358", "#c1cb91"][Math.floor(next() * 4)];
+    context.fillStyle = ["#668b5e", "#bfd09b", "#7d9d70", "#d2d8aa"][Math.floor(next() * 4)];
     context.beginPath();
     context.ellipse(next() * 256, next() * 256, 1 + next() * 5, 1 + next() * 3, next() * Math.PI, 0, Math.PI * 2);
     context.fill();
@@ -60,7 +62,7 @@ export async function loadSurfaceTextures(): Promise<SurfaceTextures> {
     texture.anisotropy = 4;
     return texture;
   };
-  const [grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark] = await Promise.all([
+  const [grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, leaves, leavesAlpha] = await Promise.all([
     color("grass_ground", 10),
     color("asphalt_01", 5), normal("asphalt_01", 5),
     color("concrete_pavement_02", 4), normal("concrete_pavement_02", 4),
@@ -68,14 +70,17 @@ export async function loadSurfaceTextures(): Promise<SurfaceTextures> {
     color("concrete_wall_003", 5), normal("concrete_wall_003", 5),
     color("brick_wall_001", 2), normal("brick_wall_001", 2),
     color("grey_roof_tiles", 5), color("bark_platanus", 2),
+    color("tree_leaves", 1), loader.loadAsync(`${import.meta.env.BASE_URL}textures/tree_leaves_alpha.png`),
   ]);
   const ground = grass.clone();
   ground.needsUpdate = true;
-  const leaves = foliageTexture();
-  const textures = [ground, grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, leaves];
+  leaves.repeat.set(0.56, 1);
+  leavesAlpha.repeat.set(0.56, 1);
+  const canopy = foliageTexture();
+  const textures = [ground, grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, roof, bark, canopy, leaves, leavesAlpha];
   return {
     ground, grass, asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal,
-    concrete, concreteNormal, brick, brickNormal, roof, bark, leaves,
+    concrete, concreteNormal, brick, brickNormal, roof, bark, canopy, leaves, leavesAlpha,
     dispose: () => textures.forEach((texture) => texture.dispose()),
   };
 }

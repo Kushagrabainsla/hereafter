@@ -6,7 +6,7 @@ import {
   WebGPURenderer,
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { PlayerController, type PlayerPose } from "../game/playerController";
+import { PlayerController } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
@@ -16,10 +16,7 @@ export type MapState = "loading" | "ready" | "error";
 
 export interface MapMetrics {
   fps: number;
-  player: PlayerPose;
   renderer: string;
-  buildings: number;
-  roads: number;
 }
 
 export interface MapViewerEvents {
@@ -29,6 +26,7 @@ export interface MapViewerEvents {
 
 export interface MapViewer {
   setArena: (arena: Arena) => void;
+  setPaused: (paused: boolean) => void;
   destroy: () => void;
 }
 
@@ -138,6 +136,77 @@ function addRoads(scene: Scene, data: ArenaData, textures: SurfaceTextures): voi
   geometry.setAttribute("position", new Float32BufferAttribute(marks, 3));
   geometry.computeVertexNormals();
   scene.add(new Mesh(geometry, new MeshBasicMaterial({ color: 0xd6d3bc, side: DoubleSide })));
+  const endpointCounts = new Map<string, number>();
+  const roadKey = ([east, north]: Point): string => `${Math.round(east * 2)}:${Math.round(north * 2)}`;
+  for (const road of data.roads) {
+    if (road.width < 8) continue;
+    for (const point of road.points) {
+      const key = roadKey(point);
+      endpointCounts.set(key, (endpointCounts.get(key) ?? 0) + 1);
+    }
+  }
+  const crosswalks: number[] = [];
+  for (const road of data.roads) {
+    if (road.width < 8) continue;
+    for (const endpoint of [0, 1]) {
+      const origin = road.points[endpoint];
+      if ((endpointCounts.get(roadKey(origin)) ?? 0) < 3) continue;
+      const other = road.points[1 - endpoint];
+      const dx = other[0] - origin[0];
+      const dz = other[1] - origin[1];
+      const length = Math.hypot(dx, dz);
+      if (length < 8) continue;
+      const alongEast = dx / length;
+      const alongNorth = dz / length;
+      const acrossEast = -alongNorth;
+      const acrossNorth = alongEast;
+      const centerEast = origin[0] + alongEast * 4.2;
+      const centerNorth = origin[1] + alongNorth * 4.2;
+      const vertex = (along: number, across: number): number[] => {
+        const east = centerEast + alongEast * along + acrossEast * across;
+        const north = centerNorth + alongNorth * along + acrossNorth * across;
+        return [east, terrainHeight(data, east, north) + 0.16, north];
+      };
+      for (let across = -road.width / 2 + 1; across + 0.55 < road.width / 2 - 0.5; across += 1.1) {
+        crosswalks.push(...vertex(-0.8, across), ...vertex(0.8, across), ...vertex(-0.8, across + 0.55));
+        crosswalks.push(...vertex(-0.8, across + 0.55), ...vertex(0.8, across), ...vertex(0.8, across + 0.55));
+      }
+    }
+  }
+  const crosswalkGeometry = new BufferGeometry();
+  crosswalkGeometry.setAttribute("position", new Float32BufferAttribute(crosswalks, 3));
+  scene.add(new Mesh(crosswalkGeometry, new MeshBasicMaterial({ color: 0xe9e5da, side: DoubleSide })));
+  const curbs: { east: number; north: number; length: number; yaw: number }[] = [];
+  for (const road of data.roads) {
+    if (road.width < 8) continue;
+    const [a, b] = road.points;
+    const dx = b[0] - a[0];
+    const dz = b[1] - a[1];
+    const length = Math.hypot(dx, dz);
+    if (length < 4) continue;
+    for (const side of [-1, 1]) {
+      curbs.push({
+        east: (a[0] + b[0]) / 2 - side * dz / length * (road.width / 2 + 0.12),
+        north: (a[1] + b[1]) / 2 + side * dx / length * (road.width / 2 + 0.12),
+        length,
+        yaw: Math.atan2(dx, dz),
+      });
+    }
+  }
+  if (curbs.length > 0) {
+    const curbMesh = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ color: 0xb4b4a9, roughness: 0.94 }), curbs.length);
+    const transform = new Object3D();
+    curbs.forEach((curb, index) => {
+      transform.position.set(curb.east, terrainHeight(data, curb.east, curb.north) + 0.17, curb.north);
+      transform.rotation.set(0, curb.yaw, 0);
+      transform.scale.set(0.24, 0.17, curb.length);
+      transform.updateMatrix();
+      curbMesh.setMatrixAt(index, transform.matrix);
+    });
+    curbMesh.castShadow = true;
+    curbMesh.receiveShadow = true;
+    scene.add(curbMesh);
+  }
 }
 
 function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
@@ -187,13 +256,18 @@ function addBuildings(scene: Scene, data: ArenaData, textures: SurfaceTextures):
   }
 }
 
-function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): void {
-  if (data.trees.length === 0) return;
+function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): (time: number) => void {
+  if (data.trees.length === 0) return () => undefined;
   textures.bark.repeat.set(1, 1);
-  textures.leaves.repeat.set(1, 1);
   const trunks = new InstancedMesh(new CylinderGeometry(0.19, 0.32, 5.7, 8), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length);
   const branches = new InstancedMesh(new CylinderGeometry(0.07, 0.13, 2.7, 6), new MeshStandardMaterial({ map: textures.bark, roughness: 1 }), data.trees.length * 2);
-  const crowns = new InstancedMesh(new SphereGeometry(1, 10, 8), new MeshStandardMaterial({ map: textures.leaves, roughness: 1 }), data.trees.length * 4);
+  const crowns = new InstancedMesh(new SphereGeometry(1, 10, 8), new MeshStandardMaterial({ map: textures.canopy, roughness: 1 }), data.trees.length * 4);
+  const leafCards = new InstancedMesh(
+    new PlaneGeometry(3.1, 2.8),
+    new MeshBasicMaterial({ map: textures.leaves, alphaMap: textures.leavesAlpha, alphaTest: 0.54, side: DoubleSide, depthWrite: true }),
+    data.trees.length * 24,
+  );
+  const cardPositions: { x: number; y: number; z: number; yaw: number; tree: number; scale: number }[] = [];
   const transform = new Object3D();
   data.trees.forEach(([east, north], index) => {
     const ground = terrainHeight(data, east, north);
@@ -214,16 +288,43 @@ function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): voi
       transform.position.set(east + Math.cos(angle) * spread, ground + (cluster === 0 ? 8.3 : 7.1), north + Math.sin(angle) * spread);
       transform.rotation.set(0, angle, 0);
       const variation = 0.85 + ((index * 7 + cluster * 3) % 9) / 30;
-      transform.scale.set(2.2 * variation, 1.8 * variation, 2.1 * variation);
+      transform.scale.set(1.08 * variation, 0.94 * variation, 1.08 * variation);
       transform.updateMatrix();
       crowns.setMatrixAt(index * 4 + cluster, transform.matrix);
       crowns.setColorAt(index * 4 + cluster, new Color([0xb5c9a4, 0x94b398, 0xc4cba0, 0xa2ba9b][(index + cluster) % 4]));
+    }
+    for (let card = 0; card < 24; card += 1) {
+      const layer = Math.floor(card / 8);
+      const angle = card * 2.39996 + index * 0.42;
+      const spread = layer === 0 ? 1.35 : layer === 1 ? 2.2 : 1.6;
+      cardPositions.push({
+        x: east + Math.cos(angle) * spread,
+        y: ground + 6.1 + layer * 1.2 + (card % 3) * 0.18,
+        z: north + Math.sin(angle) * spread,
+        yaw: angle + Math.PI / 2,
+        tree: index,
+        scale: 0.78 + ((index * 3 + card * 7) % 6) / 20,
+      });
     }
   });
   trunks.castShadow = true;
   branches.castShadow = true;
   crowns.castShadow = true;
-  scene.add(trunks, branches, crowns);
+  leafCards.castShadow = true;
+  scene.add(trunks, branches, crowns, leafCards);
+  const update = (time: number): void => {
+    cardPositions.forEach((card, index) => {
+      const wind = Math.sin(time * 0.85 + card.tree * 0.73 + index * 0.17) * 0.07;
+      transform.position.set(card.x + wind, card.y, card.z + wind * 0.5);
+      transform.rotation.set(wind * 0.15, card.yaw + wind * 0.4, wind * 0.22);
+      transform.scale.setScalar(card.scale);
+      transform.updateMatrix();
+      leafCards.setMatrixAt(index, transform.matrix);
+    });
+    leafCards.instanceMatrix.needsUpdate = true;
+  };
+  update(0);
+  return update;
 }
 
 function makeBoundary(data: ArenaData, arena: Arena): Group {
@@ -277,45 +378,36 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const sun = new DirectionalLight(0xffe7c5, 2.5);
   sun.position.set(-180, 300, 130);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -360;
-  sun.shadow.camera.right = 360;
-  sun.shadow.camera.top = 360;
-  sun.shadow.camera.bottom = -360;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -160;
+  sun.shadow.camera.right = 160;
+  sun.shadow.camera.top = 160;
+  sun.shadow.camera.bottom = -160;
   sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 900;
+  sun.shadow.camera.far = 700;
   sun.shadow.bias = -0.0002;
   sun.shadow.normalBias = 0.035;
-  scene.add(sun);
+  scene.add(sun, sun.target);
   addTerrain(scene, data, textures);
   addParks(scene, data, textures);
   addRoads(scene, data, textures);
   addBuildings(scene, data, textures);
   const glassTexture = addBuildingWindows(scene, data);
   addBuildingDoors(scene, data);
-  addTrees(scene, data, textures);
+  const updateTrees = addTrees(scene, data, textures);
   addStreetLights(scene, data);
   let boundary = makeBoundary(data, arena);
   scene.add(boundary);
 
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
   const renderer = new WebGPURenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.3;
   renderer.shadowMap.type = PCFSoftShadowMap;
+  renderer.shadowMap.enabled = true;
   await renderer.init();
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
-  renderer.shadowMap.enabled = isWebGPU;
-  if (!isWebGPU) {
-    scene.traverse((object) => {
-      if (object instanceof InstancedMesh && object.userData.windowDetail) object.count = Math.min(object.count, 1200);
-      if (object instanceof Mesh && object.material instanceof MeshStandardMaterial && object.material.normalMap) {
-        object.material.normalMap = null;
-        object.material.needsUpdate = true;
-      }
-    });
-  }
   container.appendChild(renderer.domElement);
   const player = new PlayerController(camera, renderer.domElement, data, arena);
   scene.add(camera);
@@ -341,6 +433,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
     hands.update(delta, player.motion());
+    updateTrees(time / 1000);
+    sun.target.position.set(camera.position.x, 0, camera.position.z);
+    sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
+    sun.target.updateMatrixWorld();
     previousFrame = time;
     renderer.render(scene, camera);
     frames += 1;
@@ -352,10 +448,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     if (time - lastMetrics >= 500) {
       events.onMetrics({
         fps: Math.round(frames * 1000 / (time - lastMetrics)),
-        player: player.pose(),
         renderer: rendererName,
-        buildings: data.buildings.length,
-        roads: data.roads.length,
       });
       frames = 0;
       lastMetrics = time;
@@ -375,6 +468,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       });
       boundary = makeBoundary(data, nextArena);
       scene.add(boundary);
+    },
+    setPaused(paused) {
+      player.setPaused(paused);
     },
     destroy() {
       renderer.setAnimationLoop(null);

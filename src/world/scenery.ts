@@ -113,8 +113,6 @@ export function addBuildingWindows(scene: Scene, data: ArenaData): CanvasTexture
     new MeshStandardMaterial({ map: glassTexture, roughness: 0.2, metalness: 0.25, emissive: 0x10202a, emissiveIntensity: 0.18, side: DoubleSide }),
     windows.length,
   );
-  frame.userData.windowDetail = true;
-  glass.userData.windowDetail = true;
   const transform = new Object3D();
   const tints = [0xffffff, 0xe5eef4, 0xc7dee4, 0xa7c8d4, 0xf4e6bf];
   windows.forEach((window, index) => {
