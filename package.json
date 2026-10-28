@@ -8,14 +8,16 @@
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && vite build",
     "build:pages": "npm run typecheck && vite build --mode pages",
-    "preview": "vite preview"
+    "build:arena": "node scripts/build-arena.mjs",
+    "preview": "vite preview",
+    "preview:pages": "vite preview --mode pages"
   },
   "dependencies": {
-    "cesium": "^1.146.0"
+    "three": "^0.186.1"
   },
   "devDependencies": {
+    "@types/three": "^0.186.0",
     "typescript": "^5.9.3",
-    "vite": "^8.3.5",
-    "vite-plugin-static-copy": "^4.1.1"
+    "vite": "^8.3.5"
   }
 }

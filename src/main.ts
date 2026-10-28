@@ -1,7 +1,6 @@
-import "cesium/Build/Cesium/Widgets/widgets.css";
 import "./style.css";
 import { arenaFromUrl, arenaUrl, validateArena, type Arena } from "./world/arena";
-import { createMapViewer, type MapViewer, type TileState } from "./world/mapViewer";
+import { createMapViewer, type MapViewer, type MapState } from "./world/mapViewer";
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -14,33 +13,23 @@ const latitudeInput = element<HTMLInputElement>("latitude");
 const longitudeInput = element<HTMLInputElement>("longitude");
 const sizeInput = element<HTMLInputElement>("size");
 const formError = element<HTMLParagraphElement>("form-error");
-const tileStatus = element<HTMLElement>("tile-status");
-const pendingTiles = element<HTMLElement>("pending-tiles");
+const mapStatus = element<HTMLElement>("map-status");
+const graphicsStatus = element<HTMLElement>("graphics-status");
 const fps = element<HTMLElement>("fps");
 const cameraCoordinates = element<HTMLElement>("camera-coordinates");
-const graphicsStatus = element<HTMLElement>("graphics-status");
+const buildingCount = element<HTMLElement>("building-count");
+const roadCount = element<HTMLElement>("road-count");
 const notice = element<HTMLElement>("notice");
 const noticeLabel = element<HTMLElement>("notice-label");
 const noticeMessage = element<HTMLElement>("notice-message");
 
-function setStatus(state: TileState, message: string): void {
-  tileStatus.textContent = state === "ready" ? "Ready" : state === "loading" ? "Loading" : "Error";
-  tileStatus.dataset.state = state;
+function setStatus(state: MapState, message: string): void {
+  mapStatus.textContent = state === "ready" ? "Ready" : state === "loading" ? "Loading" : "Error";
+  mapStatus.dataset.state = state;
   notice.dataset.state = state;
   notice.hidden = state === "ready";
-  noticeLabel.textContent = state === "error" ? "Map unavailable" : "Loading arena";
+  noticeLabel.textContent = state === "error" ? "Arena unavailable" : "Preparing arena";
   noticeMessage.textContent = message;
-}
-
-function webglSupport(): string | null {
-  try {
-    const canvas = document.createElement("canvas");
-    if (canvas.getContext("webgl2")) return "WebGL 2";
-    if (canvas.getContext("webgl")) return "WebGL 1";
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 function fillForm(arena: Arena): void {
@@ -51,31 +40,26 @@ function fillForm(arena: Arena): void {
 
 let arena = arenaFromUrl(window.location.search);
 fillForm(arena);
-const graphics = webglSupport();
-graphicsStatus.textContent = graphics ?? "Unavailable";
-
 let viewer: MapViewer | null = null;
-const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim();
+const initialArena = arena;
 
-if (!graphics) {
-  setStatus("error", "This browser or device does not support WebGL. Enable hardware acceleration or use a modern desktop browser. WebGPU alone cannot run this Cesium viewer.");
-} else if (!apiKey) {
-  setStatus("error", "A Google Map Tiles API key is missing. Copy .env.example to .env, set VITE_GOOGLE_MAPS_API_KEY, then restart the development server.");
-} else {
-  try {
-    viewer = createMapViewer(element("map"), arena, apiKey, {
-      onStatus: setStatus,
-      onMetrics(metrics) {
-        fps.textContent = String(metrics.fps);
-        pendingTiles.textContent = metrics.pendingTiles === null ? "—" : String(metrics.pendingTiles);
-        const { latitude, longitude, height } = metrics.camera;
-        cameraCoordinates.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)} · ${Math.round(height)} m`;
-      },
-    });
-  } catch {
-    setStatus("error", "The 3D viewer could not start. Check browser graphics support and reload the page.");
-  }
-}
+void createMapViewer(element("map"), arena, {
+  onStatus: setStatus,
+  onMetrics(metrics) {
+    fps.textContent = String(metrics.fps);
+    graphicsStatus.textContent = metrics.renderer;
+    buildingCount.textContent = String(metrics.buildings);
+    roadCount.textContent = String(metrics.roads);
+    const { latitude, longitude, heightAboveGround } = metrics.camera;
+    cameraCoordinates.textContent = `${latitude.toFixed(5)}, ${longitude.toFixed(5)} · ${Math.round(heightAboveGround)} m AGL`;
+  },
+}).then((created) => {
+  viewer = created;
+  if (arena !== initialArena) created.setArena(arena);
+}).catch(() => {
+  setStatus("error", "The arena could not load. Check the bundled data and browser WebGPU or WebGL 2 support, then reload.");
+  graphicsStatus.textContent = "Unavailable";
+});
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
