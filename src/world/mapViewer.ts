@@ -7,8 +7,9 @@ import {
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
-import { PlayerController } from "../game/playerController";
+import { PlayerController, type PlayerPose } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
+import { RemotePlayers } from "../game/remotePlayers";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 import { addBuildingDoors, addBuildingWindows, addFacadeTrim, addStorefronts, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
@@ -28,6 +29,11 @@ export interface MapViewerEvents {
 export interface MapViewer {
   setArena: (arena: Arena) => void;
   setPaused: (paused: boolean) => void;
+  playerPose: () => PlayerPose;
+  setSpawnSlot: (slot: number) => void;
+  setRemotePose: (peerId: string, pose: PlayerPose) => void;
+  removeRemotePeer: (peerId: string) => void;
+  clearRemotePeers: () => void;
   destroy: () => void;
 }
 
@@ -440,6 +446,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
   container.appendChild(renderer.domElement);
   const player = new PlayerController(camera, renderer.domElement, data, arena);
+  const remotePlayers = new RemotePlayers(scene, data);
   scene.add(camera);
   const hands = new PlayerHands(camera);
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
@@ -462,6 +469,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   renderer.setAnimationLoop((time) => {
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
+    remotePlayers.update(delta);
     hands.update(delta, player.motion());
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
@@ -488,6 +496,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   return {
     setArena(nextArena) {
       player.reset(nextArena);
+      remotePlayers.clear();
       scene.remove(boundary);
       disposeGroup(boundary);
       boundary = makeBoundary(data, nextArena);
@@ -504,10 +513,26 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setPaused(paused) {
       player.setPaused(paused);
     },
+    playerPose() {
+      return player.pose();
+    },
+    setSpawnSlot(slot) {
+      player.setSpawnSlot(slot);
+    },
+    setRemotePose(peerId, pose) {
+      remotePlayers.setPose(peerId, pose);
+    },
+    removeRemotePeer(peerId) {
+      remotePlayers.remove(peerId);
+    },
+    clearRemotePeers() {
+      remotePlayers.clear();
+    },
     destroy() {
       renderer.setAnimationLoop(null);
       observer.disconnect();
       player.destroy();
+      remotePlayers.clear();
       disposeScene(scene);
       textures.dispose();
       glassTexture.dispose();

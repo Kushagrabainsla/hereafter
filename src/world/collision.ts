@@ -101,11 +101,11 @@ export class CollisionWorld {
     return Math.abs(east - centerEast) <= half && Math.abs(north - centerNorth) <= half;
   }
 
-  findSpawn(arena: Arena): SpawnPoint {
+  findSpawn(arena: Arena, slot = 0): SpawnPoint {
     const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
     const broadRoads = this.data.roads.filter((road) => road.width >= 8);
     const candidates = broadRoads.length ? broadRoads : this.data.roads;
-    let best: { score: number; spawn: SpawnPoint } | null = null;
+    let best: { score: number; spawn: SpawnPoint; alongEast: number; alongNorth: number } | null = null;
     for (const road of candidates) {
       const [a, b] = road.points;
       const east = (a[0] + b[0]) / 2;
@@ -114,10 +114,27 @@ export class CollisionWorld {
       const score = Math.hypot(east - centerEast, north - centerNorth) - road.width * 0.4;
       if (!best || score < best.score) {
         const heading = (Math.atan2(a[0] - east, a[1] - north) * 180 / Math.PI + 360) % 360;
-        best = { score, spawn: { east, north, heading } };
+        const dx = b[0] - a[0];
+        const dz = b[1] - a[1];
+        const length = Math.hypot(dx, dz) || 1;
+        best = { score, spawn: { east, north, heading }, alongEast: dx / length, alongNorth: dz / length };
       }
     }
-    if (best) return best.spawn;
+    if (best) {
+      if (slot <= 0) return best.spawn;
+      const spawns = [best.spawn];
+      for (let step = 1; step <= 12 && spawns.length <= slot; step += 1) {
+        for (const side of [1, -1]) {
+          const east = best.spawn.east + best.alongEast * step * 4 * side;
+          const north = best.spawn.north + best.alongNorth * step * 4 * side;
+          if (!this.insideArena(east, north, arena, 2) || this.blocked(east, north, 0.8)) continue;
+          if (spawns.some((spawn) => Math.hypot(spawn.east - east, spawn.north - north) < 3)) continue;
+          spawns.push({ east, north, heading: best.spawn.heading });
+          if (spawns.length > slot) return spawns[slot];
+        }
+      }
+      return spawns[slot % spawns.length];
+    }
     for (let radius = 0; radius < arena.sizeMeters / 2; radius += 5) {
       for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 8) {
         const east = centerEast + radius * Math.sin(angle);

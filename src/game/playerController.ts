@@ -10,6 +10,17 @@ export interface PlayerMotion {
   speed: number;
 }
 
+export interface PlayerPose {
+  east: number;
+  north: number;
+  heading: number;
+  pitch: number;
+  jumpHeight: number;
+  moving: boolean;
+  running: boolean;
+  crouching: boolean;
+}
+
 const EYE_HEIGHT = 1.72;
 const PLAYER_RADIUS = 0.55;
 
@@ -34,6 +45,7 @@ export class PlayerController {
   private lastX = 0;
   private lastY = 0;
   private collision: CollisionWorld;
+  private spawnSlot = 0;
 
   constructor(private camera: PerspectiveCamera, private canvas: HTMLCanvasElement, private data: ArenaData, arena: Arena) {
     this.arena = arena;
@@ -53,7 +65,7 @@ export class PlayerController {
 
   reset(arena: Arena): void {
     this.arena = arena;
-    const spawn = this.collision.findSpawn(arena);
+    const spawn = this.collision.findSpawn(arena, this.spawnSlot);
     this.east = spawn.east;
     this.north = spawn.north;
     this.heading = spawn.heading;
@@ -73,6 +85,27 @@ export class PlayerController {
 
   motion(): PlayerMotion {
     return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: this.jumpHeight > 0, speed: this.speed };
+  }
+
+  pose(): PlayerPose {
+    return {
+      east: this.east,
+      north: this.north,
+      heading: this.heading,
+      pitch: this.pitch,
+      jumpHeight: this.jumpHeight,
+      moving: this.moving,
+      running: this.running,
+      crouching: this.crouching,
+    };
+  }
+
+  setSpawnSlot(slot: number): void {
+    if (slot === this.spawnSlot) return;
+    const standingAtSpawn = Array.from({ length: 8 }, (_, index) => this.collision.findSpawn(this.arena, index))
+      .some((spawn) => Math.hypot(this.east - spawn.east, this.north - spawn.north) < 1.5);
+    this.spawnSlot = slot;
+    if (standingAtSpawn) this.reset(this.arena);
   }
 
   setPaused(paused: boolean): void {

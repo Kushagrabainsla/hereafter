@@ -2,7 +2,7 @@
 
 *Fight where you stand.*
 
-Hereafter is a planned browser-based multiplayer FPS in bounded real-world arenas. The first target is downtown San Jose, California for 2–8 players. The current build is a single-player first-person movement preview; it has no combat or multiplayer yet.
+Hereafter is a browser-based multiplayer FPS prototype in bounded real-world arenas. The first target is downtown San Jose, California for 2–8 players. The current build has first-person movement and peer-to-peer shared presence; combat is still planned.
 
 The [original handoff](docs/REAL_WORLD_FPS_AGENT_HANDOFF.md) describes the staged game plan. Its Google Photorealistic 3D Tiles approach has been replaced for this first arena with a static open-data build, eliminating per-player map API requests and the Google key. See the [architecture note](docs/architecture.md) and [data sources](docs/data-sources.md).
 
@@ -21,6 +21,12 @@ Open the URL printed by Vite. No API key or billing account is needed. The 3D ar
 
 You spawn at walking height on a clear street in a 240 × 240 m playable block, with visible first-person hands. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, hold C or Ctrl to crouch, and press R to respawn. Click and drag on the map with a trackpad or mouse to move the view with the pointer. Double-click the map for FPS mouse look and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
 
+## Play together
+
+Click **Play together**, create a room, and share the invite link. Another player can open that link to join automatically, or enter the room code manually. Both browsers render the same arena and show each other's position, facing direction, movement, jump, and crouch. Room spawns are spaced apart. The current build has been verified with two browser tabs; the 2–8 player target still needs larger-session testing.
+
+The site remains static on GitHub Pages. [Trystero](https://trystero.dev/) uses public Nostr relays to help browsers find each other, then carries gameplay poses over WebRTC data channels. The public relays require no account or project server for this prototype. Some networks cannot establish a direct connection without a TURN relay; one is not configured yet. A room code is a shareable invite secret, not a user identity system. The prototype currently trusts each peer's movement, so it is unsuitable for competitive matches until match authority and validation are added. See [multiplayer architecture](docs/multiplayer.md).
+
 Run `npm run build` for a local production build. Run `npm run build:pages` to build with the `/hereafter/` path prefix for GitHub Pages, then `npm run preview:pages` to inspect that build locally.
 
 ## Arena data
@@ -36,9 +42,9 @@ The adapted OpenStreetMap data in this asset is offered under the [Open Database
 - The arena is geographically based on real roads and building footprints, but its buildings, windows, trees, and street furniture are still approximations. Some building heights are inferred where the data has no height tag.
 - The terrain is interpolated from a 5 × 5 USGS height grid. Walking follows this coarse ground surface.
 - Only the San Jose pilot extract is bundled. A new city needs a new data build and level design.
-- Building footprints, tree trunks, street furniture, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, shooting, rooms, and host migration belong to later phases.
+- Building footprints, tree trunks, street furniture, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, shooting, match authority, and host migration belong to later phases.
 - GitHub Pages has [site-size and bandwidth limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits); the current arena is small enough for the intended prototype.
 
 ## Project status
 
-The Phase 1 arena and an initial part of the Phase 2 FPS sandbox are runnable. Combat and multiplayer remain to be built.
+The Phase 1 arena, an initial FPS sandbox, and the first multiplayer movement slice are runnable. Combat, authoritative match state, and host migration remain to be built.
