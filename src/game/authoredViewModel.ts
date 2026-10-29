@@ -69,7 +69,7 @@ export class AuthoredViewModel {
     for (const [kind, model] of this.models) model.root.visible = kind === this.active;
     const model = this.models.get(this.active);
     if (!model) return;
-    const desired = motion.moving && !motion.airborne ? motion.running ? "run" : "walk" : "idle";
+    const desired = motion.moving && !motion.airborne && !motion.sliding && !motion.mantling ? motion.running ? "run" : "walk" : "idle";
     const next = model.clips.has(desired) ? desired : "idle";
     if (next !== this.locomotion) {
       model.clips.get(this.locomotion)?.fadeOut(0.15);

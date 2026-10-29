@@ -1,13 +1,15 @@
 import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
-import { PhysicsWorld } from "../world/physics";
+import { PhysicsWorld, type Ledge } from "../world/physics";
 
 export interface PlayerMotion {
   moving: boolean;
   running: boolean;
   crouching: boolean;
   airborne: boolean;
+  sliding: boolean;
+  mantling: boolean;
   speed: number;
 }
 
@@ -20,6 +22,8 @@ export interface PlayerGait {
   jumps: number;
   landings: number;
   landingSpeed: number;
+  slides: number;
+  mantles: number;
 }
 
 export interface PlayerPose {
@@ -31,10 +35,28 @@ export interface PlayerPose {
   moving: boolean;
   running: boolean;
   crouching: boolean;
+  sliding?: boolean;
+  airborne?: boolean;
 }
 
 const EYE_HEIGHT = 1.72;
 const STEP_SECONDS = 1 / 60;
+// A slide starts from a sprint with a burst of speed and bleeds it off over about 0.8 s
+// and 5 m, then waits briefly before another slide can start.
+const SLIDE_BOOST = 1.8;
+const SLIDE_MAX = 10.5;
+const SLIDE_FRICTION = 8.5;
+const SLIDE_END_SPEED = 3.2;
+const SLIDE_LONGEST = 1.3;
+const SLIDE_COOLDOWN = 0.6;
+const SLIDE_ROLL = -0.06;
+
+interface Mantle { fromEast: number; fromNorth: number; fromFeet: number; to: Ledge; elapsed: number; duration: number }
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
 
 export class PlayerController {
   private arena: Arena;
@@ -54,6 +76,18 @@ export class PlayerController {
   private jumps = 0;
   private landings = 0;
   private landingSpeed = 0;
+  private sliding = false;
+  private slideTime = 0;
+  private slideSpeed = 0;
+  private slideEast = 0;
+  private slideNorth = 0;
+  private slideCooldown = 0;
+  private slides = 0;
+  private crouchHeld = false;
+  private sprintHold = 0;
+  private mantle: Mantle | null = null;
+  private mantles = 0;
+  private roll = 0;
   private accumulator = 0;
   private eyeHeight = EYE_HEIGHT;
   private stride = 0;
@@ -104,6 +138,11 @@ export class PlayerController {
     this.coyote = 0.1;
     this.jumpBuffer = 0;
     this.airTime = 0;
+    this.sliding = false;
+    this.slideCooldown = 0;
+    this.sprintHold = 0;
+    this.mantle = null;
+    this.roll = 0;
     this.accumulator = 0;
     this.eyeHeight = EYE_HEIGHT;
     this.stride = 0;
@@ -122,11 +161,17 @@ export class PlayerController {
   }
 
   motion(): PlayerMotion {
-    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded, speed: this.speed };
+    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle, sliding: this.sliding, mantling: this.mantle !== null, speed: this.speed };
+  }
+
+  // Firing drops a sprint; it resumes on its own once the trigger has rested this long.
+  holdSprint(seconds: number): void {
+    this.sprintHold = Math.max(this.sprintHold, seconds);
+    if (this.running) this.running = false;
   }
 
   gait(): PlayerGait {
-    return { stride: this.stride, grounded: this.grounded, aboveGround: this.jumpHeight, jumps: this.jumps, landings: this.landings, landingSpeed: this.landingSpeed };
+    return { stride: this.stride, grounded: this.grounded, aboveGround: this.jumpHeight, jumps: this.jumps, landings: this.landings, landingSpeed: this.landingSpeed, slides: this.slides, mantles: this.mantles };
   }
 
   pose(): PlayerPose {
@@ -139,6 +184,8 @@ export class PlayerController {
       moving: this.moving,
       running: this.running,
       crouching: this.crouching,
+      sliding: this.sliding,
+      airborne: !this.grounded && !this.mantle,
     };
   }
 
@@ -163,6 +210,7 @@ export class PlayerController {
       this.moving = false;
       this.running = false;
       this.crouching = false;
+      this.sliding = false;
       if (document.pointerLockElement === this.canvas) document.exitPointerLock();
     }
   }
@@ -175,10 +223,12 @@ export class PlayerController {
       this.fixedUpdate(STEP_SECONDS);
       this.accumulator -= STEP_SECONDS;
     }
-    this.eyeHeight += ((this.crouching ? 1.12 : EYE_HEIGHT) - this.eyeHeight) * Math.min(1, delta * 10);
-    this.bobAmount += ((this.moving && this.grounded ? 1 : 0) - this.bobAmount) * Math.min(1, delta * 8);
-    if (this.moving) this.stride += this.speed * delta * (this.running ? 2.1 : 1.7);
-    const targetFov = this.running ? 80 : this.crouching ? 72 : 75;
+    const eyeTarget = this.sliding ? 0.98 : this.crouching ? 1.12 : this.mantle ? 1.5 : EYE_HEIGHT;
+    this.eyeHeight += (eyeTarget - this.eyeHeight) * Math.min(1, delta * (this.sliding ? 14 : 10));
+    this.bobAmount += ((this.moving && this.grounded && !this.sliding ? 1 : 0) - this.bobAmount) * Math.min(1, delta * 8);
+    if (this.moving && !this.sliding) this.stride += this.speed * delta * (this.running ? 2.1 : 1.7);
+    this.roll += ((this.sliding ? SLIDE_ROLL : 0) - this.roll) * Math.min(1, delta * 9);
+    const targetFov = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 7);
       this.camera.updateProjectionMatrix();
@@ -187,22 +237,47 @@ export class PlayerController {
   }
 
   private fixedUpdate(delta: number): void {
+    this.slideCooldown = Math.max(0, this.slideCooldown - delta);
+    this.sprintHold = Math.max(0, this.sprintHold - delta);
+    this.jumpBuffer = Math.max(0, this.jumpBuffer - delta);
+    if (this.mantle) { this.stepMantle(delta); return; }
     const forward = Number(this.keys.has("w") || this.keys.has("arrowup")) - Number(this.keys.has("s") || this.keys.has("arrowdown"));
     const strafe = Number(this.keys.has("d") || this.keys.has("arrowright")) - Number(this.keys.has("a") || this.keys.has("arrowleft"));
-    this.crouching = this.physics.setCrouched(this.keys.has("c") || this.keys.has("control"));
-    const wantsRun = this.keys.has("shift") && !this.crouching;
+    const crouchKey = this.keys.has("c") || this.keys.has("control");
+    const crouchPressed = crouchKey && !this.crouchHeld;
+    this.crouchHeld = crouchKey;
+    const heading = this.heading * Math.PI / 180;
+    // Mantle when jumping at a ledge, or when pushing forward into one in the air.
+    if ((this.jumpBuffer > 0 || (!this.grounded && forward > 0 && this.verticalSpeed < 3)) && !this.sliding && this.tryMantle(heading)) return;
+    // Crouching during a sprint starts a slide; letting go, leaving the ground, slowing
+    // down or jumping ends it. A jump keeps the slide's speed.
+    if (crouchPressed && this.running && this.grounded && this.slideCooldown <= 0 && this.speed > 6) this.startSlide();
+    const jumpFromSlide = this.sliding && this.jumpBuffer > 0;
+    if (this.sliding) {
+      this.slideTime += delta;
+      this.slideSpeed = Math.max(0, this.slideSpeed - SLIDE_FRICTION * delta);
+      if (!crouchKey || !this.grounded || this.slideSpeed < SLIDE_END_SPEED || this.slideTime > SLIDE_LONGEST || jumpFromSlide) this.endSlide();
+    }
+    this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
+    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0;
     const beforeEast = this.east;
     const beforeNorth = this.north;
-    const heading = this.heading * Math.PI / 180;
-    const targetSpeed = this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5;
-    const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
-    const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
-    const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;
-    const response = 1 - Math.exp(-delta * (this.grounded ? (forward || strafe ? 14 : 19) : 4));
-    this.velocityEast += (targetEast - this.velocityEast) * response;
-    this.velocityNorth += (targetNorth - this.velocityNorth) * response;
+    if (this.sliding) {
+      // The slide keeps its direction; strafe keys steer it a little.
+      this.velocityEast = this.slideEast * this.slideSpeed - Math.cos(heading) * strafe * 1.2;
+      this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
+    } else if (!jumpFromSlide) {
+      const targetSpeed = this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5;
+      const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
+      const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
+      const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;
+      // In the air, faster-than-input momentum from a sprint or slide jump is kept.
+      const carrying = !this.grounded && Math.hypot(this.velocityEast, this.velocityNorth) > Math.hypot(targetEast, targetNorth) + 0.5;
+      const response = 1 - Math.exp(-delta * (this.grounded ? (forward || strafe ? 14 : 19) : carrying ? 0.8 : 4));
+      this.velocityEast += (targetEast - this.velocityEast) * response;
+      this.velocityNorth += (targetNorth - this.velocityNorth) * response;
+    }
     this.coyote = this.grounded ? 0.11 : Math.max(0, this.coyote - delta);
-    this.jumpBuffer = Math.max(0, this.jumpBuffer - delta);
     if (this.jumpBuffer > 0 && this.coyote > 0 && !this.crouching) {
       this.verticalSpeed = 5.2;
       this.grounded = false;
@@ -226,7 +301,62 @@ export class PlayerController {
     this.jumpHeight = Math.max(0, this.feet - terrainHeight(this.data, this.east, this.north));
     this.speed = delta > 0 ? Math.hypot(this.east - beforeEast, this.north - beforeNorth) / delta : 0;
     this.moving = this.speed > 0.1;
-    this.running = this.moving && wantsRun;
+    this.running = this.moving && wantsRun && !this.sliding;
+    // A slide that runs into a wall stops.
+    if (this.sliding && this.speed < SLIDE_END_SPEED * 0.6 && this.slideTime > 0.1) this.endSlide();
+  }
+
+  private startSlide(): void {
+    const speed = Math.max(0.01, Math.hypot(this.velocityEast, this.velocityNorth));
+    this.slideEast = this.velocityEast / speed;
+    this.slideNorth = this.velocityNorth / speed;
+    this.slideSpeed = Math.min(SLIDE_MAX, Math.max(speed, 8.2) + SLIDE_BOOST);
+    this.slideTime = 0;
+    this.sliding = true;
+    this.slides += 1;
+  }
+
+  private endSlide(): void {
+    this.sliding = false;
+    this.slideCooldown = SLIDE_COOLDOWN;
+  }
+
+  private tryMantle(heading: number): boolean {
+    const ledge = this.physics.findLedge(Math.sin(heading), Math.cos(heading), this.grounded ? undefined : 0.05);
+    // Climbing needs room to stand up first.
+    if (!ledge || this.physics.setCrouched(false)) return false;
+    this.crouching = false;
+    const height = ledge.feet - this.feet;
+    this.mantle = { fromEast: this.east, fromNorth: this.north, fromFeet: this.feet, to: ledge, elapsed: 0, duration: 0.3 + 0.18 * height };
+    this.jumpBuffer = 0;
+    this.velocityEast = 0;
+    this.velocityNorth = 0;
+    this.verticalSpeed = 0;
+    this.mantles += 1;
+    return true;
+  }
+
+  // Rise beside the ledge first, then move over its top, so the body never cuts the edge.
+  private stepMantle(delta: number): void {
+    const mantle = this.mantle!;
+    mantle.elapsed += delta;
+    const progress = Math.min(1, mantle.elapsed / mantle.duration);
+    const rise = 1 - (1 - Math.min(1, progress / 0.55)) ** 2;
+    const advance = smoothstep(0.45, 1, progress);
+    this.east = mantle.fromEast + (mantle.to.east - mantle.fromEast) * advance;
+    this.north = mantle.fromNorth + (mantle.to.north - mantle.fromNorth) * advance;
+    this.feet = mantle.fromFeet + (mantle.to.feet + 0.03 - mantle.fromFeet) * rise;
+    this.physics.place(this.east, this.north, this.feet);
+    this.jumpHeight = Math.max(0, this.feet - terrainHeight(this.data, this.east, this.north));
+    this.speed = 0;
+    this.moving = false;
+    this.running = false;
+    this.grounded = false;
+    if (progress < 1) return;
+    this.mantle = null;
+    this.grounded = true;
+    this.airTime = 0;
+    this.coyote = 0.11;
   }
 
   destroy(): void {
@@ -308,5 +438,6 @@ export class PlayerController {
       this.camera.position.y + Math.sin(pitch),
       this.north + Math.cos(heading) * Math.cos(pitch),
     );
+    if (this.roll) this.camera.rotateZ(this.roll);
   }
 }

@@ -4,7 +4,7 @@ import { gameAudio, type Gait, type Surface, type Vec3 } from "./gameAudio";
 import { type CombatEvent } from "./matchState";
 import { type PlayerGait, type PlayerMotion, type PlayerPose } from "./playerController";
 
-interface RemoteSteps { x: number; z: number; stride: number; height: number }
+interface RemoteSteps { x: number; z: number; stride: number; height: number; sliding: boolean }
 interface RemoteSource { each: (visit: (peerId: string, feet: Vector3, pose: PlayerPose, dead: boolean) => void) => void }
 
 // Distance a remote player covers per footstep, matching the local head-bob cadence.
@@ -19,6 +19,8 @@ export class SoundStage {
   private stepIndex = 0;
   private jumps = 0;
   private landings = 0;
+  private mantles = 0;
+  private sliding = false;
   private remote = new Map<string, RemoteSteps>();
   private forward = new Vector3();
   private up = new Vector3();
@@ -46,24 +48,32 @@ export class SoundStage {
     // The head bob is lowest when stride sits at 3/4 pi past a multiple of pi: one footfall.
     const index = Math.floor((gait.stride - 0.75 * Math.PI) / Math.PI);
     if (index !== this.stepIndex) {
-      if (motion.moving && gait.grounded) gameAudio.step(surface(), motion.running ? "run" : motion.crouching ? "crouch" : "walk", index % 2 ? 1 : -1);
+      if (motion.moving && gait.grounded && !motion.sliding) gameAudio.step(surface(), motion.running ? "run" : motion.crouching ? "crouch" : "walk", index % 2 ? 1 : -1);
       this.stepIndex = index;
     }
     if (gait.jumps !== this.jumps) { this.jumps = gait.jumps; gameAudio.jump(surface()); }
     if (gait.landings !== this.landings) { this.landings = gait.landings; gameAudio.land(gait.landingSpeed, surface()); }
+    if (gait.mantles !== this.mantles) { this.mantles = gait.mantles; gameAudio.mantle(); }
+    if (motion.sliding !== this.sliding) {
+      this.sliding = motion.sliding;
+      if (motion.sliding) gameAudio.slide(surface());
+      else gameAudio.stopSlide();
+    }
     const seen = new Set<string>();
     remotes.each((peerId, feet, pose, dead) => {
       seen.add(peerId);
       let state = this.remote.get(peerId);
-      if (!state) { state = { x: feet.x, z: feet.z, stride: 0, height: pose.jumpHeight }; this.remote.set(peerId, state); }
+      if (!state) { state = { x: feet.x, z: feet.z, stride: 0, height: pose.jumpHeight, sliding: false }; this.remote.set(peerId, state); }
       const moved = Math.hypot(feet.x - state.x, feet.z - state.z);
       state.x = feet.x; state.z = feet.z;
       const chest = { x: feet.x, y: feet.y + 1.1, z: feet.z };
       const at = { x: feet.x, y: feet.y + 0.05, z: feet.z };
       if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) gameAudio.remoteLand(at, this.surfaceAt(feet.x, feet.z, 0));
       state.height = pose.jumpHeight;
+      if (pose.sliding && !state.sliding && !dead) gameAudio.remoteSlide(at, this.surfaceAt(feet.x, feet.z, 0));
+      state.sliding = pose.sliding === true;
       // Respawns and corrections jump several metres in a frame; they are not footsteps.
-      if (dead || moved > 2.5 || !pose.moving || pose.jumpHeight > 0.15) { if (moved > 2.5) state.stride = 0; return; }
+      if (dead || moved > 2.5 || !pose.moving || pose.sliding || pose.jumpHeight > 0.15) { if (moved > 2.5) state.stride = 0; return; }
       const gaitName: Gait = pose.crouching ? "crouch" : pose.running ? "run" : "walk";
       state.stride += moved / STEP_LENGTH[gaitName];
       if (state.stride < 1) return;

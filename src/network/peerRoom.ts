@@ -20,6 +20,9 @@ type PosePacket = {
   moving: boolean;
   running: boolean;
   crouching: boolean;
+  // Added after protocol 2 shipped; older peers omit them and ignore them.
+  sliding?: boolean;
+  airborne?: boolean;
 };
 
 type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
@@ -48,7 +51,8 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && Number.isFinite(packet.heading) && (packet.heading ?? -1) >= 0 && (packet.heading ?? 361) <= 360
     && Number.isFinite(packet.pitch) && Math.abs(packet.pitch ?? Infinity) <= 80
     && Number.isFinite(packet.jumpHeight) && (packet.jumpHeight ?? -1) >= 0 && (packet.jumpHeight ?? 11) <= 2.5
-    && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean";
+    && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean"
+    && (packet.sliding === undefined || typeof packet.sliding === "boolean") && (packet.airborne === undefined || typeof packet.airborne === "boolean");
 }
 
 function validIntent(value: unknown): value is CombatIntent {
@@ -130,6 +134,8 @@ export class PeerRoom {
         moving: value.moving,
         running: value.running,
         crouching: value.crouching,
+        sliding: value.sliding === true,
+        airborne: value.airborne === true,
       };
       this.match.setPose(peerId, pose);
       this.events.onPose(peerId, pose);
@@ -238,6 +244,8 @@ export class PeerRoom {
       moving: pose.moving,
       running: pose.running,
       crouching: pose.crouching,
+      sliding: pose.sliding === true,
+      airborne: pose.airborne === true,
     };
     this.sending = true;
     void this.poseAction.send(packet).catch(() => {

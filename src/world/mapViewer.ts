@@ -16,7 +16,7 @@ import { type CombatEvent } from "../game/matchState";
 import { WeaponVisuals } from "../game/weaponVisuals";
 import { gameAudio } from "../game/gameAudio";
 import { SoundStage } from "../game/soundStage";
-import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
+import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, type WeaponKind } from "../game/combatRules";
 import { loadArenaData, terrainHeight, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 import { addCover } from "./cover";
@@ -36,6 +36,8 @@ export interface MapMetrics {
 export interface MapViewerEvents {
   onStatus: (state: MapState, message: string) => void;
   onMetrics: (metrics: MapMetrics) => void;
+  // Current hip-fire spread as a crosshair gap in CSS pixels; melee is true for the knife.
+  onAim?: (spreadPixels: number, melee: boolean) => void;
 }
 
 export interface MapViewer {
@@ -51,6 +53,7 @@ export interface MapViewer {
   setWeapon: (kind: WeaponKind) => void;
   setTakenPickups: (taken: string[]) => void;
   weaponReady: () => boolean;
+  holdSprint: (seconds: number) => void;
   playAttack: (weapon: WeaponKind) => void;
   startReload: (weapon: WeaponKind, durationMs: number) => void;
   cancelReload: () => void;
@@ -508,6 +511,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let readySent = false;
   let slowSamples = 0;
   let fastSamples = 0;
+  let localBloom = 0;
+  let lastLocalShot = 0;
+  let lastSpread = -1;
   renderer.setAnimationLoop((time) => {
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
@@ -518,6 +524,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch);
     authoredViewModel.update(delta, player.motion(), weaponVisuals.dynamics());
     weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
+    // The crosshair opens with the same spread the leader applies to this player's shots.
+    const motion = player.motion(), active = weaponVisuals.dynamics().active;
+    const spread = spreadDegrees(active, motion, currentBloom(active, localBloom, (performance.now() - lastLocalShot) / 1000));
+    const spreadPixels = Math.tan(spread * Math.PI / 180) * (container.clientHeight / 2) / Math.tan(camera.fov * Math.PI / 360);
+    if (Math.abs(spreadPixels - lastSpread) > 0.25) {
+      lastSpread = spreadPixels;
+      events.onAim?.(spreadPixels, active === "knife");
+    }
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
@@ -604,11 +618,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setTakenPickups(taken) {
       weaponVisuals.setTaken(taken);
     },
-    weaponReady() { return weaponVisuals.ready(); },
+    weaponReady() { return weaponVisuals.ready() && !player.motion().mantling; },
+    holdSprint(seconds) { player.holdSprint(seconds); },
     playAttack(weapon) {
       weaponVisuals.attack();
       authoredViewModel.fire();
       gameAudio.fire(weapon);
+      const now = performance.now();
+      localBloom = bloomAfterShot(weapon, localBloom, (now - lastLocalShot) / 1000);
+      lastLocalShot = now;
       if (weapon !== "knife") player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
     },
     startReload(weapon, durationMs) {

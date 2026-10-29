@@ -58,7 +58,11 @@ let match: MatchState | null = null;
 let lastEventId = 0;
 let lastLocalAttack = 0;
 let lastDryFire = 0;
+let pendingShot = 0;
 let triggerHeld = false;
+// Time to bring a weapon up out of a sprint before it fires.
+const SPRINT_OUT_MS: Record<WeaponKind, number> = { knife: 60, pistol: 140, rifle: 220 };
+const crosshair = document.querySelector<HTMLElement>(".crosshair");
 const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: number; health: number }>();
 // Browsers only start audio from a user gesture; every gesture retries until it runs.
 for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(type, () => gameAudio.unlock(), { capture: true, passive: true });
@@ -227,8 +231,15 @@ function attack(): void {
   if (!viewer || !match || controlsDialog.open || roomDialog.open) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
-  if (viewer.playerPose().running) { toast("Release sprint to fire"); return; }
   const weapon = player.active;
+  // Firing drops a sprint; the shot follows once the weapon is up. Each attack keeps the
+  // sprint held off briefly, so a held trigger walks and a released one runs again.
+  const sprinting = viewer.playerPose().running;
+  viewer.holdSprint(0.35);
+  if (sprinting || pendingShot) {
+    if (!pendingShot) pendingShot = window.setTimeout(() => { pendingShot = 0; attack(); }, SPRINT_OUT_MS[weapon]);
+    return;
+  }
   const now = Date.now();
   if (now - lastLocalAttack < WEAPONS[weapon].cooldownMs || player.reloadUntil > now) return;
   if (weapon !== "knife" && player.ammo[weapon] <= 0) {
@@ -387,6 +398,10 @@ window.addEventListener("beforeunload", () => { void peerRoom?.leave(); });
 
 void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
+  onAim(spreadPixels, melee) {
+    crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
+    crosshair?.classList.toggle("melee", melee);
+  },
   onMetrics(metrics) {
     performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
     performanceLabel.title = `${metrics.drawCalls} draw calls · ${metrics.triangles.toLocaleString()} triangles · ${metrics.pixelRatio.toFixed(2)}× resolution`;

@@ -71,6 +71,7 @@ export class GameAudio {
   private listenerAt: Vec3 = { x: 0, y: 0, z: 0 };
   private spatialVoices: { source: AudioBufferSourceNode; priority: "high" | "low" }[] = [];
   private localReload: AudioBufferSourceNode | null = null;
+  private slideVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   private down = false;
   private muted = readMuted();
   occlusion: (from: Vec3, to: Vec3) => boolean = () => false;
@@ -186,6 +187,32 @@ export class GameAudio {
     this.play(surface === "hard" ? "step-hard" : "step-soft", { gain: 0.17 * strength, pan: 0.12, when: now + 0.03 });
   }
 
+  // Sliding: a scrape that dulls and fades as the slide bleeds off speed.
+  slide(surface: Surface): void {
+    this.stopSlide();
+    this.play("cloth", { gain: 0.1, rate: 1.1 });
+    this.slideVoice = this.scrape(surface, 0.17);
+  }
+
+  stopSlide(): void {
+    const voice = this.slideVoice, context = this.context;
+    this.slideVoice = null;
+    if (!voice || !context) return;
+    const now = context.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    voice.source.stop(now + 0.1);
+  }
+
+  // Mantling: hands grab the ledge, clothing drags, a foot plants on top.
+  mantle(): void {
+    const now = this.time();
+    this.play("grab", { gain: 0.16, when: now });
+    this.play("cloth", { gain: 0.12, when: now + 0.1, rate: 0.9 });
+    this.play("step-hard", { gain: 0.13, when: now + 0.38, rate: 0.9 });
+  }
+
   // HUD confirmation: a short tick for a hit, a metallic ring for a headshot, and a
   // heavier thunk with a bright ring for an elimination.
   hitConfirm(headshot: boolean, kill: boolean): void {
@@ -242,6 +269,11 @@ export class GameAudio {
   remoteLand(at: Vec3, surface: Surface): void {
     this.spatial("land", at, { gain: 0.4, ref: 2, rolloff: 1.5 });
     this.spatial(surface === "hard" ? "step-hard" : "step-soft", at, { gain: 0.3, ref: 2, rolloff: 1.5 });
+  }
+
+  remoteSlide(at: Vec3, surface: Surface): void {
+    if (this.distanceTo(at) > 35) return;
+    this.scrape(surface, 0.4, at);
   }
 
   remoteReload(weapon: WeaponKind, at: Vec3): void {
@@ -474,6 +506,30 @@ export class GameAudio {
       oscillator.start(start);
       oscillator.stop(start + decay * 6 + 0.02);
     });
+  }
+
+  // Looping noise, band-passed for concrete grit or low-passed for grass, decaying over
+  // the length of a slide. Played at the listener, or positioned for another player.
+  private scrape(surface: Surface, level: number, at?: Vec3): { source: AudioBufferSourceNode; gain: GainNode } | null {
+    const context = this.live();
+    if (!context || !this.noise) return null;
+    const now = context.currentTime;
+    const source = new AudioBufferSourceNode(context, { buffer: this.noise, loop: true });
+    const hard = surface === "hard";
+    const filter = new BiquadFilterNode(context, { type: hard ? "bandpass" : "lowpass", frequency: hard ? 1500 : 750, Q: hard ? 0.9 : 0.6 });
+    filter.frequency.setValueAtTime(hard ? 1500 : 750, now);
+    filter.frequency.exponentialRampToValueAtTime(hard ? 700 : 420, now + 0.85);
+    const gain = new GainNode(context, { gain: 0 });
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(level, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(level * 0.25, now + 0.85);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.3);
+    source.connect(filter).connect(gain);
+    if (at) gain.connect(this.panner(at, 2, 1.6)).connect(this.mix);
+    else gain.connect(this.mix);
+    source.start(now, Math.random() * 0.5);
+    source.stop(now + 1.35);
+    return { source, gain };
   }
 
   // Knife swing: band-passed noise swept up then down, moving right to left for the

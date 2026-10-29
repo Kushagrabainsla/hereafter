@@ -1,6 +1,6 @@
 import { type Arena, type ArenaData } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
-import { hitDistance, targetHit, damageAt, shotRay, makeWeaponPickups, WEAPONS, type HitZone, type ShotClear, type WeaponKind, type WeaponPickup } from "./combatRules";
+import { hitDistance, targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, WEAPONS, type HitZone, type ShotClear, type WeaponKind, type WeaponPickup } from "./combatRules";
 import { type ShotRay } from "../world/physics";
 import { type PlayerPose } from "./playerController";
 
@@ -73,6 +73,7 @@ export class MatchState {
   private poseTimes = new Map<string, number>();
   private equipUntil = new Map<string, number>();
   private lastAttack = new Map<string, number>();
+  private bloom = new Map<string, number>();
 
   constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void, private shotClear?: ShotClear, private traceShot?: (ray: ShotRay) => number) {
     this.collision = new CollisionWorld(data);
@@ -84,6 +85,7 @@ export class MatchState {
     this.poses.clear();
     this.poseTimes.clear();
     this.lastAttack.clear();
+    this.bloom.clear();
     this.equipUntil.clear();
     this.onChange(this.snapshot);
   }
@@ -177,8 +179,13 @@ export class MatchState {
       const pose = this.poses.get(actor);
       const aim = intent.aim;
       if (aim && (!Number.isFinite(aim.heading) || !Number.isFinite(aim.pitch) || Math.abs(aim.pitch) > 80)) return false;
-      const origin = pose && { ...pose, ...(aim ?? {}) };
-      if (!origin || now - (this.poseTimes.get(actor) ?? 0) > 1500 || origin.running) return false;
+      if (!pose || now - (this.poseTimes.get(actor) ?? 0) > 1500 || pose.running) return false;
+      // Spread follows how the shooter was moving and how fast they have been firing.
+      const sinceLast = (now - (this.lastAttack.get(actor) ?? 0)) / 1000;
+      const bloom = currentBloom(weapon, this.bloom.get(actor) ?? 0, sinceLast);
+      const spread = spreadDegrees(weapon, { moving: pose.moving, crouching: pose.crouching, airborne: !!pose.airborne, sliding: !!pose.sliding }, bloom);
+      this.bloom.set(actor, bloomAfterShot(weapon, this.bloom.get(actor) ?? 0, sinceLast));
+      const origin = { ...pose, ...deviateAim(aim ?? pose, spread) };
       this.lastAttack.set(actor, now);
       if (weapon !== "knife") player.ammo[weapon] -= 1;
       const ray = shotRay(this.data, origin, weapon);

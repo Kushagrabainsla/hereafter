@@ -12,10 +12,19 @@ button { font: inherit; }
 #map { position: absolute; inset: 0; background: #87aec4; }
 #map canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
-.crosshair { position: absolute; z-index: 2; top: 50%; left: 50%; width: 16px; height: 16px; transform: translate(-50%, -50%); pointer-events: none; }
-.crosshair::before, .crosshair::after { content: ""; position: absolute; top: 50%; left: 50%; background: #f1fbfc; box-shadow: 0 0 5px #17313c; border-radius: 2px; }
-.crosshair::before { width: 16px; height: 2px; transform: translate(-50%, -50%); }
-.crosshair::after { width: 2px; height: 16px; transform: translate(-50%, -50%); }
+/* Crosshair: four ticks whose gap shows the current hip-fire spread, set from the game
+   loop as --gap, around a centre dot. The knife shows a closed cross. */
+.crosshair { --gap: 3px; position: absolute; z-index: 2; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
+.crosshair i, .crosshair b { position: absolute; background: #f1fbfc; box-shadow: 0 0 3px rgba(10, 30, 40, .9); border-radius: 1px; }
+.crosshair i { transition: transform .06s linear; }
+.crosshair i:nth-child(1), .crosshair i:nth-child(2) { top: -1px; width: 7px; height: 2px; }
+.crosshair i:nth-child(3), .crosshair i:nth-child(4) { left: -1px; width: 2px; height: 7px; }
+.crosshair i:nth-child(1) { right: 0; transform: translateX(calc(-1 * var(--gap))); }
+.crosshair i:nth-child(2) { left: 0; transform: translateX(var(--gap)); }
+.crosshair i:nth-child(3) { bottom: 0; transform: translateY(calc(-1 * var(--gap))); }
+.crosshair i:nth-child(4) { top: 0; transform: translateY(var(--gap)); }
+.crosshair b { top: -1px; left: -1px; width: 2px; height: 2px; border-radius: 50%; }
+.crosshair.melee i { transform: none; }
 /* Hit marker: four strokes around the crosshair. White for a hit, amber for a headshot,
    red and larger for an elimination. */
 .hit-marker { --marker: #f6fbff; position: absolute; z-index: 4; top: 50%; left: 50%; width: 38px; height: 38px; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; }

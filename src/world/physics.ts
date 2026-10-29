@@ -6,12 +6,23 @@ const RADIUS = 0.3;
 const STANDING_HALF_HEIGHT = 0.58;
 const CROUCHED_HALF_HEIGHT = 0.28;
 const STEP_SECONDS = 1 / 60;
+// Ledges between these heights above the feet can be mantled. Lower ones are stepped over
+// or jumped; the 1.12 m concrete cover is above the 0.97 m jump apex, so it needs a mantle.
+const MIN_MANTLE = 0.45;
+const MAX_MANTLE = 1.6;
+const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 
 export interface CharacterStep {
   east: number;
   north: number;
   feet: number;
   grounded: boolean;
+}
+
+export interface Ledge {
+  east: number;
+  north: number;
+  feet: number;
 }
 
 export interface ShotRay {
@@ -161,6 +172,43 @@ export class PhysicsWorld {
     this.body.setNextKinematicTranslation({ x: current.x + movement.x, y: current.y + movement.y, z: current.z + movement.z });
     this.world.step();
     return this.position(this.controller.computedGrounded());
+  }
+
+  // A ledge in the given horizontal direction the standing character can climb onto:
+  // something blocks the way at knee or waist height within reach, its top lies at mantle
+  // height, the standing capsule fits on top, and nothing overhead stops the climb. In the
+  // air, minHeight drops so a jump that reaches a ledge's edge can still catch it.
+  findLedge(directionEast: number, directionNorth: number, minHeight = MIN_MANTLE): Ledge | null {
+    const position = this.body.translation();
+    const feet = position.y - this.halfHeight - RADIUS;
+    const direction = { x: directionEast, y: 0, z: directionNorth };
+    const probe = (height: number) => this.world.castRay(new RAPIER.Ray({ x: position.x, y: feet + height, z: position.z }, direction), RADIUS + 0.65, true, undefined, undefined, this.collider);
+    const face = probe(0.25) ?? probe(0.7);
+    if (!face) return null;
+    const standing = new RAPIER.Capsule(STANDING_HALF_HEIGHT, RADIUS);
+    const above = feet + MAX_MANTLE + 0.25;
+    for (const extra of [0.32, 0.5, 0.68]) {
+      const east = position.x + directionEast * (face.timeOfImpact + extra);
+      const north = position.z + directionNorth * (face.timeOfImpact + extra);
+      const down = this.world.castRay(new RAPIER.Ray({ x: east, y: above, z: north }, { x: 0, y: -1, z: 0 }), MAX_MANTLE + 0.25 - minHeight, true, undefined, undefined, this.collider);
+      // A ray that starts inside a wall or tree hits at once: too tall to climb.
+      if (!down || down.timeOfImpact < 0.02) continue;
+      const surface = above - down.timeOfImpact;
+      if (surface - feet > MAX_MANTLE) continue;
+      const top = { x: east, y: surface + STANDING_HALF_HEIGHT + RADIUS + 0.03, z: north };
+      const raised = { x: position.x, y: top.y, z: position.z };
+      if (this.world.intersectionWithShape(top, IDENTITY, standing, undefined, undefined, this.collider)) continue;
+      if (this.world.intersectionWithShape(raised, IDENTITY, standing, undefined, undefined, this.collider)) continue;
+      if (this.world.castRay(new RAPIER.Ray({ x: position.x, y: surface + 0.3, z: position.z }, direction), face.timeOfImpact + extra, true, undefined, undefined, this.collider)) continue;
+      return { east, north, feet: surface };
+    }
+    return null;
+  }
+
+  // Move the character directly, for mantling: no collision response along the way.
+  place(east: number, north: number, feet: number): void {
+    this.body.setTranslation({ x: east, y: feet + this.halfHeight + RADIUS, z: north }, true);
+    this.world.propagateModifiedBodyPositionsToColliders();
   }
 
   traceShot({ origin, direction, distance }: ShotRay): number {
