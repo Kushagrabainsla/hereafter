@@ -8,6 +8,9 @@ The game plays recorded CC0 sound for guns, reloads, handling, footsteps and imp
 - **Handling.** Switching plays a holster rustle, then a knife draw or a grab and ready click, timed to the 560 ms lower-and-raise. Reloads play a magazine change and slide or charging-handle recording cut to the 1.2 s and 1.7 s reload times. While it plays, the weapon cants and kicks as the magazine seats and the action closes. Picking up a weapon plays a grab and a magazine seat, and an empty gun clicks.
 - **Movement.** Footsteps follow the head bob, one per low point, alternating slightly left and right. Roads and pavements sound like concrete; open ground and parks sound like grass. Jumps and landings scale with fall speed.
 - **Other players.** Their shots, footsteps, landings, reloads and pickups come from where they are. A shot within 14 m uses the close recording; further away it uses a mid-distance recording with its own street echo. A round that passes within 3 m of your head adds a supersonic crack and whiz from where it passed. Bullets striking cover within 45 m make a stone impact, and hits on other players thud at the target.
+- **Bullets striking things.** Concrete and ground crack and chip, metal rings, wood thunks, glass ticks and cardboard or plastic thump, each positioned where the round struck. Glass shatters, crates splinter and concrete crumbles when they break.
+- **Grenades.** A pin click and swing when thrown, clinks as it bounces, and a synthesised explosion: a sharp crack, a roaring low-passed body and a sub-bass drop with a long street echo. Distant blasts lose the crack and keep the rumble.
+- **Movement extras.** Boots on steel rungs when climbing a ladder.
 - **Being hit.** A body blow and low thump with a brief muffling of the whole mix; elimination keeps the mix muffled until you respawn.
 - **Confirmation.** A short high tick for a hit, a metallic ring added for a headshot, and a heavier thunk with a bright ring for an elimination.
 

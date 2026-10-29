@@ -107,9 +107,13 @@ function visibleBetween(collision: CollisionWorld, from: PlayerPose, target: Pla
 export type HitZone = "head" | "torso" | "legs";
 export interface TargetHit { distance: number; zone: HitZone; }
 
+// How far a full lean moves the eyes sideways, and the head and chest with them.
+export const LEAN_OFFSET = 0.32;
+
 export function shotRay(data: ArenaData, pose: PlayerPose, weapon: WeaponKind): ShotRay {
-  const yaw = pose.heading * Math.PI / 180, pitch = pose.pitch * Math.PI / 180;
-  return { origin: { x: pose.east, y: terrainHeight(data, pose.east, pose.north) + (pose.crouching ? 1.12 : 1.72) + pose.jumpHeight, z: pose.north },
+  const yaw = pose.heading * Math.PI / 180, pitch = pose.pitch * Math.PI / 180, lean = pose.lean ?? 0;
+  // Screen right for heading h is (-cos h, sin h) in east/north.
+  return { origin: { x: pose.east - Math.cos(yaw) * lean * LEAN_OFFSET, y: terrainHeight(data, pose.east, pose.north) + (pose.crouching ? 1.12 : 1.72) + pose.jumpHeight - Math.abs(lean) * 0.04, z: pose.north + Math.sin(yaw) * lean * LEAN_OFFSET },
     direction: { x: Math.sin(yaw) * Math.cos(pitch), y: Math.sin(pitch), z: Math.cos(yaw) * Math.cos(pitch) }, distance: WEAPONS[weapon].range };
 }
 
@@ -121,12 +125,15 @@ export function targetHit(data: ArenaData, attacker: PlayerPose, target: PlayerP
   const origin = [c*x-s*z, ray.origin.y-terrainHeight(data,target.east,target.north)-target.jumpHeight, s*x+c*z];
   const direction = [c*ray.direction.x-s*ray.direction.z, ray.direction.y, s*ray.direction.x+c*ray.direction.z];
   const scale = target.crouching ? 0.72 : 1;
-  const zones: [HitZone, number, number, number, number][] = [["head", 1.45, 1.98, 0.205, 0.205], ["torso", 0.73, 1.45, 0.29, 0.24], ["legs", 0.02, 0.73, 0.24, 0.19]];
+  // A leaning target's head and chest move toward its right, which is local -x here.
+  const lean = target.lean ?? 0;
+  const zones: [HitZone, number, number, number, number, number][] = [["head", 1.45, 1.98, 0.205, 0.205, LEAN_OFFSET], ["torso", 0.73, 1.45, 0.29, 0.24, LEAN_OFFSET * 0.5], ["legs", 0.02, 0.73, 0.24, 0.19, 0]];
   let closest: TargetHit | null = null;
-  for (const [zone, low, high, width, depth] of zones) {
+  for (const [zone, low, high, width, depth, shift] of zones) {
     const padding = weapon === "knife" ? 0.18 : 0;
-    const min = [-width-padding, low*scale-padding, -depth-padding];
-    const max = [width+padding, high*scale+padding, depth+padding];
+    const offset = -lean * shift;
+    const min = [offset-width-padding, low*scale-padding, -depth-padding];
+    const max = [offset+width+padding, high*scale+padding, depth+padding];
     let near = 0, far = ray.distance;
     for (let axis = 0; axis < 3; axis++) {
       if (Math.abs(direction[axis]) < 1e-8) {

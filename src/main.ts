@@ -47,6 +47,8 @@ const hitMarker = element<HTMLElement>("hit-marker");
 const damageDirection = element<HTMLElement>("damage-direction");
 const killBanner = element<HTMLElement>("kill-banner");
 const killDetail = element<HTMLElement>("kill-detail");
+const grenadeCount = element<HTMLElement>("grenade-count");
+const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall" };
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const notice = element<HTMLElement>("notice");
@@ -138,21 +140,22 @@ function showDamageDirection(from: { x: number; z: number }): void {
 }
 
 function showElimination(event: CombatEvent): void {
-  const details = [event.zone === "head" ? "Headshot" : "", event.weapon ? WEAPONS[event.weapon].label : "", event.shot ? `${Math.max(1, Math.round(event.shot.distance))} m` : ""];
+  const distance = event.from && viewer ? Math.hypot(event.from.x - (viewer.remotePosition(event.target!)?.x ?? event.from.x), event.from.z - (viewer.remotePosition(event.target!)?.z ?? event.from.z)) : 0;
+  const details = [event.zone === "head" ? "Headshot" : "", CAUSE_LABEL[event.cause ?? ""] ?? "", distance >= 0.5 ? `${Math.max(1, Math.round(distance))} m` : ""];
   killDetail.textContent = details.filter(Boolean).join(" · ");
   replay(killBanner);
   replay(scoreLabel);
 }
 
 // Weapon switches and reload starts arrive as state changes rather than events.
-function cueStateChanges(state: CombatSnapshot, newEvent: CombatEvent | null): void {
+function cueStateChanges(state: CombatSnapshot, fresh: CombatEvent[]): void {
   for (const [peerId, player] of Object.entries(state.players)) {
     const before = previousPlayers.get(peerId);
     previousPlayers.set(peerId, { active: player.active, reloadUntil: player.reloadUntil, health: player.health });
     if (!before) continue;
     const reloadStarted = player.health > 0 && player.reloadUntil > 0 && player.reloadUntil !== before.reloadUntil;
     if (peerId === selfId) {
-      const pickedUp = newEvent?.kind === "pickup" && newEvent.actor === selfId;
+      const pickedUp = fresh.some((event) => event.kind === "pickup" && event.actor === selfId);
       if (player.active !== before.active && !pickedUp && player.health > 0) gameAudio.switchWeapon(player.active);
       if (reloadStarted) viewer?.startReload(player.active, WEAPONS[player.active].reloadMs);
       if (player.health <= 0 && before.health > 0) viewer?.cancelReload();
@@ -179,35 +182,58 @@ function onMatchChange(state: CombatSnapshot): void {
     viewer?.setRemoteWeapon(peerId, remote.active);
   }
   deathOverlay.hidden = player.health > 0;
+  viewer?.setLocalDead(player.health <= 0);
   if (wasDead && player.health > 0) viewer?.respawn();
   syncPause();
   gameAudio.setDown(player.health <= 0);
-  const event = state.event && state.event.id !== lastEventId ? state.event : null;
-  cueStateChanges(state, event);
-  if (event) {
+  grenadeCount.textContent = player.grenades ? "● ".repeat(player.grenades).trim() : "—";
+  viewer?.setEntityHealth(state.entities);
+  // A peer joining a running room receives a backlog of events; it starts from the newest.
+  if (lastEventId === 0 && state.eventSeq > 3) lastEventId = state.eventSeq;
+  const fresh = state.events.filter((event) => event.id > lastEventId);
+  cueStateChanges(state, fresh);
+  for (const event of fresh) {
     lastEventId = event.id;
-    if (event.shot) viewer?.showShot(event, event.actor === selfId);
-    viewer?.combatSound(event, selfId);
-    if ((event.kind === "hit" || event.kind === "death") && event.actor === selfId && event.target !== selfId) {
-      const headshot = event.zone === "head", kill = event.kind === "death";
-      damageReadout.textContent = `${headshot ? "HEADSHOT · " : ""}${event.damage ?? 0}`;
-      damageReadout.classList.toggle("headshot", headshot);
-      pulse(damageReadout, 700);
-      replay(hitMarker, ...(headshot ? ["headshot"] : []), ...(kill ? ["kill"] : []));
-      gameAudio.hitConfirm(headshot, kill);
-      if (kill) showElimination(event);
-    }
-    if (event.kind === "pickup" && event.actor === selfId && event.weapon) {
-      toast(`${WEAPONS[event.weapon].label} equipped`);
-      gameAudio.pickup();
-    }
-    if ((event.kind === "hit" || event.kind === "death") && event.target === selfId) {
-      pulse(damageFlash, 420);
-      gameAudio.hurt(event.damage ?? 0, event.kind === "death");
-      if (event.shot) showDamageDirection(event.shot.origin);
-    }
-    if (event.kind === "death" && event.target === selfId) toast("You were eliminated");
+    playEvent(event);
   }
+}
+
+function playEvent(event: CombatEvent): void {
+  if (event.kind === "shot" && event.shot) viewer?.showShot(event, event.actor === selfId);
+  viewer?.playEvent(event, selfId);
+  const damaging = event.kind === "hit" || event.kind === "death";
+  if (damaging && event.actor === selfId && event.target !== selfId) {
+    const headshot = event.zone === "head", kill = event.kind === "death";
+    damageReadout.textContent = `${headshot ? "HEADSHOT · " : ""}${event.damage ?? 0}`;
+    damageReadout.classList.toggle("headshot", headshot);
+    pulse(damageReadout, 700);
+    replay(hitMarker, ...(headshot ? ["headshot"] : []), ...(kill ? ["kill"] : []));
+    gameAudio.hitConfirm(headshot, kill);
+    if (kill) showElimination(event);
+  }
+  if (damaging && event.target && event.target !== selfId) viewer?.remoteFlinch(event.target, event.damage ?? 0);
+  if (event.kind === "pickup" && event.actor === selfId && event.weapon) {
+    toast(`${WEAPONS[event.weapon].label} equipped`);
+    gameAudio.pickup();
+  }
+  if (damaging && event.target === selfId) {
+    pulse(damageFlash, 420);
+    gameAudio.hurt(event.damage ?? 0, event.kind === "death");
+    viewer?.flinch(event.damage ?? 0);
+    if (event.from && event.cause !== "fall") showDamageDirection(event.from);
+  }
+  if (event.kind === "death" && event.target === selfId) toast(event.cause === "fall" ? "You fell too far" : event.cause === "grenade" && event.actor === selfId ? "Caught in your own blast" : "You were eliminated");
+}
+
+function throwGrenade(): void {
+  if (!viewer || !match || controlsDialog.open || roomDialog.open) return;
+  const player = match.player(selfId);
+  if (!player || player.health <= 0 || !viewer.weaponReady()) return;
+  if (player.grenades <= 0) { toast("No grenades left"); return; }
+  viewer.holdSprint(0.5);
+  viewer.quickThrow();
+  const { heading, pitch } = viewer.playerPose();
+  submit({ kind: "throw", aim: { heading, pitch } });
 }
 
 function submit(intent: CombatIntent): void {
@@ -249,7 +275,7 @@ function attack(): void {
   }
   lastLocalAttack = now;
   const { heading, pitch } = viewer.playerPose();
-  submit({ kind: "attack", weapon, aim: { heading, pitch } });
+  submit({ kind: "attack", weapon, aim: { heading, pitch }, seen: viewer.seenTimes() });
   viewer.playAttack(weapon);
 }
 
@@ -279,20 +305,24 @@ function enterRoom(rawCode: string): void {
   }
   try {
     match?.reset(selfId);
+    viewer?.resetWorld();
     lastEventId = 0;
     peerRoom = new PeerRoom(code, arena, match!, {
       onPeers(count, spawnSlot) {
         openRoomButton.textContent = count === 1 ? "Room · waiting" : `Room · ${count} players`;
         viewer?.setSpawnSlot(spawnSlot);
       },
-      onPose(peerId, pose) {
-        viewer?.setRemotePose(peerId, pose);
+      onPose(peerId, pose, sentAt) {
+        viewer?.setRemotePose(peerId, pose, sentAt);
       },
       onPeerLeave(peerId) {
         viewer?.removeRemotePeer(peerId);
       },
       onStatus(message) {
         roomStatus.textContent = message;
+      },
+      onProps(states) {
+        viewer?.applyPropStates(states);
       },
     });
     roomCodeInput.value = code;
@@ -313,6 +343,8 @@ async function leaveRoom(): Promise<void> {
   viewer?.clearRemotePeers();
   viewer?.setSpawnSlot(0);
   match?.reset(selfId);
+  viewer?.resetWorld();
+  viewer?.setAuthority(true);
   lastEventId = 0;
   roomEntry.hidden = false;
   roomActive.hidden = true;
@@ -359,12 +391,13 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.repeat || event.altKey || event.metaKey || event.ctrlKey || controlsDialog.open || roomDialog.open || document.activeElement instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
-  if (!["f", "e", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
+  if (!["f", "e", "g", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
   if (key === "m") {
     gameAudio.setMuted(!gameAudio.isMuted());
     toast(gameAudio.isMuted() ? "Sound off · press M to turn it back on" : "Sound on");
   } else if (key === "f") attack();
+  else if (key === "g") throwGrenade();
   else if (key === "e") interact();
   else if (key === "r") submit({ kind: "reload" });
   else if (key === "enter") submit({ kind: "respawn" });
@@ -373,6 +406,18 @@ document.addEventListener("keydown", (event) => {
     submit({ kind: "select", weapon });
   }
 });
+
+// The coordinating peer simulates loose props and shares moving ones 15 times a second,
+// with every displaced prop every two seconds for peers that just joined.
+let propTick = 0;
+window.setInterval(() => {
+  if (!viewer) return;
+  const leading = !peerRoom || peerRoom.leading();
+  viewer.setAuthority(leading);
+  if (!peerRoom || !leading) return;
+  propTick += 1;
+  peerRoom.sendProps(viewer.propStates(propTick % 30 === 0));
+}, 66);
 
 window.setInterval(() => {
   if (!viewer || !match) return;
@@ -398,6 +443,7 @@ window.addEventListener("beforeunload", () => { void peerRoom?.leave(); });
 
 void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
+  onHardLanding(speed) { submit({ kind: "fall", speed }); },
   onAim(spreadPixels, melee) {
     crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
     crosshair?.classList.toggle("melee", melee);
@@ -408,7 +454,7 @@ void createMapViewer(element("map"), arena, {
   },
 }).then((created) => {
   viewer = created;
-  match = new MatchState(created.arenaData(), arena, onMatchChange, (ray) => created.clearShot(ray), (ray) => created.traceShot(ray));
+  match = new MatchState(created.arenaData(), arena, onMatchChange, created.combatWorld());
   match.reset(selfId);
   const canvas = element("map").querySelector("canvas");
   if (canvas) {

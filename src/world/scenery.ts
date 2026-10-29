@@ -6,7 +6,7 @@ import {
 import { terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { CollisionWorld } from "./collision";
 
-interface WindowPosition {
+export interface WindowPosition {
   east: number;
   north: number;
   height: number;
@@ -168,7 +168,10 @@ function windowTexture(): CanvasTexture {
   return texture;
 }
 
-export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena, storefrontEdges: Map<number, Set<number>>): CanvasTexture {
+// Instances that draw one world entity, so it can be hidden or changed when it breaks.
+export interface InstanceRef { mesh: InstancedMesh; index: number }
+
+export function windowPlacements(data: ArenaData, arena: Arena, storefrontEdges: Map<number, Set<number>>): WindowPosition[] {
   const maxWindows = 8000;
   const windows: WindowPosition[] = [];
   const [arenaEast, arenaNorth] = toLocal(arena.latitude, arena.longitude);
@@ -224,8 +227,13 @@ export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena, 
       if (windows.length >= maxWindows) break;
     }
   }
+  return windows;
+}
+
+export function addBuildingWindows(scene: Scene, windows: WindowPosition[]): { texture: CanvasTexture; glass: Map<string, InstanceRef[]> } {
   const glassTexture = windowTexture();
-  if (windows.length === 0) return glassTexture;
+  const refs = new Map<string, InstanceRef[]>();
+  if (windows.length === 0) return { texture: glassTexture, glass: refs };
   const frame = new InstancedMesh(
     new PlaneGeometry(1.56, 1.94),
     new MeshStandardMaterial({ color: 0x2c383c, roughness: 0.75, metalness: 0.35, side: DoubleSide }),
@@ -254,6 +262,7 @@ export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena, 
     transform.updateMatrix();
     glass.setMatrixAt(index, transform.matrix);
     glass.setColorAt(index, new Color(tints[window.tint < 2 ? 4 : window.tint % 4]));
+    refs.set(`window:${index}`, [{ mesh: glass, index }]);
     if (window.sill) {
       transform.position.set(window.east + Math.sin(window.yaw) * 0.11, window.height - 0.98, window.north + Math.cos(window.yaw) * 0.11);
       transform.updateMatrix();
@@ -265,7 +274,7 @@ export function addBuildingWindows(scene: Scene, data: ArenaData, arena: Arena, 
   sills.instanceMatrix.needsUpdate = true;
   if (glass.instanceColor) glass.instanceColor.needsUpdate = true;
   scene.add(frame, glass, sills);
-  return glassTexture;
+  return { texture: glassTexture, glass: refs };
 }
 
 export function addBuildingDoors(scene: Scene, data: ArenaData, arena: Arena, storefrontEdges: Map<number, Set<number>>): void {
@@ -409,11 +418,11 @@ export function makeRoadDetails(data: ArenaData, arena: Arena): Group {
   return group;
 }
 
-export function makeStreetFurniture(data: ArenaData, arena: Arena): Group {
+export function makeStreetFurniture(data: ArenaData, arena: Arena, refs = new Map<string, InstanceRef[]>()): Group {
   const group = new Group();
   const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
   const half = arena.sizeMeters / 2 - 2;
-  const positions = new CollisionWorld(data).furniture.filter(({ east, north }) =>
+  const positions = new CollisionWorld(data).furniture.map((item, entity) => ({ ...item, entity })).filter(({ east, north }) =>
     Math.abs(east - centerEast) < half && Math.abs(north - centerNorth) < half);
   const planters = positions.filter((item) => item.kind === "planter");
   const hydrants = positions.filter((item) => item.kind === "hydrant");
@@ -423,7 +432,8 @@ export function makeStreetFurniture(data: ArenaData, arena: Arena): Group {
     const rims = new InstancedMesh(new BoxGeometry(1.13, 0.08, 1.13), new MeshStandardMaterial({ color: 0xa3a39a, roughness: 0.9 }), planters.length);
     const soil = new InstancedMesh(new BoxGeometry(0.9, 0.025, 0.9), new MeshStandardMaterial({ color: 0x493b2d, roughness: 1 }), planters.length);
     const shrubs = new InstancedMesh(new SphereGeometry(0.49, 9, 7), new MeshStandardMaterial({ color: 0x65815a, roughness: 1 }), planters.length * 3);
-    planters.forEach(({ east, north }, index) => {
+    planters.forEach(({ east, north, entity }, index) => {
+      refs.set(`furniture:${entity}`, [{ mesh: pots, index }, { mesh: rims, index }, { mesh: soil, index }, ...[0, 1, 2].map((leaf) => ({ mesh: shrubs, index: index * 3 + leaf }))]);
       const ground = terrainHeight(data, east, north);
       transform.rotation.set(0, 0, 0);
       transform.scale.set(1, 1, 1);
@@ -476,7 +486,7 @@ export function makeStreetFurniture(data: ArenaData, arena: Arena): Group {
   return group;
 }
 
-export function addStreetLights(scene: Scene, data: ArenaData): void {
+export function streetLightPlacements(data: ArenaData): { east: number; north: number; towardEast: number; towardNorth: number }[] {
   const collision = new CollisionWorld(data);
   const positions: { east: number; north: number; towardEast: number; towardNorth: number }[] = [];
   const roads = [...data.roads].filter((road) => road.width >= 8).sort((a, b) => {
@@ -496,14 +506,23 @@ export function addStreetLights(scene: Scene, data: ArenaData): void {
     const side = road.id % 2 === 0 ? 1 : -1;
     const normalEast = side * -dz / length;
     const normalNorth = side * dx / length;
-    const east = (a[0] + b[0]) / 2 + normalEast * (road.width / 2 + 1.1);
-    const north = (a[1] + b[1]) / 2 + normalNorth * (road.width / 2 + 1.1);
-    if (collision.blocked(east, north, 0.6) || positions.some((position) => Math.hypot(position.east - east, position.north - north) < 21)) continue;
-    positions.push({ east, north, towardEast: -normalEast, towardNorth: -normalNorth });
+    // Street furniture sits at segment midpoints, so a light tries points either side too.
+    for (const along of [0.5, 0.3, 0.7]) {
+      const east = a[0] + dx * along + normalEast * (road.width / 2 + 1.1);
+      const north = a[1] + dz * along + normalNorth * (road.width / 2 + 1.1);
+      if (collision.blocked(east, north, 0.6) || positions.some((position) => Math.hypot(position.east - east, position.north - north) < 21)) continue;
+      positions.push({ east, north, towardEast: -normalEast, towardNorth: -normalNorth });
+      break;
+    }
   }
-  if (positions.length === 0) return;
+  return positions;
+}
+
+export function addStreetLights(scene: Scene, data: ArenaData, positions: ReturnType<typeof streetLightPlacements>): Map<string, InstanceRef[]> {
+  const refs = new Map<string, InstanceRef[]>();
+  if (positions.length === 0) return refs;
   const metal = new MeshStandardMaterial({ color: 0x3c4848, roughness: 0.5, metalness: 0.8 });
-  const light = new MeshBasicMaterial({ color: 0xffe3aa });
+  const light = new MeshBasicMaterial({ color: 0xffffff });
   const poles = new InstancedMesh(new CylinderGeometry(0.065, 0.11, 6.3, 7), metal, positions.length);
   const arms = new InstancedMesh(new BoxGeometry(1.05, 0.075, 0.09), metal, positions.length);
   const heads = new InstancedMesh(new BoxGeometry(0.42, 0.07, 0.25), light, positions.length);
@@ -522,9 +541,12 @@ export function addStreetLights(scene: Scene, data: ArenaData): void {
     transform.position.set(position.east + position.towardEast * 1.05, ground + 6.18, position.north + position.towardNorth * 1.05);
     transform.updateMatrix();
     heads.setMatrixAt(index, transform.matrix);
+    heads.setColorAt(index, new Color(0xffe3aa));
+    refs.set(`lamp:${index}`, [{ mesh: heads, index }]);
   });
   poles.castShadow = true;
   scene.add(poles, arms, heads);
+  return refs;
 }
 
 export function createSkyTexture(): CanvasTexture {

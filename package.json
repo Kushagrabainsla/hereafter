@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "preview:pages": "vite preview --mode pages",
     "build:viewmodels": "sh scripts/viewmodels/build-all.sh",
-    "build:audio": "sh scripts/audio/fetch.sh && sh scripts/audio/build.sh"
+    "build:audio": "sh scripts/audio/fetch.sh && sh scripts/audio/build.sh",
+    "build:props": "sh scripts/props/build.sh"
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.21.0",

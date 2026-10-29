@@ -20,6 +20,7 @@ export class SoundStage {
   private jumps = 0;
   private landings = 0;
   private mantles = 0;
+  private rungs = 0;
   private sliding = false;
   private remote = new Map<string, RemoteSteps>();
   private forward = new Vector3();
@@ -54,6 +55,7 @@ export class SoundStage {
     if (gait.jumps !== this.jumps) { this.jumps = gait.jumps; gameAudio.jump(surface()); }
     if (gait.landings !== this.landings) { this.landings = gait.landings; gameAudio.land(gait.landingSpeed, surface()); }
     if (gait.mantles !== this.mantles) { this.mantles = gait.mantles; gameAudio.mantle(); }
+    if (gait.rungs !== this.rungs) { this.rungs = gait.rungs; gameAudio.ladderStep(); }
     if (motion.sliding !== this.sliding) {
       this.sliding = motion.sliding;
       if (motion.sliding) gameAudio.slide(surface());
@@ -85,25 +87,34 @@ export class SoundStage {
   }
 
   // Sounds for a combat event as heard by selfId. The player's own shots are played when
-  // fired (see gameAudio.fire), so here they only add impacts.
+  // fired (see gameAudio.fire), so here they only add what the rounds struck.
   combat(event: CombatEvent, selfId: string): void {
     const shot = event.shot;
-    if (shot && (event.kind === "shot" || event.kind === "hit" || event.kind === "death")) {
+    if (event.kind === "shot" && shot) {
       const weapon = event.weapon ?? "pistol";
-      const origin = shot.origin;
-      const end = { x: origin.x + shot.direction.x * shot.distance, y: origin.y + shot.direction.y * shot.distance, z: origin.z + shot.direction.z * shot.distance };
       if (event.actor !== selfId) {
-        gameAudio.remoteFire(weapon, origin);
-        if (weapon !== "knife" && event.target !== selfId) this.nearMiss(shot.origin, shot.direction, shot.distance);
+        gameAudio.remoteFire(weapon, shot.origin);
+        if (weapon !== "knife") this.nearMiss(shot.origin, shot.direction, shot.distance);
       }
-      if (event.target && event.target !== selfId) gameAudio.bodyHit(end, weapon === "knife");
-      if (event.kind === "death" && event.target !== selfId) gameAudio.bodyFall(end);
-      if (!event.target && event.impact && weapon !== "knife") gameAudio.surfaceImpact(end);
+      // A few audible strikes per round: where it went in, and where it broke through.
+      for (const impact of (event.impacts ?? []).slice(0, 4)) gameAudio.impact(impact.material, impact);
+      return;
+    }
+    if ((event.kind === "hit" || event.kind === "death") && event.target && event.target !== selfId) {
+      const at = this.positionOf(event.target);
+      if (!at) return;
+      const chest = { x: at.x, y: at.y + 1.1, z: at.z };
+      if (event.cause !== "fall") gameAudio.bodyHit(chest, event.cause === "knife");
+      if (event.kind === "death") gameAudio.bodyFall(chest);
+      return;
     }
     if (event.kind === "pickup" && event.actor !== selfId) {
       const at = this.positionOf(event.actor);
       if (at) gameAudio.remotePickup({ x: at.x, y: at.y + 1, z: at.z });
+      return;
     }
+    if (event.kind === "throw") gameAudio.throwGrenade(event.actor === selfId ? undefined : event.position);
+    if (event.kind === "explode" && event.position) gameAudio.explosion(event.position);
   }
 
   // A round that passes within three metres of the listener's head cracks past them.

@@ -35,6 +35,14 @@ Sustained fire blooms on top of that. Each shot adds 0.35° for the pistol and 0
 
 The crosshair's four ticks open to the same spread every frame, converted to pixels from the camera's field of view, with a 3 px minimum. Pose packets carry new `sliding` and `airborne` flags for this. Older peers omit them, and those flags then count as false.
 
+## Leaning, hit reactions and climbing
+
+Hold Q or E to lean left or right while standing or walking. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.
+
+Taking a hit kicks the view up and to one side, more for heavier hits, and the kick moves where shots go until it settles in about a quarter of a second. For 0.55 s after a hit, movement slows by up to 45%. Other players flinch when hit.
+
+Ladders, stairs and falling are described in the [physics notes](physics.md).
+
 ## Measurements
 
 Headless Chrome checks drove the running game and stepped the controller directly where frame timing mattered:
@@ -50,6 +58,7 @@ Headless Chrome checks drove the running game and stepped the controller directl
 | 200 leader-resolved carbine shots per movement state | widest deviation equal to the table, mean two thirds of it |
 | Carbine bloom over 11 shots at 140 ms | mean deviation 0.27° rising to 1.26° |
 | Crosshair gap, carbine | 3.7 px standing, 9.6 walking, 18.5 in the air, 3.0 crouched |
+| Lean | full lean in about half a second, eyes moved 0.32 m; a shot 0.3 m beside an upright head misses it and hits the leaning head |
 
 ## Limits
 

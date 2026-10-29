@@ -1,4 +1,5 @@
 import { type WeaponKind } from "./combatRules";
+import { type Material } from "../world/materials";
 
 // Sound effects for the local player, other players and the HUD. Recorded CC0 samples
 // (public/audio, built by scripts/audio/build.sh) cover guns, reloads, footsteps and
@@ -18,7 +19,13 @@ const BANK = {
   "draw-knife": 3, "cloth": 4, "grab": 2, "knife-hit": 2,
   "step-hard": 5, "step-soft": 5, "land": 3,
   "body-hit": 5, "hurt": 3, "bullet-impact": 4,
+  "impact-metal": 3, "impact-wood": 3, "impact-glass": 3, "impact-soft": 3, "glass-break": 3, "wood-break": 2,
 } as const;
+
+const IMPACT_SOUND: Record<Material, SoundName | null> = {
+  glass: "impact-glass", wood: "impact-wood", timber: "impact-wood", "metal-thin": "impact-metal", "metal-solid": "impact-metal",
+  plastic: "impact-soft", cardboard: "impact-soft", concrete: "bullet-impact", brick: "bullet-impact", ground: "bullet-impact", flesh: null, boundary: null,
+};
 type SoundName = keyof typeof BANK;
 
 interface Sample { buffer: AudioBuffer; offset: number }
@@ -205,6 +212,9 @@ export class GameAudio {
     voice.source.stop(now + 0.1);
   }
 
+  // A boot on a steel rung.
+  ladderStep(): void { this.play("impact-metal", { gain: 0.1, rate: 0.75 + Math.random() * 0.1 }); }
+
   // Mantling: hands grab the ledge, clothing drags, a foot plants on top.
   mantle(): void {
     const now = this.time();
@@ -296,9 +306,69 @@ export class GameAudio {
     this.spatial("land", at, { gain: 0.9, ref: 3, rolloff: 1.3, when: this.time() + 0.45, priority: "high" });
   }
 
-  surfaceImpact(at: Vec3): void {
-    if (this.distanceTo(at) > 45) return;
-    this.spatial("bullet-impact", at, { gain: 0.55, ref: 2.5, rolloff: 1.4, rate: 0.95 + Math.random() * 0.15 });
+  // A round striking a surface, by what the surface is made of.
+  impact(material: Material, at: Vec3): void {
+    const name = IMPACT_SOUND[material];
+    if (!name || this.distanceTo(at) > 45) return;
+    this.spatial(name, at, { gain: name === "bullet-impact" ? 0.55 : 0.5, ref: 2.5, rolloff: 1.4, rate: 0.95 + Math.random() * 0.15 });
+  }
+
+  // Objects breaking apart.
+  shatter(at: Vec3): void { this.spatial("glass-break", at, { gain: 0.7, ref: 3, rolloff: 1.2, rate: 0.95 + Math.random() * 0.1, priority: "high" }); }
+  splinter(at: Vec3): void { this.spatial("wood-break", at, { gain: 0.75, ref: 3, rolloff: 1.2, priority: "high" }); }
+  crumble(at: Vec3): void {
+    this.spatial("bullet-impact", at, { gain: 0.8, ref: 3, rolloff: 1.2, rate: 0.55, priority: "high" });
+    this.spatial("land", at, { gain: 0.8, ref: 3, rolloff: 1.2, rate: 0.8, when: this.time() + 0.05, priority: "high" });
+    this.spatial("bullet-impact", at, { gain: 0.5, ref: 3, rolloff: 1.2, rate: 0.7, when: this.time() + 0.18 });
+  }
+
+  // Pulling the pin and throwing: a ring click, then cloth as the arm swings.
+  throwGrenade(at?: Vec3): void {
+    if (at) { this.spatial("latch", at, { gain: 0.3, ref: 2, rolloff: 1.5, rate: 1.4 }); this.spatial("cloth", at, { gain: 0.3, ref: 2, rolloff: 1.5, when: this.time() + 0.12 }); return; }
+    this.play("latch", { gain: 0.16, rate: 1.4 });
+    this.play("cloth", { gain: 0.16, when: this.time() + 0.12 });
+  }
+
+  grenadeBounce(at: Vec3, speed: number): void {
+    this.spatial("impact-metal", at, { gain: Math.min(0.5, 0.12 + speed * 0.04), ref: 2, rolloff: 1.4, rate: 1.3 + Math.random() * 0.2 });
+  }
+
+  // An explosion: a sharp crack, a roaring low-passed noise body and a sub-bass drop, with
+  // a long street echo. Distant blasts lose the crack and keep the rumble.
+  explosion(at: Vec3): void {
+    const context = this.live();
+    if (!context || !this.noise) return;
+    const distance = this.distanceTo(at);
+    const now = context.currentTime;
+    const panner = this.panner(at, 6, 0.7);
+    const out = new GainNode(context, { gain: 1 });
+    out.connect(panner).connect(this.mix);
+    out.connect(new GainNode(context, { gain: 0.6 + Math.min(0.4, distance / 60) })).connect(this.reverb);
+    const crack = this.noiseSource(now, 0.05);
+    const crackGain = new GainNode(context, { gain: 0 });
+    crackGain.gain.setValueAtTime(Math.max(0.05, 1 - distance / 50), now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    crack.connect(new BiquadFilterNode(context, { type: "highpass", frequency: 1800 })).connect(crackGain).connect(out);
+    const body = new AudioBufferSourceNode(context, { buffer: this.noise, loop: true });
+    const bodyFilter = new BiquadFilterNode(context, { type: "lowpass", frequency: 3200, Q: 0.7 });
+    bodyFilter.frequency.setValueAtTime(3200 * Math.max(0.3, 1 - distance / 80), now);
+    bodyFilter.frequency.exponentialRampToValueAtTime(160, now + 1.6);
+    const bodyGain = new GainNode(context, { gain: 0 });
+    bodyGain.gain.setValueAtTime(0.0001, now);
+    bodyGain.gain.exponentialRampToValueAtTime(1.1, now + 0.012);
+    bodyGain.gain.exponentialRampToValueAtTime(0.25, now + 0.35);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 2.2);
+    body.connect(bodyFilter).connect(bodyGain).connect(out);
+    body.start(now, Math.random() * 0.5);
+    body.stop(now + 2.3);
+    const sub = new OscillatorNode(context, { type: "sine", frequency: 70 });
+    sub.frequency.exponentialRampToValueAtTime(28, now + 0.6);
+    const subGain = new GainNode(context, { gain: 0 });
+    subGain.gain.setValueAtTime(0.9, now);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+    sub.connect(subGain).connect(out);
+    sub.start(now);
+    sub.stop(now + 0.75);
   }
 
   // A round passing close to the listener: a sharp supersonic crack and a short whiz.

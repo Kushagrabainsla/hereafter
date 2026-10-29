@@ -123,6 +123,9 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .health-bar.low span { background: linear-gradient(90deg, #b7433f, #ff9e81); }
 .hud-weapon-row { padding-top: 10px; border-top: 1px solid rgba(212, 238, 239, .14); font-size: 12px; }
 .hud-weapon-row strong { color: #90e1df; font-size: 11px; font-variant-numeric: tabular-nums; }
+.hud-grenade-row { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; color: #b9cbcd; font-size: 11px; font-weight: 650; }
+.hud-grenade-row kbd { min-width: 0; padding: 0 4px; font-size: 9px; }
+.hud-grenade-row strong { color: #9fe3dc; font-size: 11px; letter-spacing: .12em; }
 .score-label { margin-top: 7px; color: #8da9ae; font-size: 10px; font-weight: 650; letter-spacing: .08em; }
 .pickup-hint, .combat-toast { position: absolute; z-index: 4; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 30px); padding: 9px 13px; border: 1px solid rgba(155, 223, 218, .5); border-radius: 7px; background: rgba(8, 24, 32, .86); color: #eef9f8; font-size: 12px; font-weight: 650; white-space: nowrap; backdrop-filter: blur(8px); pointer-events: none; }
 .pickup-hint { bottom: 122px; }

@@ -1,0 +1,114 @@
+[
+  {
+    "name": "crate_wood",
+    "file": "models/props/crate_wood.glb",
+    "size": [
+      0.824,
+      0.347,
+      0.407
+    ],
+    "material": "wood",
+    "mass": 18,
+    "triangles": 2104,
+    "bytes": 155792,
+    "source": "https://polyhaven.com/a/wooden_crate_01",
+    "author": "James Ray Cock",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "crate_wood_large",
+    "file": "models/props/crate_wood_large.glb",
+    "size": [
+      1.242,
+      0.464,
+      0.52
+    ],
+    "material": "wood",
+    "mass": 40,
+    "triangles": 3676,
+    "bytes": 256204,
+    "source": "https://polyhaven.com/a/wooden_military_crate",
+    "author": "Prabhjinder Singh",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "trash_can",
+    "file": "models/props/trash_can.glb",
+    "size": [
+      0.649,
+      0.985,
+      0.554
+    ],
+    "material": "metal-thin",
+    "mass": 14,
+    "triangles": 2441,
+    "bytes": 178332,
+    "source": "https://polyhaven.com/a/metal_trash_can",
+    "author": "GurJas Studios",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "oil_drum",
+    "file": "models/props/oil_drum.glb",
+    "size": [
+      0.634,
+      0.93,
+      0.639
+    ],
+    "material": "metal-thin",
+    "mass": 95,
+    "triangles": 1473,
+    "bytes": 125008,
+    "source": "https://polyhaven.com/a/barrel_03",
+    "author": "Serhii Khromov",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "cardboard_box",
+    "file": "models/props/cardboard_box.glb",
+    "size": [
+      0.385,
+      0.341,
+      0.516
+    ],
+    "material": "cardboard",
+    "mass": 5,
+    "triangles": 1186,
+    "bytes": 106192,
+    "source": "https://polyhaven.com/a/cardboard_box_01",
+    "author": "Rahul Chaudhary",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "aircon_unit",
+    "file": "models/props/aircon_unit.glb",
+    "size": [
+      0.797,
+      0.608,
+      0.374
+    ],
+    "material": "metal-solid",
+    "mass": 45,
+    "triangles": 2579,
+    "bytes": 310896,
+    "source": "https://polyhaven.com/a/exterior_aircon_unit",
+    "author": "Monsta3D",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "plastic_crate",
+    "file": "models/props/plastic_crate.glb",
+    "size": [
+      0.506,
+      0.254,
+      0.406
+    ],
+    "material": "plastic",
+    "mass": 1.6,
+    "triangles": 2336,
+    "bytes": 180660,
+    "source": "https://polyhaven.com/a/plastic_crate_02",
+    "author": "Fabi_G",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  }
+]

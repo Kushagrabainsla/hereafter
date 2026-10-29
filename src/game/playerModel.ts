@@ -43,6 +43,7 @@ export class PlayerModelLibrary {
 
 const FADE = 0.2;
 const WORLD_RIGHT = new Vector3(1, 0, 0);
+const WORLD_FORWARD = new Vector3(0, 0, 1);
 
 export class PlayerModelInstance {
   readonly root: Object3D;
@@ -52,7 +53,12 @@ export class PlayerModelInstance {
   private stance: PlayerStance | "" = "";
   private dead = false;
   private pitch = 0;
-  private spine: { bone: Object3D; axis: Vector3 }[] = [];
+  private spine: { bone: Object3D; axis: Vector3; forward: Vector3 }[] = [];
+  private lean = 0;
+  private flinchAmount = 0;
+  // While a ragdoll drives the bones the animation is stopped; the pose before it is kept
+  // so animation resumes cleanly on respawn.
+  private frozen: { bone: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 }[] | null = null;
   private materials: MeshStandardMaterial[] = [];
   private scratch = new Quaternion();
 
@@ -82,10 +88,11 @@ export class PlayerModelInstance {
     // Pitch tilts the upper spine and head about the axis that points to the character's
     // right in the bind pose, split so the lean reads naturally.
     for (const name of ["Bip01 Spine1", "Bip01 Spine2", "Bip01 Head"]) {
-      const bone = this.root.getObjectByName(name);
+      // GLTFLoader replaces spaces in node names with underscores.
+      const bone = this.root.getObjectByName(name.replace(/\s+/g, "_")) ?? this.root.getObjectByName(name);
       if (!bone) continue;
-      const axis = WORLD_RIGHT.clone().applyQuaternion(bone.getWorldQuaternion(new Quaternion()).invert()).normalize();
-      this.spine.push({ bone, axis });
+      const inverse = bone.getWorldQuaternion(new Quaternion()).invert();
+      this.spine.push({ bone, axis: WORLD_RIGHT.clone().applyQuaternion(inverse).normalize(), forward: WORLD_FORWARD.clone().applyQuaternion(inverse).normalize() });
     }
     this.play("idle");
   }
@@ -96,6 +103,27 @@ export class PlayerModelInstance {
   }
 
   setPitch(degrees: number): void { this.pitch = degrees; }
+
+  // -1 to 1; the upper body bends toward the character's right for positive values.
+  setLean(lean: number): void { this.lean = lean; }
+
+  // A hit snaps the upper body back; it recovers over a fraction of a second.
+  flinch(strength: number): void { this.flinchAmount = Math.min(1, this.flinchAmount + strength); }
+
+  freeze(): void {
+    if (this.frozen) return;
+    this.mixer.stopAllAction();
+    this.frozen = [];
+    this.root.traverse((bone) => { if (bone.type === "Bone") this.frozen!.push({ bone, position: bone.position.clone(), quaternion: bone.quaternion.clone(), scale: bone.scale.clone() }); });
+  }
+
+  unfreeze(): void {
+    if (!this.frozen) return;
+    for (const saved of this.frozen) { saved.bone.position.copy(saved.position); saved.bone.quaternion.copy(saved.quaternion); saved.bone.scale.copy(saved.scale); }
+    this.frozen = null;
+    this.dead = false;
+    this.play(this.stance || "idle");
+  }
 
   setDead(dead: boolean): void {
     if (dead === this.dead) return;
@@ -113,10 +141,16 @@ export class PlayerModelInstance {
   }
 
   update(seconds: number): void {
+    if (this.frozen) return;
     this.mixer.update(seconds);
+    this.flinchAmount *= Math.exp(-seconds * 9);
     if (this.dead) return;
-    const angle = -this.pitch * Math.PI / 180 / this.spine.length;
-    for (const { bone, axis } of this.spine) bone.quaternion.multiply(this.scratch.setFromAxisAngle(axis, angle));
+    const angle = (-this.pitch * Math.PI / 180 - this.flinchAmount * 0.35) / this.spine.length;
+    const bend = this.lean * 0.25 / this.spine.length;
+    for (const { bone, axis, forward } of this.spine) {
+      bone.quaternion.multiply(this.scratch.setFromAxisAngle(axis, angle));
+      if (bend) bone.quaternion.multiply(this.scratch.setFromAxisAngle(forward, bend));
+    }
   }
 
   dispose(): void {

@@ -24,21 +24,6 @@ export class ShotEffects {
     tracer.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), delta.normalize());
     root.add(tracer);
     this.add(root, material, 0.085, false);
-    if (event.impact) {
-      const impactMaterial = new MeshBasicMaterial({ color: event.target ? 0xc08c68 : 0xa49b87, transparent: true, opacity: 0.8, depthWrite: false });
-      const impact = new Group();
-      impact.position.copy(end);
-      const mark = new Mesh(this.sphere, impactMaterial);
-      mark.scale.setScalar(0.045);
-      impact.add(mark);
-      for (let i = 0; i < 5; i++) {
-        const particle = new Mesh(this.sphere, impactMaterial);
-        particle.scale.setScalar(0.022);
-        particle.position.set(Math.sin(i*2.4)*0.09, Math.cos(i*1.9)*0.09, Math.sin(i*3.1)*0.09);
-        impact.add(particle);
-      }
-      this.add(impact, impactMaterial, 0.5, true);
-    }
   }
 
   private add(root: Group, material: MeshBasicMaterial, life: number, dust: boolean): void {

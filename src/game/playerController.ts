@@ -2,6 +2,8 @@ import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
+import { LEAN_OFFSET } from "./combatRules";
+import { type Ladder } from "../world/rooftops";
 
 export interface PlayerMotion {
   moving: boolean;
@@ -10,6 +12,7 @@ export interface PlayerMotion {
   airborne: boolean;
   sliding: boolean;
   mantling: boolean;
+  climbing: boolean;
   speed: number;
 }
 
@@ -24,6 +27,7 @@ export interface PlayerGait {
   landingSpeed: number;
   slides: number;
   mantles: number;
+  rungs: number;
 }
 
 export interface PlayerPose {
@@ -37,6 +41,8 @@ export interface PlayerPose {
   crouching: boolean;
   sliding?: boolean;
   airborne?: boolean;
+  // -1 leaning fully left to 1 fully right.
+  lean?: number;
 }
 
 const EYE_HEIGHT = 1.72;
@@ -50,6 +56,12 @@ const SLIDE_END_SPEED = 3.2;
 const SLIDE_LONGEST = 1.3;
 const SLIDE_COOLDOWN = 0.6;
 const SLIDE_ROLL = -0.06;
+// Leaning tilts the view this far (radians) at full lean and slows walking.
+const LEAN_ROLL = 0.14;
+const LEAN_SPEED = 0.7;
+// Being hit jolts the aim and slows movement briefly ("tagging").
+const TAG_SECONDS = 0.55;
+const TAG_SLOW = 0.45;
 
 interface Mantle { fromEast: number; fromNorth: number; fromFeet: number; to: Ledge; elapsed: number; duration: number }
 
@@ -87,7 +99,15 @@ export class PlayerController {
   private sprintHold = 0;
   private mantle: Mantle | null = null;
   private mantles = 0;
+  private ladders: Ladder[] = [];
+  private climbing: Ladder | null = null;
+  private climbed = 0;
+  private rungs = 0;
   private roll = 0;
+  private lean = 0;
+  private punchPitch = 0;
+  private punchYaw = 0;
+  private tagged = 0;
   private accumulator = 0;
   private eyeHeight = EYE_HEIGHT;
   private stride = 0;
@@ -142,7 +162,12 @@ export class PlayerController {
     this.slideCooldown = 0;
     this.sprintHold = 0;
     this.mantle = null;
+    this.climbing = null;
     this.roll = 0;
+    this.lean = 0;
+    this.punchPitch = 0;
+    this.punchYaw = 0;
+    this.tagged = 0;
     this.accumulator = 0;
     this.eyeHeight = EYE_HEIGHT;
     this.stride = 0;
@@ -161,7 +186,17 @@ export class PlayerController {
   }
 
   motion(): PlayerMotion {
-    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle, sliding: this.sliding, mantling: this.mantle !== null, speed: this.speed };
+    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed };
+  }
+
+  setLadders(ladders: Ladder[]): void { this.ladders = ladders; }
+
+  // Taking a hit kicks the view up and to one side, by more for heavier hits, and slows
+  // movement for a moment. The kick also moves where shots go until it settles.
+  flinch(damage: number): void {
+    this.punchPitch = Math.min(6, this.punchPitch + Math.min(3.5, 0.8 + damage * 0.05));
+    this.punchYaw += (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.8);
+    this.tagged = TAG_SECONDS;
   }
 
   // Firing drops a sprint; it resumes on its own once the trigger has rested this long.
@@ -171,21 +206,22 @@ export class PlayerController {
   }
 
   gait(): PlayerGait {
-    return { stride: this.stride, grounded: this.grounded, aboveGround: this.jumpHeight, jumps: this.jumps, landings: this.landings, landingSpeed: this.landingSpeed, slides: this.slides, mantles: this.mantles };
+    return { stride: this.stride, grounded: this.grounded, aboveGround: this.jumpHeight, jumps: this.jumps, landings: this.landings, landingSpeed: this.landingSpeed, slides: this.slides, mantles: this.mantles, rungs: this.rungs };
   }
 
   pose(): PlayerPose {
     return {
       east: this.east,
       north: this.north,
-      heading: this.heading,
-      pitch: this.pitch,
+      heading: (this.heading + this.punchYaw + 360) % 360,
+      pitch: Math.max(-80, Math.min(80, this.pitch + this.punchPitch)),
       jumpHeight: this.jumpHeight,
       moving: this.moving,
       running: this.running,
       crouching: this.crouching,
       sliding: this.sliding,
       airborne: !this.grounded && !this.mantle,
+      lean: Math.round(this.lean * 100) / 100,
     };
   }
 
@@ -228,6 +264,10 @@ export class PlayerController {
     this.bobAmount += ((this.moving && this.grounded && !this.sliding ? 1 : 0) - this.bobAmount) * Math.min(1, delta * 8);
     if (this.moving && !this.sliding) this.stride += this.speed * delta * (this.running ? 2.1 : 1.7);
     this.roll += ((this.sliding ? SLIDE_ROLL : 0) - this.roll) * Math.min(1, delta * 9);
+    const settle = Math.exp(-delta * 8);
+    this.punchPitch *= settle;
+    this.punchYaw *= settle;
+    this.tagged = Math.max(0, this.tagged - delta);
     const targetFov = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 7);
@@ -247,6 +287,17 @@ export class PlayerController {
     const crouchPressed = crouchKey && !this.crouchHeld;
     this.crouchHeld = crouchKey;
     const heading = this.heading * Math.PI / 180;
+    if (this.climbing) { this.stepLadder(delta, forward); return; }
+    // Walking into a ladder while facing the wall takes hold of it.
+    if (forward > 0 && !this.sliding && !crouchKey) {
+      const ladder = this.ladderInReach(heading);
+      if (ladder && !this.physics.setCrouched(false)) {
+        this.climbing = ladder;
+        this.crouching = false;
+        this.velocityEast = this.velocityNorth = this.verticalSpeed = 0;
+        return;
+      }
+    }
     // Mantle when jumping at a ledge, or when pushing forward into one in the air.
     if ((this.jumpBuffer > 0 || (!this.grounded && forward > 0 && this.verticalSpeed < 3)) && !this.sliding && this.tryMantle(heading)) return;
     // Crouching during a sprint starts a slide; letting go, leaving the ground, slowing
@@ -260,6 +311,16 @@ export class PlayerController {
     }
     this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
     const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0;
+    // Q and E lean while walking or standing; a wall at the side limits how far.
+    const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.keys.has("e")) - Number(this.keys.has("q"));
+    this.lean += (leanInput - this.lean) * Math.min(1, delta * 8);
+    if (Math.abs(this.lean) > 0.01) {
+      const side = Math.sign(this.lean);
+      const head = { x: this.east, y: this.feet + this.eyeHeight, z: this.north };
+      const reach = this.physics.traceShot({ origin: head, direction: { x: -Math.cos(heading) * side, y: 0, z: Math.sin(heading) * side }, distance: LEAN_OFFSET + 0.25 });
+      this.lean = side * Math.min(Math.abs(this.lean), Math.max(0, (reach - 0.2) / LEAN_OFFSET));
+    } else this.lean = 0;
+    const slow = (1 - TAG_SLOW * this.tagged / TAG_SECONDS) * (1 - (1 - LEAN_SPEED) * Math.abs(this.lean));
     const beforeEast = this.east;
     const beforeNorth = this.north;
     if (this.sliding) {
@@ -267,7 +328,7 @@ export class PlayerController {
       this.velocityEast = this.slideEast * this.slideSpeed - Math.cos(heading) * strafe * 1.2;
       this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
     } else if (!jumpFromSlide) {
-      const targetSpeed = this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5;
+      const targetSpeed = (this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5) * slow;
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;
@@ -334,6 +395,49 @@ export class PlayerController {
     this.verticalSpeed = 0;
     this.mantles += 1;
     return true;
+  }
+
+  private ladderInReach(heading: number): Ladder | null {
+    for (const ladder of this.ladders) {
+      const dx = this.east - ladder.foot.x, dz = this.north - ladder.foot.z;
+      const along = dx * ladder.along.x + dz * ladder.along.z, out = dx * ladder.normal.x + dz * ladder.normal.z;
+      const facing = -(Math.sin(heading) * ladder.normal.x + Math.cos(heading) * ladder.normal.z);
+      if (Math.abs(along) < 0.45 && out > 0.1 && out < 0.95 && facing > 0.35 && this.feet < ladder.top - 0.5 && this.feet > ladder.foot.y - 0.5) return ladder;
+    }
+    return null;
+  }
+
+  // On a ladder: W climbs, S descends, Space lets go backward. At the top the player climbs
+  // over the edge onto the roof; at the bottom, stepping down lets go.
+  private stepLadder(delta: number, input: number): void {
+    const ladder = this.climbing!;
+    const climb = input * 2.6 * delta;
+    this.east = ladder.foot.x + ladder.normal.x * 0.48;
+    this.north = ladder.foot.z + ladder.normal.z * 0.48;
+    this.feet = Math.max(ladder.foot.y, Math.min(ladder.top + 0.05, this.feet + climb));
+    this.climbed += Math.abs(climb);
+    if (this.climbed >= 0.3) { this.climbed = 0; this.rungs += 1; }
+    this.physics.place(this.east, this.north, this.feet);
+    this.jumpHeight = Math.max(0, this.feet - terrainHeight(this.data, this.east, this.north));
+    this.moving = input !== 0;
+    this.speed = Math.abs(input) * 2.6;
+    this.running = false;
+    this.grounded = false;
+    this.airTime = 0;
+    if (this.jumpBuffer > 0) {
+      this.climbing = null;
+      this.jumpBuffer = 0;
+      this.velocityEast = ladder.normal.x * 3.5;
+      this.velocityNorth = ladder.normal.z * 3.5;
+      this.verticalSpeed = 2.5;
+      return;
+    }
+    if (input < 0 && this.feet <= ladder.foot.y + 0.02) { this.climbing = null; this.grounded = true; return; }
+    if (this.feet >= ladder.top - 0.35) {
+      this.climbing = null;
+      this.mantle = { fromEast: this.east, fromNorth: this.north, fromFeet: this.feet, to: { east: ladder.foot.x - ladder.normal.x * 0.95, north: ladder.foot.z - ladder.normal.z * 0.95, feet: ladder.top }, elapsed: 0, duration: 0.5 };
+      this.mantles += 1;
+    }
   }
 
   // Rise beside the ledge first, then move over its top, so the body never cuts the edge.
@@ -410,7 +514,7 @@ export class PlayerController {
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.paused) return;
     const key = event.key.toLowerCase();
-    if (!["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " "].includes(key)) return;
+    if (!["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " "].includes(key)) return;
     if (document.activeElement instanceof HTMLInputElement) return;
     event.preventDefault();
     if (key === " ") {
@@ -429,15 +533,18 @@ export class PlayerController {
   };
 
   private applyPose(): void {
-    const heading = this.heading * Math.PI / 180;
-    const pitch = this.pitch * Math.PI / 180;
+    const heading = (this.heading + this.punchYaw) * Math.PI / 180;
+    const pitch = Math.max(-80, Math.min(80, this.pitch + this.punchPitch)) * Math.PI / 180;
     const bob = Math.sin(this.stride * 2) * this.bobAmount * (this.running ? 0.045 : 0.025);
-    this.camera.position.set(this.east, this.feet + this.eyeHeight + bob, this.north);
+    // Leaning moves the eyes toward screen right, (-cos h, sin h), and a little lower.
+    const lean = this.lean * LEAN_OFFSET;
+    this.camera.position.set(this.east - Math.cos(heading) * lean, this.feet + this.eyeHeight + bob - Math.abs(this.lean) * 0.04, this.north + Math.sin(heading) * lean);
     this.camera.lookAt(
-      this.east + Math.sin(heading) * Math.cos(pitch),
+      this.camera.position.x + Math.sin(heading) * Math.cos(pitch),
       this.camera.position.y + Math.sin(pitch),
-      this.north + Math.cos(heading) * Math.cos(pitch),
+      this.camera.position.z + Math.cos(heading) * Math.cos(pitch),
     );
-    if (this.roll) this.camera.rotateZ(this.roll);
+    const roll = this.roll - this.lean * LEAN_ROLL;
+    if (roll) this.camera.rotateZ(roll);
   }
 }

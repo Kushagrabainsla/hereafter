@@ -1,0 +1,11 @@
+{
+  "name": "hereafter-props-pipeline",
+  "private": true,
+  "type": "module",
+  "description": "Build-time helpers for scripts/props/build.sh (not shipped with the game).",
+  "dependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
+    "@gltf-transform/functions": "4.5.1"
+  }
+}

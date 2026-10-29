@@ -96,6 +96,7 @@ export class WeaponVisuals {
   private fallbackVisible = true;
   private lower = 0;
   private vault = 0;
+  private throwTime = 0;
   private reloadElapsed = 0;
   private reloadDuration = 0;
   private reloadWeapon: WeaponKind = "knife";
@@ -194,7 +195,10 @@ export class WeaponVisuals {
     for (const [id, pickup] of this.pickups) pickup.root.visible = !hidden.has(id);
   }
 
-  ready(): boolean { return !this.switching; }
+  ready(): boolean { return !this.switching && this.throwTime <= 0; }
+
+  // Throwing a grenade dips the held weapon out of the way and back.
+  quickThrow(): void { this.throwTime = 0.55; }
 
   muzzle(): Vector3 | undefined {
     return this.flashes.get(this.active)?.getWorldPosition(new Vector3());
@@ -229,7 +233,8 @@ export class WeaponVisuals {
     const sprintTarget = motion.running && motion.moving && !motion.airborne ? 1 : 0;
     this.sprintBlend += (sprintTarget - this.sprintBlend) * Math.min(1, seconds * (sprintTarget > this.sprintBlend ? 6 : 13));
     // Both hands are busy climbing during a mantle, so the weapon tucks away.
-    this.vault += ((motion.mantling ? 1 : 0) - this.vault) * Math.min(1, seconds * 14);
+    this.vault += ((motion.mantling || motion.climbing ? 1 : 0) - this.vault) * Math.min(1, seconds * 14);
+    this.throwTime = Math.max(0, this.throwTime - elapsed);
     if (motion.moving) this.stride += motion.speed * seconds * (motion.running ? 1.55 : 1.25);
     this.recoil = Math.max(0, this.recoil - seconds * (this.active === "knife" ? 4.5 : 7));
     this.reloadTilt = 0;
@@ -254,7 +259,8 @@ export class WeaponVisuals {
       const lift = Math.abs(Math.cos(this.stride)) * this.movementBlend;
       const amplitude = motion.running ? 0.018 : 0.009;
       // Switching tucks the weapon down and inward; sprinting carries it low across the body.
-      const lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7);
+      const throwing = this.throwTime > 0 ? Math.sin(Math.PI * (1 - this.throwTime / 0.55)) * 0.65 : 0;
+      const lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7, throwing);
       this.lower = lower;
       const sprint = this.sprintBlend;
       const breath = Math.sin(this.time * 1.8) * 0.006;

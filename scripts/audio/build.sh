@@ -73,6 +73,15 @@ for i in 0 1 2 3 4; do whole "$IMPACT/impactPunch_medium_00$i.ogg" body-hit-$((i
 for i in 0 1 2; do whole "$IMPACT/impactPunch_heavy_00$i.ogg" hurt-$((i + 1)) mono 4; done
 for i in 0 1 2; do whole "$IMPACT/impactSoft_heavy_00$i.ogg" land-$((i + 1)) mono 4; done
 for i in 0 1 2 3; do whole "$IMPACT/impactMining_00$i.ogg" bullet-impact-$((i + 1)) mono 4 0.45; done
+# Bullet impacts and breakage by material.
+for i in 0 1 2; do
+  whole "$IMPACT/impactMetal_light_00$i.ogg" impact-metal-$((i + 1)) mono 4 0.45
+  whole "$IMPACT/impactWood_light_00$i.ogg" impact-wood-$((i + 1)) mono 4 0.45
+  whole "$IMPACT/impactGlass_light_00$i.ogg" impact-glass-$((i + 1)) mono 4 0.45
+  whole "$IMPACT/impactSoft_medium_00$i.ogg" impact-soft-$((i + 1)) mono 4 0.4
+  whole "$IMPACT/impactGlass_heavy_00$i.ogg" glass-break-$((i + 1)) mono 4
+done
+for i in 0 1; do whole "$IMPACT/impactWood_heavy_00$i.ogg" wood-break-$((i + 1)) mono 4; done
 
 # Handling: Kenney RPG Audio foley and BMacZero's magazine seat.
 whole "$RPG/metalClick.ogg" dry-fire mono 4 0.2

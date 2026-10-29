@@ -2,10 +2,13 @@ import { BoxGeometry, InstancedMesh, Mesh, MeshStandardMaterial, Object3D, Scene
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { terrainHeight, type ArenaData } from "./arena";
 import { CollisionWorld } from "./collision";
+import { type InstanceRef } from "./scenery";
 
-export async function addCover(scene: Scene, data: ArenaData): Promise<void> {
-  const cover = new CollisionWorld(data).cover;
-  if (cover.length === 0) return;
+// Each cover piece is drawn as two barrier segments; refs maps cover:<piece>:<segment> to its instance.
+export async function addCover(scene: Scene, data: ArenaData): Promise<Map<string, InstanceRef[]>> {
+  const refs = new Map<string, InstanceRef[]>();
+  const cover = new CollisionWorld(data).cover.map((item, piece) => ({ ...item, piece }));
+  if (cover.length === 0) return refs;
   let model: Mesh | null = null;
   try {
     const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/concrete_road_barrier_02/barrier-optimized.glb`);
@@ -37,6 +40,7 @@ export async function addCover(scene: Scene, data: ArenaData): Promise<void> {
         transform.rotation.set(0, item.yaw, 0);
         transform.updateMatrix();
         instances.setMatrixAt(index * 2 + sideIndex, transform.matrix);
+        refs.set(`cover:${item.piece}:${sideIndex}`, [{ mesh: instances, index: index * 2 + sideIndex }]);
       }
     });
     instances.instanceMatrix.needsUpdate = true;
@@ -44,4 +48,5 @@ export async function addCover(scene: Scene, data: ArenaData): Promise<void> {
     instances.receiveShadow = true;
     scene.add(instances);
   }
+  return refs;
 }

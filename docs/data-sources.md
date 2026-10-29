@@ -35,7 +35,7 @@ The Rocketbox body mesh is cut to the faces weighted to the arm bones, the sleev
 
 ## Sound effects
 
-The 52 MP3 files in `public/audio/` (381 KB in total) are cut, peak-normalised and encoded by `scripts/audio/build.sh` from the sources below, which `scripts/audio/fetch.sh` downloads into the ignored `assets-src/audio/` folder. `npm run build:audio` runs both and needs ffmpeg with libmp3lame. Every source is CC0, so no attribution is required; the authors are credited here anyway. No sound is fetched from a third party at runtime. See [audio notes](audio.md) for how they are mixed.
+The 69 MP3 files in `public/audio/` (420 KB in total) are cut, peak-normalised and encoded by `scripts/audio/build.sh` from the sources below, which `scripts/audio/fetch.sh` downloads into the ignored `assets-src/audio/` folder. `npm run build:audio` runs both and needs ffmpeg with libmp3lame. Every source is CC0, so no attribution is required; the authors are credited here anyway. No sound is fetched from a third party at runtime. See [audio notes](audio.md) for how they are mixed.
 
 | Sounds | Source | Author | License |
 |---|---|---|---|
@@ -43,9 +43,24 @@ The 52 MP3 files in `public/audio/` (381 KB in total) are cut, peak-normalised a
 | Pistol and rifle reloads (`reload-pistol`, `reload-rifle`) | [Gun Reload Sounds](https://opengameart.org/content/gun-reload-sounds), `gunreload1.wav` and `assaultriflereload1.wav` | SpringySpringo | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | Magazine seat on pickup (`mag-in`) | [Gun Reload Sound Effects](https://opengameart.org/content/gun-reload-sound-effects), `clipload1.wav` | Brian MacIntosh (BMacZero) | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | Footsteps on concrete and grass, landings, body hits, hurt and bullet impacts (`step-*`, `land-*`, `body-hit-*`, `hurt-*`, `bullet-impact-*`) | [Impact Sounds](https://kenney.nl/assets/impact-sounds) 1.0: `footstep_concrete`, `footstep_grass`, `impactSoft_heavy`, `impactPunch_medium`, `impactPunch_heavy`, `impactMining` | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| Material impacts and breakage: metal, wood, glass, soft (`impact-metal-*`, `impact-wood-*`, `impact-glass-*`, `impact-soft-*`, `glass-break-*`, `wood-break-*`) | [Impact Sounds](https://kenney.nl/assets/impact-sounds) 1.0: `impactMetal_light`, `impactWood_light`, `impactGlass_light`, `impactSoft_medium`, `impactGlass_heavy`, `impactWood_heavy` | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | Weapon handling: dry fire, ready click, knife draw, cloth, grabs, knife cut (`dry-fire`, `latch`, `draw-knife-*`, `cloth-*`, `grab-*`, `knife-hit-*`) | [RPG Audio](https://kenney.nl/assets/rpg-audio): `metalClick`, `metalLatch`, `drawKnife`, `cloth`, `handleSmallLeather`, `knifeSlice` | Kenney | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 
 The gunshot takes start 3 ms before each detected onset and keep a short tail; the mid-distance takes keep their street echo and, for the AK-47, the supersonic crack that arrives ahead of the report. The pistol reload loses two silent gaps to fit the 1.2 s reload, and the rifle reload gains 0.12 s to fit 1.7 s. The hit tick, headshot ring, elimination confirmation, knife swing, near-miss crack and the low thump under shots are synthesised in the browser.
+
+## Street props
+
+`public/models/props/*.glb` and `props.json` are built by `scripts/props/build.sh` (run by `npm run build:props`) from Poly Haven models downloaded by `scripts/props/fetch.sh`, which pins every source file by MD5. The build keeps the clean variant where a source has two, seats the trash can lid, removes the air-conditioner's hanging pipe, simplifies each mesh, resizes textures to 512 px WebP and centres each model with its base at y = 0. All are CC0 1.0 under the [Poly Haven license](https://polyhaven.com/license).
+
+| Prop | Author | Source |
+|---|---|---|
+| Wooden crate | James Ray Cock | [Wooden Crate 01](https://polyhaven.com/a/wooden_crate_01) |
+| Large wooden crate | Prabhjinder Singh | [Wooden Military Crate](https://polyhaven.com/a/wooden_military_crate) |
+| Trash can | GurJas Studios | [Metal Trash Can](https://polyhaven.com/a/metal_trash_can) |
+| Oil drum | Serhii Khromov | [Barrel 03](https://polyhaven.com/a/barrel_03) |
+| Cardboard box | Rahul Chaudhary | [Cardboard Box 01](https://polyhaven.com/a/cardboard_box_01) |
+| Air-conditioning unit | Monsta3D | [Exterior Aircon Unit](https://polyhaven.com/a/exterior_aircon_unit) |
+| Plastic crate | Fabi_G | [Plastic Crate 02](https://polyhaven.com/a/plastic_crate_02) |
 
 ### Microsoft Rocketbox: MIT License
 
