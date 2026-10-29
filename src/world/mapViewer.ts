@@ -10,6 +10,7 @@ import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
+import { PlayerModelLibrary } from "../game/playerModel";
 import { ShotEffects } from "../game/shotEffects";
 import { type CombatEvent } from "../game/matchState";
 import { WeaponVisuals } from "../game/weaponVisuals";
@@ -460,7 +461,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   container.appendChild(renderer.domElement);
   const physics = new PhysicsWorld(data, arena);
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
-  const remotePlayers = new RemotePlayers(scene, data);
+  const playerModels = new PlayerModelLibrary();
+  const remotePlayers = new RemotePlayers(scene, data, playerModels);
   scene.add(camera);
   const viewScene = new Scene();
   viewScene.environment = scene.environment;
@@ -616,6 +618,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       shotEffects.dispose();
       authoredViewModel.dispose();
       remotePlayers.clear();
+      playerModels.dispose();
       disposeScene(scene);
       disposeScene(viewScene);
       textures.dispose();

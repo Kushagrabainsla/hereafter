@@ -10,8 +10,13 @@ mkdir -p "$SRC/rocketbox" "$SRC/opengameart" "$SRC/polyhaven"
 RB="https://raw.githubusercontent.com/microsoft/Microsoft-Rocketbox/0943055db6ec570bcef9f2c8b41c9e5467c808f9"
 curl -fsSL "$RB/LICENSE.md" -o "$SRC/rocketbox/LICENSE.md"
 curl -fsSL "$RB/Assets/Avatars/Professions/Military_Male_03/Export/Military_Male_03.fbx" -o "$SRC/rocketbox/Military_Male_03.fbx"
-for t in body_color_acu body_normal body_specular equipment_color_acu equipment_normal equipment_specular; do
+for t in body_color_acu body_normal body_specular equipment_color_acu equipment_normal equipment_specular head_color head_normal helmet_color_acu helmet_normal; do
   curl -fsSL "$RB/Assets/Avatars/Professions/Military_Male_03/Textures/sm004_$t.tga" -o "$SRC/rocketbox/sm004_$t.tga"
+done
+# Rocketbox animation library clips (MIT) for the third-person character.
+mkdir -p "$SRC/rocketbox/animations"
+for f in all_animations_max_motextr_static/m_idle_neutral_01 all_animations_max_motextr_static/m_crouch_idle all_animations_max_motextr_xy/m_walk_neutral all_animations_max_motextr_xy/m_run_neutral; do
+  curl -fsSL "$RB/Assets/Animations/$f.max.fbx" -o "$SRC/rocketbox/animations/$(basename "$f").max.fbx"
 done
 
 # Poly Haven models (CC0): 1K glTF with packed ARM textures.

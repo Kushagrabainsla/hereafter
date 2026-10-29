@@ -6,9 +6,16 @@ import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
 import { type WeaponKind } from "./combatRules";
 import { makeWeapon } from "./weaponVisuals";
+import { PlayerModelLibrary, type PlayerModelInstance } from "./playerModel";
+
+// Where each procedural weapon's grip sits, so it can be moved onto the character's hand socket.
+const GRIP_OFFSET: Record<WeaponKind, [number, number, number]> = { knife: [0, 0.065, -0.015], pistol: [0, 0.165, -0.012], rifle: [0, 0.165, -0.012] };
 
 interface RemoteAvatar {
   root: Group;
+  mannequin: Group;
+  model: PlayerModelInstance | null;
+  tint: Color;
   head: Group;
   leftArm: Group;
   rightArm: Group;
@@ -30,21 +37,23 @@ function addPart(parent: Group, geometry: BoxGeometry | CapsuleGeometry | Cylind
 
 function createAvatar(peerId: string): RemoteAvatar {
   const root = new Group();
+  const mannequin = new Group();
+  root.add(mannequin);
   const hue = [...peerId].reduce((value, character) => value + character.charCodeAt(0), 0) % 360 / 360;
   const jacket = new MeshStandardMaterial({ color: new Color().setHSL(hue, 0.31, 0.3), roughness: 0.9 });
   const dark = new MeshStandardMaterial({ color: 0x253038, roughness: 0.9 });
   const trim = new MeshStandardMaterial({ color: 0x9ec6bf, roughness: 0.68, metalness: 0.2 });
   const skin = new MeshStandardMaterial({ color: 0xb58c72, roughness: 0.95 });
-  addPart(root, new CapsuleGeometry(0.23, 0.48, 5, 10), jacket, 0, 1.13, 0);
-  addPart(root, new BoxGeometry(0.42, 0.13, 0.07), trim, 0, 1.26, 0.21);
-  addPart(root, new CylinderGeometry(0.16, 0.18, 0.2, 8), dark, 0, 0.73, 0);
+  addPart(mannequin, new CapsuleGeometry(0.23, 0.48, 5, 10), jacket, 0, 1.13, 0);
+  addPart(mannequin, new BoxGeometry(0.42, 0.13, 0.07), trim, 0, 1.26, 0.21);
+  addPart(mannequin, new CylinderGeometry(0.16, 0.18, 0.2, 8), dark, 0, 0.73, 0);
 
   const head = new Group();
   head.position.set(0, 1.64, 0);
   addPart(head, new SphereGeometry(0.19, 12, 10), skin, 0, 0, 0);
   addPart(head, new BoxGeometry(0.3, 0.07, 0.04), dark, 0, 0.025, 0.18);
   addPart(head, new CapsuleGeometry(0.205, 0.015, 3, 10), dark, 0, 0.17, -0.005);
-  root.add(head);
+  mannequin.add(head);
 
   const leftArm = new Group();
   const rightArm = new Group();
@@ -52,7 +61,7 @@ function createAvatar(peerId: string): RemoteAvatar {
     arm.position.set(side * 0.3, 1.35, 0);
     addPart(arm, new CylinderGeometry(0.09, 0.075, 0.62, 8), jacket, side * 0.02, -0.32, 0);
     addPart(arm, new SphereGeometry(0.09, 8, 7), dark, side * 0.02, -0.65, 0);
-    root.add(arm);
+    mannequin.add(arm);
   }
 
   const leftLeg = new Group();
@@ -61,7 +70,7 @@ function createAvatar(peerId: string): RemoteAvatar {
     leg.position.set(side * 0.135, 0.73, 0);
     addPart(leg, new CylinderGeometry(0.105, 0.095, 0.63, 8), dark, 0, -0.32, 0);
     addPart(leg, new BoxGeometry(0.2, 0.13, 0.31), dark, 0, -0.66, 0.07);
-    root.add(leg);
+    mannequin.add(leg);
   }
 
   const weapons = new Map<WeaponKind, Group>();
@@ -75,7 +84,7 @@ function createAvatar(peerId: string): RemoteAvatar {
     weapons.set(kind, model);
   }
 
-  return { root, head, leftArm, rightArm, leftLeg, rightLeg, pose: {
+  return { root, mannequin, model: null, tint: new Color().setHSL(hue, 0.5, 0.78), head, leftArm, rightArm, leftLeg, rightLeg, pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
   }, heading: 0, stride: 0, weapons };
@@ -86,7 +95,24 @@ export class RemotePlayers {
   private dead = new Set<string>();
   private equipped = new Map<string, WeaponKind>();
 
-  constructor(private scene: Scene, private data: ArenaData) {}
+  constructor(private scene: Scene, private data: ArenaData, private models: PlayerModelLibrary) {}
+
+  // Swap a mannequin for the shared character once the model has loaded.
+  private attachModel(avatar: RemoteAvatar): void {
+    const model = this.models.instantiate(avatar.tint);
+    if (!model) return;
+    avatar.model = model;
+    avatar.mannequin.visible = false;
+    avatar.root.scale.y = 1;
+    avatar.root.add(model.root);
+    for (const [kind, weapon] of avatar.weapons) {
+      const parent = model.weaponSocket ?? avatar.root;
+      parent.add(weapon);
+      weapon.position.set(...GRIP_OFFSET[kind]);
+      weapon.rotation.set(0, 0, 0);
+      weapon.scale.setScalar(1);
+    }
+  }
 
   setPose(peerId: string, pose: PlayerPose): void {
     let avatar = this.avatars.get(peerId);
@@ -97,7 +123,7 @@ export class RemotePlayers {
       this.avatars.set(peerId, avatar);
       this.scene.add(avatar.root);
     }
-    avatar.root.visible = !this.dead.has(peerId);
+    avatar.root.visible = avatar.model !== null || !this.dead.has(peerId);
     this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
     avatar.pose = pose;
   }
@@ -112,13 +138,17 @@ export class RemotePlayers {
     if (health <= 0) this.dead.add(peerId);
     else this.dead.delete(peerId);
     const avatar = this.avatars.get(peerId);
-    if (avatar) avatar.root.visible = health > 0;
+    if (!avatar) return;
+    // The character plays its death clip and stays down; the mannequin simply hides.
+    avatar.root.visible = avatar.model !== null || health > 0;
+    avatar.model?.setDead(health <= 0);
   }
 
   remove(peerId: string): void {
     const avatar = this.avatars.get(peerId);
     if (!avatar) return;
     this.scene.remove(avatar.root);
+    if (avatar.model) { avatar.root.remove(avatar.model.root); avatar.model.dispose(); }
     avatar.root.traverse((object) => {
       if (!(object instanceof Mesh)) return;
       object.geometry.dispose();
@@ -141,6 +171,7 @@ export class RemotePlayers {
     const blend = 1 - Math.exp(-delta * 12);
     for (const avatar of this.avatars.values()) {
       const { pose, root } = avatar;
+      if (!avatar.model && this.models.ready()) this.attachModel(avatar);
       root.position.x += (pose.east - root.position.x) * blend;
       root.position.z += (pose.north - root.position.z) * blend;
       const ground = terrainHeight(this.data, root.position.x, root.position.z) + pose.jumpHeight;
@@ -148,6 +179,12 @@ export class RemotePlayers {
       const difference = ((pose.heading - avatar.heading + 540) % 360) - 180;
       avatar.heading = (avatar.heading + difference * blend + 360) % 360;
       root.rotation.y = avatar.heading * Math.PI / 180;
+      if (avatar.model) {
+        avatar.model.setStance(pose.crouching ? "crouch" : pose.moving ? pose.running ? "run" : "walk" : "idle");
+        avatar.model.setPitch(pose.pitch);
+        avatar.model.update(delta);
+        continue;
+      }
       root.scale.y += ((pose.crouching ? 0.72 : 1) - root.scale.y) * blend;
       avatar.head.rotation.x += ((-pose.pitch * Math.PI / 180 * 0.45) - avatar.head.rotation.x) * blend;
       if (pose.moving) avatar.stride += delta * (pose.running ? 13 : 8);

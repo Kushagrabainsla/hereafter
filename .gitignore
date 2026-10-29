@@ -7,3 +7,4 @@ coverage/
 .DS_Store
 # Downloaded view-model sources (scripts/viewmodels/fetch.sh); only the built GLBs are committed.
 assets-src/
+__pycache__/

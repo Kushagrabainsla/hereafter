@@ -1,5 +1,5 @@
 #!/bin/sh
-# Rebuild public/models/{knife,pistol,rifle}.glb from the downloaded sources with Blender.
+# Rebuild public/models/{knife,pistol,rifle,player}.glb from the downloaded sources with Blender.
 # Set BLENDER to the Blender executable if it is not on PATH or in /Applications.
 set -eu
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -8,3 +8,4 @@ BLENDER="${BLENDER:-$(command -v blender || echo /Applications/Blender.app/Conte
 for weapon in knife pistol rifle; do
   "$BLENDER" -b --python "$ROOT/scripts/viewmodels/build.py" -- --weapon "$weapon" --out "$ROOT/public/models/$weapon.glb" ${PREVIEW:+--preview "$PREVIEW"}
 done
+"$BLENDER" -b --python "$ROOT/scripts/viewmodels/build_player.py" -- --out "$ROOT/public/models/player.glb" ${PREVIEW:+--preview "$PREVIEW"}
