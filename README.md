@@ -21,7 +21,7 @@ Open the URL printed by Vite. No API key or billing account is needed. The 3D ar
 
 You spawn at walking height on a clear street in a 140 × 140 m playable block, with visible first-person hands and a field knife. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and hold C or Ctrl to crouch. Click and drag on the map with a trackpad or mouse to move the view; a short click attacks. Press F to attack from the keyboard. Double-click the map for FPS mouse look and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
 
-Pistols and carbines appear at marked spots on the street. Walk close and press E to collect one; collected weapons return after 30 seconds. Use 1, 2, or 3 to equip the knife, pistol, or carbine, and R to reload a gun. The HUD shows health, ammo, kills, and deaths. After elimination, wait three seconds and press Enter to respawn with the knife.
+Pistols and carbines appear at marked spots on the street. Walk close and press E to collect one; collected weapons return after 30 seconds. Use 1, 2, or 3 to equip the knife, pistol, or carbine, and R to reload a gun. Switching lowers the current weapon and raises the next one over about half a second, and you cannot attack until the new weapon is up. Sprinting carries the weapon low across the body. The HUD shows health, ammo, kills, and deaths. After elimination, wait three seconds and press Enter to respawn with the knife.
 
 ## Play together
 

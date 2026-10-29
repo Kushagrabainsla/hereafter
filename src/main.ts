@@ -156,7 +156,7 @@ function nearestPickup(): WeaponPickup | null {
 function attack(): void {
   if (!viewer || !match || controlsDialog.open || roomDialog.open) return;
   const player = match.player(selfId);
-  if (!player || player.health <= 0) return;
+  if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   if (viewer.playerPose().running) { toast("Release sprint to fire"); return; }
   const weapon = player.active;
   const now = Date.now();

@@ -23,7 +23,7 @@ export class AuthoredViewModel {
         root.traverse((object) => {
           if (object instanceof Mesh) {
             object.renderOrder = 50;
-            for (const material of Array.isArray(object.material) ? object.material : [object.material]) { material.depthTest = false; material.depthWrite = false; }
+            for (const material of Array.isArray(object.material) ? object.material : [object.material]) { material.depthTest = true; material.depthWrite = true; }
           }
         });
         const mixer = new AnimationMixer(root);

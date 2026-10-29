@@ -71,6 +71,7 @@ export class MatchState {
   private snapshot: CombatSnapshot = { version: 1, revision: 0, players: {}, taken: [], pickupReturns: {}, event: null };
   private poses = new Map<string, PlayerPose>();
   private poseTimes = new Map<string, number>();
+  private equipUntil = new Map<string, number>();
   private lastAttack = new Map<string, number>();
 
   constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void, private shotClear?: ShotClear, private traceShot?: (ray: ShotRay) => number) {
@@ -83,6 +84,7 @@ export class MatchState {
     this.poses.clear();
     this.poseTimes.clear();
     this.lastAttack.clear();
+    this.equipUntil.clear();
     this.onChange(this.snapshot);
   }
 
@@ -149,6 +151,7 @@ export class MatchState {
       this.snapshot.pickupReturns[pickup.id] = now + 30_000;
       if (!player.owned.includes(pickup.weapon)) player.owned.push(pickup.weapon);
       player.active = pickup.weapon;
+      this.equipUntil.set(actor, now + 560);
       player.ammo[pickup.weapon] = WEAPONS[pickup.weapon].magazine;
       player.reloadUntil = 0;
       this.event("pickup", actor, undefined, pickup.weapon);
@@ -157,6 +160,7 @@ export class MatchState {
     if (intent.kind === "select") {
       if (!player.owned.includes(intent.weapon) || player.active === intent.weapon || player.reloadUntil > now) return false;
       player.active = intent.weapon;
+      this.equipUntil.set(actor, now + 560);
       this.changed();
       return true;
     }
@@ -168,7 +172,7 @@ export class MatchState {
     }
     if (intent.kind === "attack") {
       const weapon = player.active;
-      if (intent.weapon !== weapon || player.reloadUntil > now || now - (this.lastAttack.get(actor) ?? 0) < WEAPONS[weapon].cooldownMs) return false;
+      if (now < (this.equipUntil.get(actor) ?? 0) || intent.weapon !== weapon || player.reloadUntil > now || now - (this.lastAttack.get(actor) ?? 0) < WEAPONS[weapon].cooldownMs) return false;
       if (weapon !== "knife" && player.ammo[weapon] <= 0) return false;
       const pose = this.poses.get(actor);
       const aim = intent.aim;

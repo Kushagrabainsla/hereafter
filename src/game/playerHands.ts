@@ -1,112 +1,84 @@
-import { BoxGeometry, BufferGeometry, CapsuleGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, Vector3 } from "three/webgpu";
-import { type PlayerMotion } from "./playerController";
+import { CapsuleGeometry, Euler, Group, Mesh, MeshStandardMaterial, Vector3 } from "three/webgpu";
+import { type WeaponKind } from "./combatRules";
 
-function part(geometry: BufferGeometry, material: MeshStandardMaterial): Mesh {
-  const mesh = new Mesh(geometry, material);
-  mesh.renderOrder = 50;
-  return mesh;
+// A grip describes where a hand closes around the held weapon, in weapon-local metres.
+// halfWidth is the gripped part's half thickness across x; front is the z offset of its
+// front face from the palm centre; rake tilts the whole hand to follow a raked grip.
+// wrist moves where the forearm meets the palm (palm-local) for hands that are not
+// stacked straight below the weapon, such as the support hand under a fore-end.
+interface Grip {
+  side: -1 | 1;
+  center: [number, number, number];
+  halfWidth: number;
+  front: number;
+  rake?: [number, number, number];
+  trigger?: boolean;
+  wrist?: [number, number, number];
+  elbow: [number, number, number];
 }
 
+const GRIPS: Record<WeaponKind, Grip[]> = {
+  knife: [
+    { side: 1, center: [0, -0.065, 0.015], halfWidth: 0.05, front: -0.05, elbow: [0.6, -0.78, 0.62] },
+  ],
+  pistol: [
+    { side: 1, center: [0, -0.165, 0.012], halfWidth: 0.04, front: -0.052, rake: [-0.28, 0, 0], trigger: true, elbow: [0.56, -0.78, 0.66] },
+    { side: -1, center: [-0.028, -0.19, -0.03], halfWidth: 0.058, front: -0.046, rake: [-0.28, 0, 0], elbow: [-0.46, -0.78, 0.66] },
+  ],
+  rifle: [
+    { side: 1, center: [0, -0.165, 0.012], halfWidth: 0.04, front: -0.052, rake: [-0.28, 0, 0], trigger: true, elbow: [0.56, -0.8, 0.62] },
+    { side: -1, center: [-0.012, 0, -0.52], halfWidth: 0.058, front: -0.078, rake: [-Math.PI / 2, 0, 0], wrist: [-0.084, -0.03, -0.07], elbow: [-0.52, -0.7, -0.22] },
+  ],
+};
+
+const UP = new Vector3(0, 1, 0);
+
+// Grip geometry is authored in weapon-local coordinates. Fingers, wrists and arms
+// inherit the weapon's transform, so recoil, sway and gait cannot separate the grip.
 export class PlayerHands {
-  private left: Group;
-  private right: Group;
-  private stride = 0;
-  private sway = 0;
-  private breath = 0;
-  private airborneBlend = 0;
-  private landing = 0;
-  private wasAirborne = false;
-  private view = new Vector3();
-  private previousHeading: number | null = null;
-  private previousPitch = 0;
-  private turnLag = 0;
-  private pitchLag = 0;
+  readonly root = new Group();
 
-  constructor(private camera: PerspectiveCamera) {
-    const sleeve = new MeshStandardMaterial({ color: 0x354751, roughness: 0.96, depthTest: false, depthWrite: false });
-    const cuff = new MeshStandardMaterial({ color: 0x19242a, roughness: 0.92, depthTest: false, depthWrite: false });
-    const glove = new MeshStandardMaterial({ color: 0x414849, roughness: 0.89, depthTest: false, depthWrite: false });
-    const padding = new MeshStandardMaterial({ color: 0x272f32, roughness: 0.81, depthTest: false, depthWrite: false });
-    const makeArm = (side: -1 | 1): Group => {
-      const arm = new Group();
-      arm.position.set(side * 0.45, -0.67, -0.86);
-      arm.scale.setScalar(0.76);
-
-      const forearm = part(new CylinderGeometry(0.105, 0.16, 0.58, 9), sleeve);
-      forearm.position.set(side * 0.11, -0.22, 0.13);
-      forearm.rotation.z = side * 0.47;
-      arm.add(forearm);
-
-      const wrist = part(new CylinderGeometry(0.115, 0.115, 0.09, 9), cuff);
-      wrist.position.set(side * -0.035, 0.015, -0.015);
-      wrist.rotation.z = side * 0.27;
-      arm.add(wrist);
-
-      const palm = part(new CapsuleGeometry(0.11, 0.1, 5, 10), glove);
-      palm.position.set(side * -0.09, 0.11, -0.105);
-      palm.rotation.x = -0.35;
-      palm.rotation.z = side * 0.19;
-      arm.add(palm);
-
-      const backPlate = part(new BoxGeometry(0.18, 0.025, 0.17), padding);
-      backPlate.position.set(side * -0.09, 0.16, -0.17);
-      backPlate.rotation.z = side * 0.19;
-      arm.add(backPlate);
-
-      for (let finger = 0; finger < 4; finger += 1) {
-        const digit = part(new CapsuleGeometry(0.023, 0.09 - Math.abs(finger - 1.5) * 0.012, 4, 8), glove);
-        digit.position.set(side * -0.09 + (finger - 1.5) * 0.05, 0.245 - Math.abs(finger - 1.5) * 0.015, -0.16);
-        digit.rotation.x = -0.5;
-        arm.add(digit);
-        const knuckle = part(new BoxGeometry(0.039, 0.018, 0.05), padding);
-        knuckle.position.set(side * -0.09 + (finger - 1.5) * 0.05, 0.225, -0.205);
-        arm.add(knuckle);
-      }
-      const thumb = part(new CapsuleGeometry(0.03, 0.065, 4, 8), glove);
-      thumb.position.set(side * -0.22, 0.14, -0.08);
-      thumb.rotation.z = side * 0.7;
-      arm.add(thumb);
-
-      return arm;
+  constructor(parent: Group, kind: WeaponKind) {
+    const glove = new MeshStandardMaterial({ color: 0x424b45, roughness: 0.93 });
+    const pads = new MeshStandardMaterial({ color: 0x232c28, roughness: 0.86 });
+    const sleeve = new MeshStandardMaterial({ color: 0x38443e, roughness: 0.98 });
+    const segment = (group: Group, from: number[], to: number[], radius: number, material: MeshStandardMaterial, flatten = 1): Mesh => {
+      const a = new Vector3(...from), b = new Vector3(...to), direction = b.clone().sub(a);
+      const mesh = new Mesh(new CapsuleGeometry(radius, Math.max(0.001, direction.length() - radius * 2), 5, 12), material);
+      mesh.position.copy(a).add(b).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(UP, direction.normalize());
+      mesh.scale.x = flatten;
+      mesh.renderOrder = 50;
+      group.add(mesh);
+      return mesh;
     };
-    this.left = makeArm(-1);
-    this.right = makeArm(1);
-    camera.add(this.left, this.right);
-  }
-
-  setVisible(visible: boolean): void { this.left.visible = visible; this.right.visible = visible; }
-
-  update(seconds: number, motion: PlayerMotion): void {
-    const delta = Math.min(seconds, 0.1);
-    this.camera.getWorldDirection(this.view);
-    const heading = Math.atan2(this.view.x, this.view.z);
-    const pitch = Math.asin(Math.max(-1, Math.min(1, this.view.y)));
-    if (this.previousHeading !== null) {
-      const headingChange = Math.atan2(Math.sin(heading - this.previousHeading), Math.cos(heading - this.previousHeading));
-      const pitchChange = pitch - this.previousPitch;
-      this.turnLag = Math.max(-0.08, Math.min(0.08, this.turnLag - headingChange * 0.5));
-      this.pitchLag = Math.max(-0.055, Math.min(0.055, this.pitchLag - pitchChange * 0.45));
+    for (const grip of GRIPS[kind]) {
+      const s = grip.side, w = grip.halfWidth, f = grip.front;
+      const palm = new Group();
+      palm.position.set(...grip.center);
+      if (grip.rake) palm.rotation.set(...grip.rake);
+      const px = w + 0.026;
+      // Flattened palm against the side of the grip, with a padded knuckle ridge behind it.
+      segment(palm, [s * px, -0.06, 0.012], [s * px, 0.05, 0.012], 0.046, glove, 0.6);
+      segment(palm, [s * (px + 0.018), -0.045, 0.022], [s * (px + 0.018), 0.04, 0.022], 0.02, pads);
+      for (let finger = 0; finger < 4; finger += 1) {
+        const y = 0.048 - finger * 0.036;
+        // Three phalanges wrap the grip; the index finger reaches the trigger on guns.
+        const front = finger === 0 && grip.trigger ? f - 0.042 : f;
+        const points = [[s * (w + 0.018), y, 0.008], [s * (w + 0.01), y, front - 0.012], [0, y, front - 0.03], [-s * (w - 0.012), y, front - 0.004]];
+        for (let joint = 0; joint < 3; joint += 1) segment(palm, points[joint], points[joint + 1], 0.0165 - joint * 0.0015, glove);
+        segment(palm, [s * (w + 0.018), y, -0.014], [s * (w + 0.012), y, front + 0.012], 0.018, pads);
+      }
+      // Opposing thumb closes over the top of the grip.
+      segment(palm, [s * (w + 0.02), 0.035, 0.05], [s * 0.02, 0.07, 0.062], 0.024, glove);
+      segment(palm, [s * 0.02, 0.07, 0.062], [-s * (w - 0.01), 0.068, 0.035], 0.021, glove);
+      this.root.add(palm);
+      // Forearms angle out of the lower frame; wrists meet the palms.
+      const wrist = new Vector3(...(grip.wrist ?? [s * px, -0.05, 0.02])).applyEuler(new Euler(...(grip.rake ?? [0, 0, 0]))).add(palm.position);
+      const elbow = new Vector3(...grip.elbow);
+      segment(this.root, wrist.toArray(), wrist.clone().lerp(elbow, 0.16).toArray(), 0.054, pads);
+      segment(this.root, wrist.clone().lerp(elbow, 0.12).toArray(), elbow.toArray(), 0.072, sleeve);
     }
-    this.previousHeading = heading;
-    this.previousPitch = pitch;
-    const settle = Math.exp(-delta * 8);
-    this.turnLag *= settle;
-    this.pitchLag *= settle;
-    this.breath += delta;
-    const target = motion.moving && !motion.airborne ? 1 : 0;
-    this.sway += (target - this.sway) * Math.min(1, delta * 8);
-    if (motion.moving) this.stride += motion.speed * delta * (motion.running ? 1.55 : 1.25);
-    if (this.wasAirborne && !motion.airborne) this.landing = 1;
-    this.wasAirborne = motion.airborne;
-    this.landing = Math.max(0, this.landing - delta * 5);
-    this.airborneBlend += ((motion.airborne ? 1 : 0) - this.airborneBlend) * Math.min(1, delta * 10);
-    const amplitude = this.sway * (motion.running ? 0.14 : 0.085);
-    const swing = Math.sin(this.stride) * amplitude;
-    const breathing = Math.sin(this.breath * 1.7) * 0.006;
-    const lift = this.airborneBlend * 0.095 - (motion.crouching ? 0.055 : 0) - this.landing * 0.04;
-    this.left.position.set(-0.45 - swing * 0.08 + this.turnLag, -0.67 + lift + swing * 0.25 + breathing + this.pitchLag, -0.86 + swing * 0.7 + this.airborneBlend * 0.045);
-    this.right.position.set(0.45 - swing * 0.08 + this.turnLag, -0.67 + lift - swing * 0.25 + breathing + this.pitchLag, -0.86 - swing * 0.7 + this.airborneBlend * 0.045);
-    this.left.rotation.set(-0.08 + swing * 1.3 - this.airborneBlend * 0.2, swing * 0.22 - this.turnLag * 0.6, -0.035 - swing * 0.35);
-    this.right.rotation.set(-0.08 - swing * 1.3 - this.airborneBlend * 0.2, -swing * 0.22 - this.turnLag * 0.6, 0.035 + swing * 0.35);
+    parent.add(this.root);
   }
 }

@@ -1,21 +1,20 @@
 import {
   ACESFilmicToneMapping, BoxGeometry, BufferGeometry, Color, CylinderGeometry, DirectionalLight,
   DoubleSide, EquirectangularReflectionMapping, ExtrudeGeometry, Float32BufferAttribute, FogExp2, Group, HemisphereLight, InstancedMesh,
-  LineBasicMaterial, LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, PCFSoftShadowMap,
-  Object3D, PerspectiveCamera, PlaneGeometry, Scene, Shape, ShapeGeometry, SphereGeometry, Vector2, Vector3,
+  LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, PCFSoftShadowMap,
+  Object3D, PerspectiveCamera, PlaneGeometry, Scene, Shape, ShapeGeometry, SphereGeometry, Vector2,
   WebGPURenderer,
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
-import { PlayerHands } from "../game/playerHands";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
 import { ShotEffects } from "../game/shotEffects";
 import { type CombatEvent } from "../game/matchState";
 import { WeaponVisuals } from "../game/weaponVisuals";
 import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
-import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
+import { loadArenaData, terrainHeight, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 import { addCover } from "./cover";
 import { PhysicsWorld, type ShotRay } from "./physics";
@@ -48,6 +47,7 @@ export interface MapViewer {
   respawn: () => void;
   setWeapon: (kind: WeaponKind) => void;
   setTakenPickups: (taken: string[]) => void;
+  weaponReady: () => boolean;
   playAttack: (weapon: WeaponKind) => void;
   setRemotePose: (peerId: string, pose: PlayerPose) => void;
   setRemoteHealth: (peerId: string, health: number) => void;
@@ -373,33 +373,6 @@ function addTrees(scene: Scene, data: ArenaData, textures: SurfaceTextures): (ti
   return update;
 }
 
-function makeBoundary(data: ArenaData, arena: Arena): Group {
-  const group = new Group();
-  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
-  const half = arena.sizeMeters / 2;
-  const corners: Point[] = [
-    [centerEast - half, centerNorth - half], [centerEast + half, centerNorth - half],
-    [centerEast + half, centerNorth + half], [centerEast - half, centerNorth + half],
-  ];
-  const geometry = new BufferGeometry();
-  geometry.setFromPoints(corners.flatMap(([east, north], index) => {
-    const [nextEast, nextNorth] = corners[(index + 1) % corners.length];
-    return [
-      new Vector3(east, terrainHeight(data, east, north) + 0.8, north),
-      new Vector3(nextEast, terrainHeight(data, nextEast, nextNorth) + 0.8, nextNorth),
-    ];
-  }));
-  group.add(new LineSegments(geometry, new LineBasicMaterial({ color: 0x85e9e9 })));
-  const postGeometry = new BoxGeometry(1.2, 8, 1.2);
-  const postMaterial = new MeshBasicMaterial({ color: 0x85e9e9 });
-  for (const [east, north] of corners) {
-    const post = new Mesh(postGeometry, postMaterial);
-    post.position.set(east, terrainHeight(data, east, north) + 4, north);
-    group.add(post);
-  }
-  return group;
-}
-
 function disposeScene(scene: Scene): void {
   const geometries = new Set<BufferGeometry>();
   const materials = new Set<{ dispose: () => void }>();
@@ -471,8 +444,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.add(roadDetails);
   let streetFurniture = makeStreetFurniture(data, arena);
   scene.add(streetFurniture);
-  let boundary = makeBoundary(data, arena);
-  scene.add(boundary);
 
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
   const renderer = new WebGPURenderer({ antialias: true, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
@@ -491,9 +462,16 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
   const remotePlayers = new RemotePlayers(scene, data);
   scene.add(camera);
-  const hands = new PlayerHands(camera);
-  const weaponVisuals = new WeaponVisuals(camera, scene, data, makeWeaponPickups(data, arena));
-  const authoredViewModel = new AuthoredViewModel(camera);
+  const viewScene = new Scene();
+  viewScene.environment = scene.environment;
+  const viewCamera = new PerspectiveCamera(camera.fov, camera.aspect, 0.01, 10);
+  viewScene.add(viewCamera);
+  viewScene.add(new HemisphereLight(0xe6f1ff, 0x605b4a, 2));
+  const viewSun = new DirectionalLight(0xffe6c4, 2.5);
+  viewSun.position.set(-2, 4, 3);
+  viewScene.add(viewSun);
+  const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, makeWeaponPickups(data, arena));
+  const authoredViewModel = new AuthoredViewModel(viewCamera);
   const shotEffects = new ShotEffects(scene);
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
   const resize = (): void => {
@@ -520,16 +498,23 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     remotePlayers.update(delta);
     shotEffects.update(delta);
     authoredViewModel.update(delta, player.motion());
-    hands.setVisible(!authoredViewModel.hasModel());
     weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
-    hands.update(delta, player.motion());
-    weaponVisuals.update(delta, player.motion());
+    const pose = player.pose();
+    weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch);
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
     sun.target.updateMatrixWorld();
     previousFrame = time;
     renderer.render(scene, camera);
+    const worldCalls = renderer.info.render.drawCalls, worldTriangles = renderer.info.render.triangles;
+    viewCamera.aspect = camera.aspect;
+    viewCamera.fov = camera.fov;
+    viewCamera.updateProjectionMatrix();
+    renderer.autoClear = false;
+    renderer.clearDepth();
+    renderer.render(viewScene, viewCamera);
+    renderer.autoClear = true;
     frames += 1;
     renderedFrames += 1;
     if (!readySent && renderedFrames >= 2) {
@@ -556,8 +541,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       events.onMetrics({
         fps,
         renderer: rendererName,
-        drawCalls: renderer.info.render.drawCalls,
-        triangles: renderer.info.render.triangles,
+        drawCalls: worldCalls + renderer.info.render.drawCalls,
+        triangles: worldTriangles + renderer.info.render.triangles,
         pixelRatio,
       });
       frames = 0;
@@ -570,10 +555,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setArena(nextArena) {
       player.reset(nextArena);
       remotePlayers.clear();
-      scene.remove(boundary);
-      disposeGroup(boundary);
-      boundary = makeBoundary(data, nextArena);
-      scene.add(boundary);
       scene.remove(roadDetails);
       disposeGroup(roadDetails);
       roadDetails = makeRoadDetails(data, nextArena);
@@ -590,7 +571,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       return player.pose();
     },
     traceShot(ray) { return physics.traceShot(ray); },
-    showShot(event, local) { shotEffects.show(event, local ? weaponVisuals.muzzle() : undefined); },
+    showShot(event, local) { shotEffects.show(event, local ? weaponVisuals.muzzle()?.applyMatrix4(camera.matrixWorld) : undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
     },
@@ -607,6 +588,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setTakenPickups(taken) {
       weaponVisuals.setTaken(taken);
     },
+    weaponReady() { return weaponVisuals.ready(); },
     playAttack(weapon) {
       weaponVisuals.attack();
       authoredViewModel.fire();
@@ -636,6 +618,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       authoredViewModel.dispose();
       remotePlayers.clear();
       disposeScene(scene);
+      disposeScene(viewScene);
       textures.dispose();
       glassTexture.dispose();
       sky.dispose();
