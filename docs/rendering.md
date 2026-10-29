@@ -15,3 +15,11 @@ The next visual pass should author a small number of high-quality facade, sidewa
 Each player already renders the same static arena files locally and sends pose and combat data over WebRTC; peers do not stream map geometry or animation bones. Shared URLs and browser caching serve the same asset bytes to different players, while each device still performs its own rendering. [Rapier 3D](https://rapier.rs/docs/user_guides/javascript/getting_started_js/) now runs character physics and scene queries in WebAssembly. Rendering remains on the GPU; a separate WASM mesh or texture pipeline would need a measured CPU bottleneck.
 
 Before claiming 2–8 player performance or higher fidelity, test several real MacBooks and Windows GPUs in a live room, record frame-time percentiles and memory use, and inspect worst-case views with other players and weapon effects visible.
+
+### Authored first-person assets
+
+`AuthoredViewModel` accepts same-origin GLB files containing the arms and held weapon together, preserving rigging and PBR materials. Export from Blender with applied transforms, skinning, and baked animation. Author in camera-local coordinates (metres, +Y up, forward -Z); the GLB is attached directly to the camera without automatic rescaling. Use clips named `idle`, `walk`, `run`, and `fire`. Locomotion clips crossfade; fire plays once. Weapon-specific grip poses should be authored in each file. Include muzzle-flash geometry in the fire animation for custom models.
+
+Place files under `public/models/`, then set `VITE_KNIFE_VIEWMODEL=models/knife.glb`, `VITE_PISTOL_VIEWMODEL=models/pistol.glb`, and/or `VITE_RIFLE_VIEWMODEL=models/rifle.glb` at build time. Each successful model replaces both procedural hands and its matching weapon; missing or failed assets retain the fallback. No authored hand assets are bundled yet. This importer does not convert Unity prefabs, controllers, or shaders; source meshes and animations must be exported to GLB, with a license allowing distribution in the public web game. Keep source/author/license records alongside any assets added.
+
+References: [Blender glTF export](https://docs.blender.org/manual/en/dev/addons/scene_gltf2.html), [Three.js GLTFLoader](https://threejs.org/docs/pages/GLTFLoader.html).

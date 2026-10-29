@@ -3,8 +3,8 @@ import { toLocal, type Arena } from "../world/arena";
 import { type PlayerPose } from "../game/playerController";
 import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
 
-const APP_ID = "io.github.kushagrabainsla.hereafter.v1";
-const PROTOCOL_VERSION = 1;
+const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
+const PROTOCOL_VERSION = 2;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -54,7 +54,10 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
 function validIntent(value: unknown): value is CombatIntent {
   if (typeof value !== "object" || value === null) return false;
   const intent = value as Partial<CombatIntent>;
-  if (intent.kind === "attack" || intent.kind === "select") return intent.weapon === "knife" || intent.weapon === "pistol" || intent.weapon === "rifle";
+  if (intent.kind === "attack" || intent.kind === "select") {
+    if (!["knife", "pistol", "rifle"].includes(intent.weapon ?? "")) return false;
+    return intent.kind !== "attack" || !intent.aim || (Number.isFinite(intent.aim.heading) && Number.isFinite(intent.aim.pitch) && Math.abs(intent.aim.pitch) <= 80);
+  }
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
   return intent.kind === "reload" || intent.kind === "respawn";
 }

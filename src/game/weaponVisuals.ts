@@ -1,6 +1,6 @@
 import {
   BoxGeometry, CylinderGeometry, ExtrudeGeometry, Group, Mesh, MeshStandardMaterial,
-  PerspectiveCamera, PointLight, Scene, Shape, SphereGeometry, TorusGeometry,
+  PerspectiveCamera, PointLight, MeshBasicMaterial, Vector3, Scene, Shape, SphereGeometry, TorusGeometry,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type WeaponKind, type WeaponPickup } from "./combatRules";
@@ -63,6 +63,8 @@ export class WeaponVisuals {
   private pickups = new Map<string, PickupView>();
   private active: WeaponKind = "knife";
   private recoil = 0;
+  private flashTime = 0;
+  private flashes = new Map<WeaponKind, Mesh>();
   private time = 0;
   private stride = 0;
   private movementBlend = 0;
@@ -74,6 +76,15 @@ export class WeaponVisuals {
       model.rotation.set(kind === "knife" ? -0.26 : -0.08, kind === "knife" ? -0.28 : -0.08, kind === "knife" ? 0.18 : 0);
       model.scale.setScalar(kind === "knife" ? 0.75 : 1.18);
       model.visible = kind === "knife";
+      if (kind !== "knife") {
+        const flash = new Mesh(new SphereGeometry(1, 7, 4), new MeshBasicMaterial({ color: 0xffd68a, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false, toneMapped: false }));
+        flash.position.set(0, 0.005, kind === "rifle" ? -0.96 : -0.50);
+        flash.scale.set(0.045, 0.045, 0.12);
+        flash.renderOrder = 51;
+        flash.visible = false;
+        model.add(flash);
+        this.flashes.set(kind, flash);
+      }
       camera.add(model);
       this.held.set(kind, model);
     }
@@ -106,15 +117,25 @@ export class WeaponVisuals {
     for (const [name, model] of this.held) model.visible = name === kind;
   }
 
+  setFallbackVisible(visible: boolean): void {
+    for (const [kind, model] of this.held) model.visible = visible && kind === this.active;
+  }
+
   setTaken(taken: string[]): void {
     const hidden = new Set(taken);
     for (const [id, pickup] of this.pickups) pickup.root.visible = !hidden.has(id);
   }
 
-  attack(): void { this.recoil = 1; }
+  muzzle(): Vector3 | undefined {
+    return this.flashes.get(this.active)?.getWorldPosition(new Vector3());
+  }
+  attack(): void { this.recoil = 1; this.flashTime = 0.055; }
+
 
   update(seconds: number, motion: PlayerMotion): void {
     this.time += seconds;
+    this.flashTime = Math.max(0, this.flashTime - seconds);
+    for (const [kind, flash] of this.flashes) flash.visible = kind === this.active && this.flashTime > 0;
     this.movementBlend += ((motion.moving && !motion.airborne ? 1 : 0) - this.movementBlend) * Math.min(1, seconds * 8);
     if (motion.moving) this.stride += motion.speed * seconds * (motion.running ? 1.55 : 1.25);
     this.recoil = Math.max(0, this.recoil - seconds * (this.active === "knife" ? 4.5 : 7));

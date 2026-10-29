@@ -10,6 +10,9 @@ import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { PlayerHands } from "../game/playerHands";
 import { RemotePlayers } from "../game/remotePlayers";
+import { AuthoredViewModel } from "../game/authoredViewModel";
+import { ShotEffects } from "../game/shotEffects";
+import { type CombatEvent } from "../game/matchState";
 import { WeaponVisuals } from "../game/weaponVisuals";
 import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
@@ -39,11 +42,13 @@ export interface MapViewer {
   setPaused: (paused: boolean) => void;
   playerPose: () => PlayerPose;
   clearShot: (ray: ShotRay) => boolean;
+  traceShot: (ray: ShotRay) => number;
+  showShot: (event: CombatEvent, local: boolean) => void;
   setSpawnSlot: (slot: number) => void;
   respawn: () => void;
   setWeapon: (kind: WeaponKind) => void;
   setTakenPickups: (taken: string[]) => void;
-  playAttack: () => void;
+  playAttack: (weapon: WeaponKind) => void;
   setRemotePose: (peerId: string, pose: PlayerPose) => void;
   setRemoteHealth: (peerId: string, health: number) => void;
   setRemoteWeapon: (peerId: string, weapon: WeaponKind) => void;
@@ -488,6 +493,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.add(camera);
   const hands = new PlayerHands(camera);
   const weaponVisuals = new WeaponVisuals(camera, scene, data, makeWeaponPickups(data, arena));
+  const authoredViewModel = new AuthoredViewModel(camera);
+  const shotEffects = new ShotEffects(scene);
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
   const resize = (): void => {
     const width = Math.max(1, container.clientWidth);
@@ -511,6 +518,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
     remotePlayers.update(delta);
+    shotEffects.update(delta);
+    authoredViewModel.update(delta, player.motion());
+    hands.setVisible(!authoredViewModel.hasModel());
+    weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
     hands.update(delta, player.motion());
     weaponVisuals.update(delta, player.motion());
     updateTrees(time / 1000);
@@ -578,6 +589,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     playerPose() {
       return player.pose();
     },
+    traceShot(ray) { return physics.traceShot(ray); },
+    showShot(event, local) { shotEffects.show(event, local ? weaponVisuals.muzzle() : undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
     },
@@ -589,12 +602,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     setWeapon(kind) {
       weaponVisuals.setActive(kind);
+      authoredViewModel.setActive(kind);
     },
     setTakenPickups(taken) {
       weaponVisuals.setTaken(taken);
     },
-    playAttack() {
+    playAttack(weapon) {
       weaponVisuals.attack();
+      authoredViewModel.fire();
+      if (weapon !== "knife") player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
     },
     setRemotePose(peerId, pose) {
       remotePlayers.setPose(peerId, pose);
@@ -616,6 +632,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       observer.disconnect();
       player.destroy();
       physics.dispose();
+      shotEffects.dispose();
+      authoredViewModel.dispose();
       remotePlayers.clear();
       disposeScene(scene);
       textures.dispose();

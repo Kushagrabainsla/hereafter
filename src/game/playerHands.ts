@@ -74,6 +74,8 @@ export class PlayerHands {
     camera.add(this.left, this.right);
   }
 
+  setVisible(visible: boolean): void { this.left.visible = visible; this.right.visible = visible; }
+
   update(seconds: number, motion: PlayerMotion): void {
     const delta = Math.min(seconds, 0.1);
     this.camera.getWorldDirection(this.view);

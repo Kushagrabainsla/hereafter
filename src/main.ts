@@ -38,6 +38,10 @@ const pickupHint = element<HTMLElement>("pickup-hint");
 const combatToast = element<HTMLElement>("combat-toast");
 const deathOverlay = element<HTMLElement>("death-overlay");
 const respawnHint = element<HTMLElement>("respawn-hint");
+const damageReadout = document.createElement("div");
+damageReadout.className = "damage-readout";
+damageReadout.setAttribute("role", "status");
+document.getElementById("map")!.parentElement!.appendChild(damageReadout);
 const hitMarker = element<HTMLElement>("hit-marker");
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
@@ -49,6 +53,13 @@ let peerRoom: PeerRoom | null = null;
 let match: MatchState | null = null;
 let lastEventId = 0;
 let lastLocalAttack = 0;
+let triggerHeld = false;
+window.addEventListener("pointerup", () => { triggerHeld = false; });
+window.addEventListener("blur", () => { triggerHeld = false; });
+document.addEventListener("pointerlockchange", () => { triggerHeld = false; });
+window.setInterval(() => {
+  if (triggerHeld && document.pointerLockElement && match?.player(selfId)?.active === "rifle") attack();
+}, 16);
 let toastTimer = 0;
 const arena = arenaFromUrl(window.location.search);
 
@@ -70,6 +81,7 @@ function closeControls(): void {
 }
 
 function syncPause(): void {
+  if (controlsDialog.open || roomDialog.open || (match?.player(selfId)?.health ?? 100) <= 0) triggerHeld = false;
   viewer?.setPaused(controlsDialog.open || roomDialog.open || (match?.player(selfId)?.health ?? 100) <= 0);
 }
 
@@ -80,11 +92,13 @@ function toast(message: string): void {
   toastTimer = window.setTimeout(() => { combatToast.hidden = true; }, 2200);
 }
 
+const pulseTimers = new WeakMap<HTMLElement, number>();
 function pulse(elementToPulse: HTMLElement, duration: number): void {
+  window.clearTimeout(pulseTimers.get(elementToPulse));
   elementToPulse.classList.remove("visible");
   void elementToPulse.offsetWidth;
   elementToPulse.classList.add("visible");
-  window.setTimeout(() => elementToPulse.classList.remove("visible"), duration);
+  pulseTimers.set(elementToPulse, window.setTimeout(() => elementToPulse.classList.remove("visible"), duration));
 }
 
 function onMatchChange(state: CombatSnapshot): void {
@@ -110,6 +124,11 @@ function onMatchChange(state: CombatSnapshot): void {
   const event = state.event;
   if (event && event.id !== lastEventId) {
     lastEventId = event.id;
+    if (event.shot) viewer?.showShot(event, event.actor === selfId);
+    if ((event.kind === "hit" || event.kind === "death") && event.actor === selfId) {
+      damageReadout.textContent = `${event.zone === "head" ? "HEADSHOT · " : ""}${event.damage ?? 0} DAMAGE${event.kind === "death" ? " · ELIMINATED" : ""}`;
+      pulse(damageReadout, 900);
+    }
     if (event.kind === "pickup" && event.actor === selfId && event.weapon) toast(`${WEAPONS[event.weapon].label} equipped`);
     if ((event.kind === "hit" || event.kind === "death") && event.actor === selfId) pulse(hitMarker, 260);
     if ((event.kind === "hit" || event.kind === "death") && event.target === selfId) pulse(damageFlash, 420);
@@ -138,13 +157,15 @@ function attack(): void {
   if (!viewer || !match || controlsDialog.open || roomDialog.open) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0) return;
+  if (viewer.playerPose().running) { toast("Release sprint to fire"); return; }
   const weapon = player.active;
   const now = Date.now();
   if (now - lastLocalAttack < WEAPONS[weapon].cooldownMs || player.reloadUntil > now) return;
   if (weapon !== "knife" && player.ammo[weapon] <= 0) { toast("Press R to reload"); return; }
   lastLocalAttack = now;
-  viewer.playAttack();
-  submit({ kind: "attack", weapon });
+  const { heading, pitch } = viewer.playerPose();
+  submit({ kind: "attack", weapon, aim: { heading, pitch } });
+  viewer.playAttack(weapon);
 }
 
 function interact(): void {
@@ -295,14 +316,14 @@ void createMapViewer(element("map"), arena, {
   },
 }).then((created) => {
   viewer = created;
-  match = new MatchState(created.arenaData(), arena, onMatchChange, (ray) => created.clearShot(ray));
+  match = new MatchState(created.arenaData(), arena, onMatchChange, (ray) => created.clearShot(ray), (ray) => created.traceShot(ray));
   match.reset(selfId);
   const canvas = element("map").querySelector("canvas");
   if (canvas) {
     let pointerDown: { x: number; y: number; time: number } | null = null;
     canvas.addEventListener("pointerdown", (event) => {
       if (event.button !== 0) return;
-      if (document.pointerLockElement === canvas) attack();
+      if (document.pointerLockElement === canvas) { triggerHeld = true; attack(); }
       else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
     });
     canvas.addEventListener("pointerup", (event) => {

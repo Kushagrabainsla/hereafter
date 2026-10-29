@@ -163,6 +163,10 @@ export class PhysicsWorld {
     return this.position(this.controller.computedGrounded());
   }
 
+  traceShot({ origin, direction, distance }: ShotRay): number {
+    return this.world.castRay(new RAPIER.Ray(origin, direction), distance, true, undefined, undefined, this.collider)?.timeOfImpact ?? distance;
+  }
+
   clearShot({ origin, direction, distance }: ShotRay): boolean {
     if (distance <= 0) return true;
     const ray = new RAPIER.Ray(origin, direction);

@@ -1,6 +1,7 @@
 import { type Arena, type ArenaData } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
-import { hitDistance, makeWeaponPickups, WEAPONS, type ShotClear, type WeaponKind, type WeaponPickup } from "./combatRules";
+import { hitDistance, targetHit, damageAt, shotRay, makeWeaponPickups, WEAPONS, type HitZone, type ShotClear, type WeaponKind, type WeaponPickup } from "./combatRules";
+import { type ShotRay } from "../world/physics";
 import { type PlayerPose } from "./playerController";
 
 export interface CombatPlayer {
@@ -15,7 +16,7 @@ export interface CombatPlayer {
 }
 
 export type CombatIntent =
-  | { kind: "attack"; weapon: WeaponKind }
+  | { kind: "attack"; weapon: WeaponKind; aim?: { heading: number; pitch: number } }
   | { kind: "pickup"; pickupId: string }
   | { kind: "reload" }
   | { kind: "select"; weapon: WeaponKind }
@@ -23,11 +24,14 @@ export type CombatIntent =
 
 export interface CombatEvent {
   id: number;
-  kind: "hit" | "pickup" | "death" | "respawn";
+  kind: "shot" | "hit" | "pickup" | "death" | "respawn";
   actor: string;
   target?: string;
   weapon?: WeaponKind;
   damage?: number;
+  zone?: HitZone;
+  shot?: ShotRay;
+  impact?: boolean;
 }
 
 export interface CombatSnapshot {
@@ -37,6 +41,11 @@ export interface CombatSnapshot {
   taken: string[];
   pickupReturns: Record<string, number>;
   event: CombatEvent | null;
+}
+
+function validShot(ray: ShotRay): boolean {
+  return !!ray.origin && !!ray.direction && [ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y, ray.direction.z, ray.distance].every(Number.isFinite)
+    && ray.distance >= 0 && ray.distance <= 95 && Math.abs(Math.hypot(ray.direction.x, ray.direction.y, ray.direction.z) - 1) < 0.01;
 }
 
 function freshPlayer(): CombatPlayer {
@@ -64,7 +73,7 @@ export class MatchState {
   private poseTimes = new Map<string, number>();
   private lastAttack = new Map<string, number>();
 
-  constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void, private shotClear?: ShotClear) {
+  constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void, private shotClear?: ShotClear, private traceShot?: (ray: ShotRay) => number) {
     this.collision = new CollisionWorld(data);
     this.pickups = makeWeaponPickups(data, arena);
   }
@@ -105,9 +114,11 @@ export class MatchState {
     }
     const candidateEvent = incoming.event;
     const event = candidateEvent && Number.isSafeInteger(candidateEvent.id)
-      && ["hit", "pickup", "death", "respawn"].includes(candidateEvent.kind)
+      && ["shot", "hit", "pickup", "death", "respawn"].includes(candidateEvent.kind)
       && typeof candidateEvent.actor === "string"
-      && (!candidateEvent.weapon || candidateEvent.weapon in WEAPONS)
+      && (!candidateEvent.shot || validShot(candidateEvent.shot))
+      && (candidateEvent.damage === undefined || (Number.isFinite(candidateEvent.damage) && candidateEvent.damage >= 0 && candidateEvent.damage <= 100))
+      && (!candidateEvent.weapon || ["knife", "pistol", "rifle"].includes(candidateEvent.weapon))
       ? structuredClone(candidateEvent) : null;
     this.snapshot = { version: 1, revision: incoming.revision, players, taken: incoming.taken.filter((id) => this.pickups.some((pickup) => pickup.id === id)), pickupReturns, event };
     this.onChange(this.snapshot);
@@ -159,9 +170,15 @@ export class MatchState {
       const weapon = player.active;
       if (intent.weapon !== weapon || player.reloadUntil > now || now - (this.lastAttack.get(actor) ?? 0) < WEAPONS[weapon].cooldownMs) return false;
       if (weapon !== "knife" && player.ammo[weapon] <= 0) return false;
+      const pose = this.poses.get(actor);
+      const aim = intent.aim;
+      if (aim && (!Number.isFinite(aim.heading) || !Number.isFinite(aim.pitch) || Math.abs(aim.pitch) > 80)) return false;
+      const origin = pose && { ...pose, ...(aim ?? {}) };
+      if (!origin || now - (this.poseTimes.get(actor) ?? 0) > 1500 || origin.running) return false;
       this.lastAttack.set(actor, now);
       if (weapon !== "knife") player.ammo[weapon] -= 1;
-      const origin = this.poses.get(actor);
+      const ray = shotRay(this.data, origin, weapon);
+      const surfaceDistance = this.traceShot?.(ray) ?? ray.distance;
       let closest: { id: string; distance: number } | null = null;
       if (origin && now - (this.poseTimes.get(actor) ?? 0) <= 1500) for (const [id, target] of this.poses) {
         if (id === actor || (this.snapshot.players[id]?.health ?? 0) <= 0) continue;
@@ -171,14 +188,16 @@ export class MatchState {
       }
       if (closest) {
         const victim = this.snapshot.players[closest.id];
-        victim.health = Math.max(0, victim.health - WEAPONS[weapon].damage);
+        const hit = targetHit(this.data, origin, this.poses.get(closest.id)!, weapon)!;
+        const damage = Math.min(victim.health, damageAt(weapon, hit));
+        victim.health -= damage;
         if (victim.health === 0) {
           victim.deaths += 1;
           victim.respawnAfter = now + 3000;
           player.kills += 1;
         }
-        this.event(victim.health === 0 ? "death" : "hit", actor, closest.id, weapon, WEAPONS[weapon].damage);
-      } else this.changed();
+        this.event(victim.health === 0 ? "death" : "hit", actor, closest.id, weapon, damage, { ...ray, distance: closest.distance }, hit.zone, true);
+      } else this.event("shot", actor, undefined, weapon, undefined, { ...ray, distance: surfaceDistance }, undefined, surfaceDistance < ray.distance);
       return true;
     }
     return false;
@@ -204,8 +223,8 @@ export class MatchState {
     return changed;
   }
 
-  private event(kind: CombatEvent["kind"], actor: string, target?: string, weapon?: WeaponKind, damage?: number): void {
-    this.snapshot.event = { id: this.snapshot.revision + 1, kind, actor, target, weapon, damage };
+  private event(kind: CombatEvent["kind"], actor: string, target?: string, weapon?: WeaponKind, damage?: number, shot?: ShotRay, zone?: HitZone, impact?: boolean): void {
+    this.snapshot.event = { id: this.snapshot.revision + 1, kind, actor, target, weapon, damage, shot, zone, impact };
     this.changed();
   }
 

@@ -100,3 +100,9 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
   .combat-hud { left: 12px; bottom: 12px; width: 205px; padding: 10px 12px; }
   .pickup-hint { bottom: 113px; }
 }
+
+.damage-readout { position: absolute; pointer-events: none; z-index: 5; left: 50%; top: calc(50% + 32px); transform: translateX(-50%); color: #ffe2ac; font: 700 12px system-ui; letter-spacing: .08em; text-shadow: 0 2px 5px #000; opacity: 0; transition: opacity .2s; }
+.damage-readout.visible { opacity: 1; }
+
+.hit-marker { top: 50%; transform: translate(-50%, -50%) scale(.5); }
+.hit-marker.visible { transform: translate(-50%, -50%) scale(1); }

@@ -100,6 +100,11 @@ export class PlayerController {
     this.applyPose();
   }
 
+  kickRecoil(degrees: number): void {
+    this.pitch = Math.min(80, this.pitch + degrees);
+    this.applyPose();
+  }
+
   motion(): PlayerMotion {
     return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded, speed: this.speed };
   }
