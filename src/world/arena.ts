@@ -1,3 +1,5 @@
+import { type Material } from "./materials";
+
 export interface Arena {
   latitude: number;
   longitude: number;
@@ -23,6 +25,29 @@ export interface ArenaData {
   roads: { id: number; kind: string; width: number; points: Point[] }[];
   parks: { id: number; outline: Point[] }[];
   trees: Point[];
+  // A hand-built map's own layout; absent for the San Jose open-data arena.
+  layout?: MapLayout;
+}
+
+// A solid box in a hand-built map: walls, floors, counters, stairs and railings. Railings use
+// the "boundary" material, which blocks players but not bullets. `look` names how it is drawn.
+export interface LayoutBox {
+  half: [number, number, number];
+  center: { x: number; y: number; z: number };
+  rotation?: { x: number; y: number; z: number; w: number };
+  material: Material;
+  look: string;
+}
+
+// What every client must agree on for a hand-built map: where players start, where weapons
+// lie and what is solid. How it looks is built from the same definition (see nightMarket.ts).
+export interface MapLayout {
+  id: string;
+  name: string;
+  sky: "day" | "dusk";
+  spawns: { east: number; north: number; heading: number }[];
+  pickups: { id: string; weapon: "pistol" | "rifle"; east: number; north: number }[];
+  solids: LayoutBox[];
 }
 
 export const DEFAULT_ARENA: Arena = {

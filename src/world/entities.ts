@@ -12,7 +12,7 @@ export type EntityShape =
 // same order from the bundled arena data, so ids agree without being sent.
 export interface WorldEntity {
   id: string;
-  kind: "cover" | "planter" | "hydrant" | "tree" | "pole" | "lamp" | "window" | "prop";
+  kind: "cover" | "planter" | "hydrant" | "tree" | "pole" | "lamp" | "window" | "prop" | "stall" | "pane";
   material: Material;
   maxHealth: number;
   center: Vec3;

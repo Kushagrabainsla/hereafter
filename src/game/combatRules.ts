@@ -67,6 +67,7 @@ export interface WeaponPickup {
 }
 
 export function makeWeaponPickups(data: ArenaData, arena: Arena): WeaponPickup[] {
+  if (data.layout) return data.layout.pickups.map((pickup) => ({ ...pickup }));
   const collision = new CollisionWorld(data);
   const origin = collision.findSpawn(arena);
   const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);

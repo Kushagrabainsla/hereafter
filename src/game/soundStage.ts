@@ -16,6 +16,8 @@ const UP = new Vector3(0, 1, 0);
 // surface under each step, and places combat sounds where they happen.
 export class SoundStage {
   private roads: { ax: number; az: number; bx: number; bz: number; reach: number }[];
+  // Hand-built maps are paved or floored everywhere.
+  private paved: boolean;
   private stepIndex = 0;
   private jumps = 0;
   private landings = 0;
@@ -27,12 +29,13 @@ export class SoundStage {
   private up = new Vector3();
 
   constructor(data: ArenaData, private positionOf: (peerId: string) => Vec3 | null) {
+    this.paved = Boolean(data.layout);
     this.roads = data.roads.map(({ points: [a, b], width }) => ({ ax: a[0], az: a[1], bx: b[0], bz: b[1], reach: width / 2 + 0.15 }));
   }
 
   // Roads and pavements are hard; open ground and parks are grass. Standing on cover is hard.
   surfaceAt(east: number, north: number, aboveGround: number): Surface {
-    if (aboveGround > 0.25) return "hard";
+    if (aboveGround > 0.25 || this.paved) return "hard";
     for (const road of this.roads) {
       const dx = road.bx - road.ax, dz = road.bz - road.az;
       const t = Math.max(0, Math.min(1, ((east - road.ax) * dx + (north - road.az) * dz) / Math.max(1e-6, dx * dx + dz * dz)));

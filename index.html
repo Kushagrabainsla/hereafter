@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b1723" />
-    <title>Hereafter — San Jose</title>
+    <title>Hereafter</title>
   </head>
   <body>
     <div id="app">
@@ -15,8 +15,9 @@
       <div id="kill-banner" class="kill-banner" role="status" aria-live="polite"><strong>ELIMINATED</strong><span id="kill-detail"></span></div>
       <div id="damage-flash" class="damage-flash" aria-hidden="true"></div>
 
-      <div class="brand" aria-label="Hereafter, San Jose"><strong>Hereafter<span>.</span></strong><small>San Jose</small></div>
+      <div class="brand" id="brand"><strong>Hereafter<span>.</span></strong><small id="brand-place"></small></div>
       <div class="top-actions">
+        <button id="open-maps" class="help-trigger" type="button" aria-haspopup="dialog" aria-controls="map-dialog"><span class="trigger-prefix">Map · </span><span id="map-label"></span></button>
         <button id="open-room" class="help-trigger" type="button" aria-haspopup="dialog" aria-controls="room-dialog">Play together</button>
         <button id="open-controls" class="help-trigger" type="button" aria-haspopup="dialog" aria-controls="controls-dialog">Press <kbd>H</kbd> for controls</button>
       </div>
@@ -26,7 +27,7 @@
           <div><span class="dialog-eyebrow">How to play</span><h1 id="controls-title">Controls</h1></div>
           <button id="close-controls" class="close-button" type="button" aria-label="Close controls">×</button>
         </div>
-        <p class="dialog-intro">Explore and fight in San Jose at street level.</p>
+        <p id="controls-intro" class="dialog-intro">Explore and fight in San Jose at street level.</p>
         <dl class="control-list">
           <div><dt>Move</dt><dd><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dd></div>
           <div><dt>Look around</dt><dd>Click and drag to move the view</dd></div>
@@ -69,6 +70,15 @@
         <p id="room-status" class="room-status" role="status" aria-live="polite">Create or join a room to play with friends.</p>
       </dialog>
 
+      <dialog id="map-dialog" class="controls-dialog map-dialog" aria-labelledby="map-title">
+        <div class="dialog-header">
+          <div><span class="dialog-eyebrow">Choose where to fight</span><h1 id="map-title">Maps</h1></div>
+          <button id="close-maps" class="close-button" type="button" aria-label="Close maps">×</button>
+        </div>
+        <div id="map-list" class="map-list"></div>
+        <p class="map-note">Switching maps reloads the page and leaves any room. Rooms are per map, so share the invite link from the map you are playing.</p>
+      </dialog>
+
       <div id="combat-hud" class="combat-hud" aria-live="polite">
         <div class="hud-health-label"><span>HEALTH</span><strong id="health-number">100</strong></div>
         <div id="health-bar" class="health-bar" role="progressbar" aria-label="Health" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><span id="health-fill"></span></div>
@@ -82,14 +92,14 @@
 
       <div id="loader" class="loader" role="status" aria-live="polite">
         <div class="loader-card">
-          <div class="loader-brand"><strong>Hereafter<span>.</span></strong><small>San Jose</small></div>
+          <div class="loader-brand"><strong>Hereafter<span>.</span></strong><small id="loader-place"></small></div>
           <div class="loader-bar" aria-hidden="true"><span id="loader-fill"></span></div>
-          <div class="loader-row"><span id="loader-step">Loading the San Jose arena</span><span id="loader-percent">0%</span></div>
+          <div class="loader-row"><span id="loader-step">Loading</span><span id="loader-percent">0%</span></div>
           <p id="loader-tip" class="loader-tip">Press H any time to see every control.</p>
         </div>
       </div>
 
-      <div class="attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a><span>Terrain: USGS 3DEP</span><a href="https://polyhaven.com/license" target="_blank" rel="noopener noreferrer">Textures: Poly Haven</a></div>
+      <div class="attribution"><a data-only="san-jose" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a><span data-only="san-jose">Terrain: USGS 3DEP</span><a href="https://polyhaven.com/license" target="_blank" rel="noopener noreferrer">Textures: Poly Haven</a></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

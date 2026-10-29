@@ -1,6 +1,6 @@
 import {
   AdditiveBlending, BoxGeometry, CanvasTexture, Color, CylinderGeometry, Euler, Group, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector3,
+  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "./arena";
 import { type WorldEntity, type Vec3 } from "./entities";
@@ -160,7 +160,8 @@ export class WorldEffects {
   private quaternion = new Quaternion();
   shake = 0;
 
-  constructor(private scene: Scene, private data: ArenaData, private refs: Map<string, InstanceRef[]>, private camera: () => Vector3) {
+  // `groups` holds plain objects drawn for an entity (hand-built maps), hidden while it is destroyed.
+  constructor(private scene: Scene, private data: ArenaData, private refs: Map<string, InstanceRef[]>, private camera: () => Vector3, private groups = new Map<string, Object3D[]>()) {
     scene.add(this.solid.mesh, this.glow.mesh, this.flash);
     this.decals = new InstancedMesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ map: holeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 1 }), 260);
     this.decals.frustumCulled = false;
@@ -226,8 +227,9 @@ export class WorldEffects {
       if (ref.mesh.instanceColor) ref.mesh.instanceColor.needsUpdate = true;
     }
     this.hidden.set(entity.id, saved);
+    for (const object of this.groups.get(entity.id) ?? []) object.visible = false;
     const at = entity.center, floor = this.floor(at), up = { x: 0, y: 1, z: 0 };
-    if (entity.kind === "window") {
+    if (entity.kind === "window" || entity.kind === "pane") {
       const out = { x: Math.sin(entity.yaw), y: -0.2, z: Math.cos(entity.yaw) };
       for (let i = 0; i < 4; i += 1) this.solid.spawn({ x: at.x + Math.cos(entity.yaw) * (Math.random() - 0.5) * 1.2, y: at.y + (Math.random() - 0.5) * 1.5, z: at.z - Math.sin(entity.yaw) * (Math.random() - 0.5) * 1.2 }, out, 8, "shards", floor, 0.8);
       gameAudio.shatter(at);
@@ -241,6 +243,11 @@ export class WorldEffects {
       if (entity.kind === "planter") { this.solid.spawn(at, up, 20, "soil", floor, 1.2); this.solid.spawn({ ...at, y: at.y + 0.4 }, up, 18, "leaves", floor, 1.4); }
       for (let i = 0; i < 3; i += 1) this.puff({ ...at, y: at.y - 0.2 }, 1.4, 2.2, 0.5, 0x9b968c, 0.5);
       gameAudio.crumble(at);
+    } else if (entity.kind === "stall") {
+      this.solid.spawn({ ...at, y: at.y + 0.4 }, up, 40, "splinters", floor, 1.3);
+      this.solid.spawn(at, up, 22, "chunks", floor, 1.2);
+      this.puff(at, 1.2, 1.6, 0.4, 0x8a7a64, 0.4);
+      gameAudio.splinter(at);
     } else if (entity.kind === "prop") {
       const material = entity.material;
       const style: Style = material === "wood" ? "splinters" : material === "cardboard" ? "puff" : material === "glass" ? "shards" : "dust";
@@ -259,6 +266,7 @@ export class WorldEffects {
       if (ref.mesh.instanceColor) ref.mesh.instanceColor.needsUpdate = true;
     }
     this.hidden.delete(entity.id);
+    for (const object of this.groups.get(entity.id) ?? []) object.visible = true;
   }
 
   explosion(at: Vec3): void {

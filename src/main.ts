@@ -1,5 +1,5 @@
 import "./style.css";
-import { arenaFromUrl } from "./world/arena";
+import { arenaForMap, mapFromUrl, mapUrl, MAPS } from "./world/maps";
 import { createMapViewer, type MapViewer, type MapState } from "./world/mapViewer";
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
@@ -17,6 +17,10 @@ const controlsDialog = element<HTMLDialogElement>("controls-dialog");
 const openControlsButton = element<HTMLButtonElement>("open-controls");
 const closeControlsButton = element<HTMLButtonElement>("close-controls");
 const roomDialog = element<HTMLDialogElement>("room-dialog");
+const mapDialog = element<HTMLDialogElement>("map-dialog");
+const openMapsButton = element<HTMLButtonElement>("open-maps");
+const closeMapsButton = element<HTMLButtonElement>("close-maps");
+const mapList = element<HTMLElement>("map-list");
 const openRoomButton = element<HTMLButtonElement>("open-room");
 const closeRoomButton = element<HTMLButtonElement>("close-room");
 const createRoomButton = element<HTMLButtonElement>("create-room");
@@ -77,7 +81,54 @@ window.setInterval(() => {
   if (triggerHeld && document.pointerLockElement && match?.player(selfId)?.active === "rifle") attack();
 }, 16);
 let toastTimer = 0;
-const arena = arenaFromUrl(window.location.search);
+const map = mapFromUrl(window.location.search);
+const arena = arenaForMap(map, window.location.search);
+document.title = `Hereafter — ${map.name}`;
+element<HTMLElement>("brand").setAttribute("aria-label", `Hereafter, ${map.name}`);
+element<HTMLElement>("brand-place").textContent = map.name;
+element<HTMLElement>("loader-place").textContent = map.name;
+element<HTMLElement>("map-label").textContent = map.name;
+element<HTMLElement>("map").setAttribute("aria-label", `First-person view of the ${map.name} map`);
+element<HTMLElement>("controls-intro").textContent = map.id === "san-jose" ? "Explore and fight in San Jose at street level." : `Fight through the ${map.name}: ${map.place}.`;
+// Credits for data a map does not use are hidden on it.
+for (const item of document.querySelectorAll<HTMLElement>("[data-only]")) item.hidden = item.dataset.only !== map.id;
+const dialogOpen = (): boolean => controlsDialog.open || roomDialog.open || mapDialog.open;
+
+// The map picker: one card per map; choosing another reloads the page on that map.
+for (const option of MAPS) {
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "map-card";
+  if (option.id === map.id) card.setAttribute("aria-current", "true");
+  const image = document.createElement("img");
+  image.src = `${import.meta.env.BASE_URL}${option.preview}`;
+  image.alt = "";
+  image.loading = "lazy";
+  const body = document.createElement("div");
+  body.className = "map-card-body";
+  const title = document.createElement("div");
+  title.className = "map-card-title";
+  const name = document.createElement("strong");
+  name.textContent = option.name;
+  const state = document.createElement("span");
+  state.textContent = option.id === map.id ? "Playing" : "Play";
+  title.append(name, state);
+  const place = document.createElement("div");
+  place.className = "map-card-place";
+  place.textContent = option.place;
+  const summary = document.createElement("p");
+  summary.textContent = option.summary;
+  const size = document.createElement("div");
+  size.className = "map-card-size";
+  size.textContent = option.size;
+  body.append(title, place, summary, size);
+  card.append(image, body);
+  card.addEventListener("click", () => {
+    if (option.id === map.id) { mapDialog.close(); return; }
+    window.location.assign(mapUrl(option.id));
+  });
+  mapList.append(card);
+}
 
 // The loader's bar never moves backward.
 let loadProgress = 0;
@@ -89,6 +140,8 @@ const LOADER_TIPS = [
   "Press Space facing cover or a ledge to climb onto it.",
   "Walk into a ladder to climb to the roofs. Long falls hurt.",
   "Rounds go through glass, crates, bins and cardboard, but not concrete.",
+  "Press the Map button to switch between San Jose and the Night Market.",
+  "Night Market: shoot out a shop window and climb through it.",
 ];
 let tipIndex = 0;
 const tipTimer = window.setInterval(() => { tipIndex = (tipIndex + 1) % LOADER_TIPS.length; loaderTip.textContent = LOADER_TIPS[tipIndex]; }, 3500);
@@ -118,7 +171,7 @@ function setStatus(state: MapState, message: string): void {
 }
 
 function openControls(): void {
-  if (controlsDialog.open || roomDialog.open) return;
+  if (dialogOpen()) return;
   controlsDialog.showModal();
   syncPause();
 }
@@ -128,8 +181,8 @@ function closeControls(): void {
 }
 
 function syncPause(): void {
-  if (controlsDialog.open || roomDialog.open || (match?.player(selfId)?.health ?? 100) <= 0) triggerHeld = false;
-  viewer?.setPaused(controlsDialog.open || roomDialog.open || (match?.player(selfId)?.health ?? 100) <= 0);
+  if (dialogOpen() || (match?.player(selfId)?.health ?? 100) <= 0) triggerHeld = false;
+  viewer?.setPaused(dialogOpen() || (match?.player(selfId)?.health ?? 100) <= 0);
 }
 
 function toast(message: string): void {
@@ -259,7 +312,7 @@ function playEvent(event: CombatEvent): void {
 }
 
 function throwGrenade(): void {
-  if (!viewer || !match || controlsDialog.open || roomDialog.open) return;
+  if (!viewer || !match || dialogOpen()) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   if (player.grenades <= 0) { toast("No grenades left"); return; }
@@ -287,7 +340,7 @@ function nearestPickup(): WeaponPickup | null {
 }
 
 function attack(): void {
-  if (!viewer || !match || controlsDialog.open || roomDialog.open) return;
+  if (!viewer || !match || dialogOpen()) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   const weapon = player.active;
@@ -318,7 +371,7 @@ function interact(): void {
 }
 
 function openRoom(): void {
-  if (roomDialog.open || controlsDialog.open) return;
+  if (dialogOpen()) return;
   roomDialog.showModal();
   syncPause();
 }
@@ -357,7 +410,7 @@ function enterRoom(rawCode: string): void {
       onProps(states) {
         viewer?.applyPropStates(states);
       },
-    });
+    }, map.id);
     roomCodeInput.value = code;
     activeRoomCode.textContent = code;
     inviteLink.value = roomLink(code);
@@ -395,6 +448,13 @@ controlsDialog.addEventListener("close", syncPause);
 openRoomButton.addEventListener("click", openRoom);
 closeRoomButton.addEventListener("click", () => roomDialog.close());
 roomDialog.addEventListener("close", syncPause);
+openMapsButton.addEventListener("click", () => {
+  if (dialogOpen()) return;
+  mapDialog.showModal();
+  syncPause();
+});
+closeMapsButton.addEventListener("click", () => mapDialog.close());
+mapDialog.addEventListener("close", syncPause);
 createRoomButton.addEventListener("click", () => enterRoom(newRoomCode()));
 joinRoomButton.addEventListener("click", () => enterRoom(roomCodeInput.value));
 roomCodeInput.addEventListener("keydown", (event) => {
@@ -415,14 +475,14 @@ copyInviteButton.addEventListener("click", () => {
   });
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key.toLowerCase() !== "h" || event.repeat || event.altKey || event.metaKey || event.ctrlKey || roomDialog.open) return;
+  if (event.key.toLowerCase() !== "h" || event.repeat || event.altKey || event.metaKey || event.ctrlKey || roomDialog.open || mapDialog.open) return;
   event.preventDefault();
   if (controlsDialog.open) closeControls();
   else openControls();
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.repeat || event.altKey || event.metaKey || event.ctrlKey || controlsDialog.open || roomDialog.open || document.activeElement instanceof HTMLInputElement) return;
+  if (event.repeat || event.altKey || event.metaKey || event.ctrlKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
   if (!["f", "e", "g", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
@@ -486,7 +546,7 @@ void createMapViewer(element("map"), arena, {
     performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
     performanceLabel.title = `${metrics.drawCalls} draw calls · ${metrics.triangles.toLocaleString()} triangles · ${metrics.pixelRatio.toFixed(2)}× resolution`;
   },
-}).then((created) => {
+}, map).then((created) => {
   viewer = created;
   match = new MatchState(created.arenaData(), arena, onMatchChange, created.combatWorld());
   match.reset(selfId);

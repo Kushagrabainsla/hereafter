@@ -18,15 +18,17 @@ import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio } from "../game/gameAudio";
 import { SoundStage } from "../game/soundStage";
 import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, type WeaponKind } from "../game/combatRules";
-import { loadArenaData, terrainHeight, type Arena, type ArenaData, type Point } from "./arena";
+import { terrainHeight, type Arena, type ArenaData, type Point } from "./arena";
+import { loadMapData, mapById, type GameMap } from "./maps";
+import { buildNightMarket, duskSky } from "./nightMarket";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 import { addCover } from "./cover";
 import { PhysicsWorld, type ShotRay } from "./physics";
 import { addBuildingDoors, addBuildingWindows, addFacadeTrim, addStorefronts, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture, streetLightPlacements, windowPlacements, type InstanceRef } from "./scenery";
-import { buildEntities, EntityRegistry } from "./entities";
+import { buildEntities, EntityRegistry, type WorldEntity } from "./entities";
 import { WorldEffects } from "./worldEffects";
 import { loadPropModels, placeStreetProps, propEntity, PropViews } from "./props";
-import { addRoofAccess, planRoofs } from "./rooftops";
+import { addRoofAccess, planRoofs, type Ladder, type RoofPlan } from "./rooftops";
 import { type PropState } from "../network/peerRoom";
 
 export type MapState = "loading" | "ready" | "error";
@@ -44,7 +46,6 @@ export interface MapViewerEvents {
   onMetrics: (metrics: MapMetrics) => void;
   // Current hip-fire spread as a crosshair gap in CSS pixels; melee is true for the knife.
   onAim?: (spreadPixels: number, melee: boolean) => void;
-  // Loading progress from 0 to 1 with a short description of the current step.
   // Loading progress from 0 to 1, with the step under way when it changes.
   onProgress?: (fraction: number, step?: string) => void;
   // A landing at this speed (m/s), fast enough that it may hurt.
@@ -437,7 +438,7 @@ function paint(): Promise<void> {
   return new Promise((resolve) => { requestAnimationFrame(() => setTimeout(resolve, 0)); setTimeout(resolve, 60); });
 }
 
-export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
+export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents, map: GameMap = mapById("san-jose")): Promise<MapViewer> {
   // Each step owns a span of the loading bar. Files that finish during a step (Three.js
   // loaders report them to the default manager) fill that step's span, so the bar keeps
   // moving on a slow connection without running ahead of the work.
@@ -449,76 +450,114 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     events.onProgress?.(fraction, label);
     await paint();
   };
-  events.onStatus("loading", "Loading the bundled San Jose arena and materials…");
-  events.onProgress?.(0.04, "Loading the San Jose arena");
+  events.onStatus("loading", `Loading ${map.name} and its materials…`);
+  events.onProgress?.(0.04, `Loading ${map.name}`);
   const [data, textures, skyHdri] = await Promise.all([
-    loadArenaData(arena),
+    loadMapData(map, arena),
     loadSurfaceTextures(),
     new RGBELoader().loadAsync(`${import.meta.env.BASE_URL}textures/san-jose-sky.hdr`).catch(() => null),
   ]);
-  await step(0.45, 0.55, "Building streets and buildings");
+  await step(0.45, 0.55, data.layout ? "Building alleys and buildings" : "Building streets and buildings");
   const scene = new Scene();
-  const sky = skyHdri ?? createSkyTexture();
+  // Hand-built maps choose their own light: the night market is at dusk, under a low sun.
+  const dusk = data.layout?.sky === "dusk";
+  const sky = dusk ? duskSky() : skyHdri ?? createSkyTexture();
+  if (dusk) sky.mapping = EquirectangularReflectionMapping;
   if (skyHdri) {
     skyHdri.mapping = EquirectangularReflectionMapping;
     scene.environment = skyHdri;
-    scene.environmentIntensity = 0.24;
+    scene.environmentIntensity = dusk ? 0.06 : 0.24;
   }
   scene.background = sky;
-  scene.fog = new FogExp2(0xc5d2d2, 0.0035);
-  scene.add(new HemisphereLight(0xe7f2ff, 0x716b62, 1.2));
-  const fill = new DirectionalLight(0xc5d8e8, 0.3);
-  fill.position.set(180, 110, -150);
-  scene.add(fill);
-  const sun = new DirectionalLight(0xffe7c5, 2.15);
-  sun.position.set(-180, 300, 130);
+  scene.fog = dusk ? new FogExp2(0x2c2a3c, 0.006) : new FogExp2(0xc5d2d2, 0.0035);
+  scene.add(dusk ? new HemisphereLight(0x8796c4, 0x2a2228, 0.95) : new HemisphereLight(0xe7f2ff, 0x716b62, 1.2));
+  if (!dusk) {
+    const fill = new DirectionalLight(0xc5d8e8, 0.3);
+    fill.position.set(180, 110, -150);
+    scene.add(fill);
+  }
+  const sunOffset = dusk ? new Vector3(-220, 70, -60) : new Vector3(-180, 300, 130);
+  const sun = new DirectionalLight(dusk ? 0xff9a5a : 0xffe7c5, dusk ? 0.7 : 2.15);
+  sun.position.copy(sunOffset);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -125;
-  sun.shadow.camera.right = 125;
-  sun.shadow.camera.top = 125;
-  sun.shadow.camera.bottom = -125;
+  const shadowReach = dusk ? 55 : 125;
+  sun.shadow.camera.left = -shadowReach;
+  sun.shadow.camera.right = shadowReach;
+  sun.shadow.camera.top = shadowReach;
+  sun.shadow.camera.bottom = -shadowReach;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 700;
   sun.shadow.bias = -0.0002;
   sun.shadow.normalBias = 0.035;
   scene.add(sun, sun.target);
-  addTerrain(scene, data, textures);
-  addParks(scene, data, textures);
-  addRoads(scene, data, textures);
-  addBuildings(scene, data, textures);
-  // Every breakable or solid street object is an entity with a stable id; refs record the
-  // instances that draw each one so it can disappear when destroyed.
+  // Every breakable or solid object is an entity with a stable id; refs record the instances
+  // that draw each one, and groups the plain objects, so it can disappear when destroyed.
   const refs = new Map<string, InstanceRef[]>();
   const merge = (more: Map<string, InstanceRef[]>): void => { for (const [id, list] of more) refs.set(id, list); };
-  merge(await addCover(scene, data));
-  const storefrontEdges = addStorefronts(scene, data, arena, [textures.storefrontStone, textures.storefrontCafe]);
-  const windows = windowPlacements(data, arena, storefrontEdges);
-  const { texture: glassTexture, glass } = addBuildingWindows(scene, windows);
-  merge(glass);
-  addBuildingDoors(scene, data, arena, storefrontEdges);
-  addFacadeTrim(scene, data, arena);
-  const updateTrees = addTrees(scene, data, textures);
-  const lights = streetLightPlacements(data);
-  merge(addStreetLights(scene, data, lights));
-  let roadDetails = makeRoadDetails(data, arena);
-  scene.add(roadDetails);
-  let streetFurniture = makeStreetFurniture(data, arena, refs);
-  scene.add(streetFurniture);
   const entities = new EntityRegistry();
-  for (const entity of buildEntities(data, windows, lights)) entities.add(entity);
-  await step(0.55, 0.7, "Placing cover, props and roofs");
   const propModels = await loadPropModels();
   const propViews = new PropViews(scene);
-  await propViews.load(propModels);
-  const props = placeStreetProps(data, arena, propModels);
-  // Roofs are solid; low buildings get ladders or a stair, and their roofs get cover.
-  const roofPlan = planRoofs(data, arena);
-  addRoofAccess(scene, roofPlan);
-  const aircon = propModels.find((model) => model.name === "aircon_unit");
-  if (aircon) roofPlan.reachable.forEach((roof, index) => {
-    for (const [dx, dz] of [[-1.3, 0.4], [1.2, -0.6]]) props.push(propEntity(`prop:${props.length}`, aircon, roof.center.x + dx, roof.center.z + dz, roof.center.y + 0.02, index * 0.9 + dx));
-  });
+  let groups = new Map<string, Object3D[]>();
+  let ladders: Ladder[] = [];
+  let roofPlan: RoofPlan = { roofs: [], ladders: [], stairs: [], boxes: [], reachable: [] };
+  let props: WorldEntity[] = [];
+  let updateTrees = (_seconds: number): void => undefined;
+  let rebuildStreets = (_next: Arena): void => undefined;
+  let disposeWorld = (): void => undefined;
+  if (data.layout) {
+    const built = buildNightMarket(scene, textures, propModels);
+    merge(built.refs);
+    groups = built.groups;
+    ladders = built.ladders;
+    for (const entity of built.entities) entities.add(entity);
+    props = built.props;
+    disposeWorld = built.dispose;
+    await step(0.55, 0.7, "Placing stalls, props and lights");
+    await propViews.load(propModels);
+  } else {
+    addTerrain(scene, data, textures);
+    addParks(scene, data, textures);
+    addRoads(scene, data, textures);
+    addBuildings(scene, data, textures);
+    merge(await addCover(scene, data));
+    const storefrontEdges = addStorefronts(scene, data, arena, [textures.storefrontStone, textures.storefrontCafe]);
+    const windows = windowPlacements(data, arena, storefrontEdges);
+    const { texture: glassTexture, glass } = addBuildingWindows(scene, windows);
+    merge(glass);
+    addBuildingDoors(scene, data, arena, storefrontEdges);
+    addFacadeTrim(scene, data, arena);
+    updateTrees = addTrees(scene, data, textures);
+    const lights = streetLightPlacements(data);
+    merge(addStreetLights(scene, data, lights));
+    let roadDetails = makeRoadDetails(data, arena);
+    scene.add(roadDetails);
+    let streetFurniture = makeStreetFurniture(data, arena, refs);
+    scene.add(streetFurniture);
+    rebuildStreets = (next) => {
+      scene.remove(roadDetails);
+      disposeGroup(roadDetails);
+      roadDetails = makeRoadDetails(data, next);
+      scene.add(roadDetails);
+      scene.remove(streetFurniture);
+      disposeGroup(streetFurniture);
+      streetFurniture = makeStreetFurniture(data, next, refs);
+      scene.add(streetFurniture);
+    };
+    for (const entity of buildEntities(data, windows, lights)) entities.add(entity);
+    await step(0.55, 0.7, "Placing cover, props and roofs");
+    await propViews.load(propModels);
+    props = placeStreetProps(data, arena, propModels);
+    // Roofs are solid; low buildings get ladders or a stair, and their roofs get cover.
+    roofPlan = planRoofs(data, arena);
+    addRoofAccess(scene, roofPlan);
+    ladders = roofPlan.ladders;
+    const aircon = propModels.find((model) => model.name === "aircon_unit");
+    if (aircon) roofPlan.reachable.forEach((roof, index) => {
+      for (const [dx, dz] of [[-1.3, 0.4], [1.2, -0.6]]) props.push(propEntity(`prop:${props.length}`, aircon, roof.center.x + dx, roof.center.z + dz, roof.center.y + 0.02, index * 0.9 + dx));
+    });
+    disposeWorld = () => glassTexture.dispose();
+  }
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
   propViews.build(props);
 
@@ -530,7 +569,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let pixelRatio = maximumPixelRatio;
   renderer.setPixelRatio(pixelRatio);
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = dusk ? 1.25 : 1.08;
   renderer.shadowMap.type = PCFSoftShadowMap;
   renderer.shadowMap.enabled = true;
   await renderer.init();
@@ -540,10 +579,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const physics = new PhysicsWorld(data, arena);
   for (const roof of roofPlan.roofs) physics.addRoof(roof.vertices, roof.indices);
   for (const box of roofPlan.boxes) physics.addBox(box.half, box.position, box.rotation, box.railing ? "boundary" : "metal-solid");
+  for (const solid of data.layout?.solids ?? []) physics.addBox(solid.half, solid.center, solid.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, solid.material);
   for (const entity of entities.all()) physics.addEntity(entity);
   entities.locate = (entity) => physics.propPose(entity.id)?.position ?? entity.center;
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
-  player.setLadders(roofPlan.ladders);
+  player.setLadders(ladders);
   const playerModels = new PlayerModelLibrary();
   const remotePlayers = new RemotePlayers(scene, data, playerModels, physics);
   // Sounds behind buildings and cover are dulled: one ray from the listener toward the source.
@@ -559,8 +599,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   viewScene.environment = scene.environment;
   const viewCamera = new PerspectiveCamera(camera.fov, camera.aspect, 0.01, 10);
   viewScene.add(viewCamera);
-  viewScene.add(new HemisphereLight(0xe6f1ff, 0x605b4a, 2));
-  const viewSun = new DirectionalLight(0xffe6c4, 2.5);
+  viewScene.add(new HemisphereLight(dusk ? 0x9aa4c8 : 0xe6f1ff, 0x605b4a, dusk ? 1.0 : 2));
+  const viewSun = new DirectionalLight(dusk ? 0xffc890 : 0xffe6c4, dusk ? 1.4 : 2.5);
   viewSun.position.set(-2, 4, 3);
   viewScene.add(viewSun);
   const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, makeWeaponPickups(data, arena));
@@ -571,7 +611,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     remotePlayers.setWeaponModels(models);
   });
   const shotEffects = new ShotEffects(scene);
-  const effects = new WorldEffects(scene, data, refs, () => camera.position);
+  const effects = new WorldEffects(scene, data, refs, () => camera.position, groups);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
   const combatWorld: CombatWorld = {
     clearShot: (ray) => physics.clearShot(ray),
@@ -655,7 +695,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
-    sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
+    sun.position.set(camera.position.x + sunOffset.x, sunOffset.y, camera.position.z + sunOffset.z);
     sun.target.updateMatrixWorld();
     previousFrame = time;
     renderer.render(scene, camera);
@@ -671,7 +711,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     renderedFrames += 1;
     if (renderedFrames === 1) { DefaultLoadingManager.onProgress = () => undefined; events.onProgress?.(0.92, "Preparing shaders"); }
     if (!readySent && renderedFrames >= 2) {
-      events.onStatus("ready", "San Jose arena loaded. Use arrow keys to move and drag on the map to look around.");
+      events.onStatus("ready", `${map.name} loaded. Use arrow keys to move and drag on the map to look around.`);
       readySent = true;
     }
     if (time - lastMetrics >= 500) {
@@ -708,14 +748,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setArena(nextArena) {
       player.reset(nextArena);
       remotePlayers.clear();
-      scene.remove(roadDetails);
-      disposeGroup(roadDetails);
-      roadDetails = makeRoadDetails(data, nextArena);
-      scene.add(roadDetails);
-      scene.remove(streetFurniture);
-      disposeGroup(streetFurniture);
-      streetFurniture = makeStreetFurniture(data, nextArena, refs);
-      scene.add(streetFurniture);
+      rebuildStreets(nextArena);
     },
     setPaused(paused) {
       player.setPaused(paused);
@@ -850,8 +883,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       disposeScene(scene);
       disposeScene(viewScene);
       textures.dispose();
-      glassTexture.dispose();
+      disposeWorld();
       sky.dispose();
+      if (skyHdri && skyHdri !== sky) skyHdri.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     },

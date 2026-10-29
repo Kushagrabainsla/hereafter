@@ -2,7 +2,7 @@
 
 *Fight where you stand.*
 
-Hereafter is a browser-based multiplayer FPS prototype in bounded real-world arenas. The first target is downtown San Jose, California for 2–8 players. The current build has first-person movement, peer-to-peer rooms, and a first combat loop.
+Hereafter is a browser-based multiplayer FPS prototype in bounded real-world arenas. The first target is downtown San Jose, California for 2–8 players. The current build has first-person movement, peer-to-peer rooms, and a first combat loop on two maps: the open-data San Jose block and the Night Market, a tight back-alley map built by hand.
 
 The [original handoff](docs/REAL_WORLD_FPS_AGENT_HANDOFF.md) describes the staged game plan. Its Google Photorealistic 3D Tiles approach has been replaced for this first arena with a static open-data build, eliminating per-player map API requests and the Google key. See the [architecture note](docs/architecture.md) and [data sources](docs/data-sources.md).
 
@@ -24,6 +24,10 @@ A loading screen shows progress while the arena, models and sounds download and 
 Pistols and carbines appear at marked spots on the street, shown as the same models you hold. Walk close and press E to collect one; collected weapons return after 30 seconds. Use 1, 2, or 3 to equip the knife, pistol, or carbine, and R to reload a gun. Switching lowers the current weapon and raises the next one over about half a second, and you cannot attack until the new weapon is up. Sprinting carries the weapon low across the body; firing drops the sprint and the shot follows as the weapon comes up. Shots spread more while walking, sliding or in the air and less when crouched, and the carbine blooms under sustained fire; the crosshair opens to show it. See [movement notes](docs/movement.md). The HUD shows health, ammo, kills, and deaths. Hits flash a marker around the crosshair: white for a hit, amber for a headshot, and red with an elimination banner for a kill. Damage taken shows a red arc pointing toward the attacker. Press G to throw one of your two fragmentation grenades; it bounces, rolls and bursts 2.6 s later. Rounds penetrate glass, crates, bins, cardboard and bodies by material, and windows, lamps, crates, boxes, planters and even concrete barriers break once damaged enough; bins, drums and crates get thrown around by blasts. Eliminated players fall as ragdolls. After elimination, wait three seconds and press Enter to respawn with the knife. See [physics notes](docs/physics.md).
 
 The game has sound once you click or press a key. Gunshots, reloads, weapon handling and footsteps are recorded CC0 sounds; other players' shots and footsteps come from where they are, are dulled by distance and walls, and close rounds crack past you. Press M to mute or unmute. See [audio notes](docs/audio.md).
+
+## Maps
+
+Press the Map button at the top right to choose a map. **Night Market** is a 60 m back-alley market at dusk with three lanes: a stall-lined market alley, a restaurant you can run through, and a service alley behind. It has a bar with a stair to a balcony, a fire escape, wooden stalls that break apart, and shop glass you can shoot out and climb through. **San Jose** is the open-data downtown block. Open `?map=night-market` to go straight to the market. See [maps](docs/maps.md).
 
 ## Play together
 

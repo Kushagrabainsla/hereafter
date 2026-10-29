@@ -1,4 +1,4 @@
-import { DEFAULT_ARENA, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
+import { DEFAULT_ARENA, terrainHeight, toLocal, type Arena, type ArenaData, type LayoutBox, type Point } from "./arena";
 
 interface BuildingCollider {
   outline: Point[];
@@ -49,6 +49,8 @@ function distanceToSegmentSquared(east: number, north: number, a: Point, b: Poin
 
 export class CollisionWorld {
   private buildings: BuildingCollider[];
+  // Upright, unrotated solids of a hand-built map that stand in the way at body height.
+  private blocks: LayoutBox[];
   readonly furniture: StreetFurniture[];
   readonly cover: CoverObject[];
 
@@ -60,6 +62,7 @@ export class CollisionWorld {
       minNorth: Math.min(...outline.map(([, north]) => north)),
       maxNorth: Math.max(...outline.map(([, north]) => north)),
     }));
+    this.blocks = (data.layout?.solids ?? []).filter((solid) => !solid.rotation && solid.material !== "boundary" && solid.center.y - solid.half[1] < 1.8 && solid.center.y + solid.half[1] > 0.3);
     this.furniture = this.makeStreetFurniture();
     this.cover = this.makeCover();
   }
@@ -90,7 +93,13 @@ export class CollisionWorld {
     return result.slice(0, 10);
   }
 
+  private blockedLayout(east: number, north: number, radius: number, height?: number): boolean {
+    return this.blocks.some(({ center, half }) => Math.abs(east - center.x) < half[0] + radius && Math.abs(north - center.z) < half[2] + radius
+      && (height === undefined || (height > center.y - half[1] && height < center.y + half[1])));
+  }
+
   private blockedStructure(east: number, north: number, radius: number): boolean {
+    if (this.blockedLayout(east, north, radius)) return true;
     for (const building of this.buildings) {
       if (east < building.minEast - radius || east > building.maxEast + radius || north < building.minNorth - radius || north > building.maxNorth + radius) continue;
       if (pointInsidePolygon(east, north, building.outline)) return true;
@@ -145,6 +154,7 @@ export class CollisionWorld {
   }
 
   blocksShot(east: number, north: number, height: number, radius: number): boolean {
+    if (this.data.layout) return this.blockedLayout(east, north, radius, height);
     if (this.blockedStructure(east, north, radius)) return true;
     if (height - terrainHeight(this.data, east, north) > 1.13) return false;
     return this.blockedFurniture(east, north, radius) || this.blockedCover(east, north, radius);
@@ -157,6 +167,8 @@ export class CollisionWorld {
   }
 
   findSpawn(arena: Arena, slot = 0): SpawnPoint {
+    const spawns = this.data.layout?.spawns;
+    if (spawns?.length) return { ...spawns[Math.max(0, slot) % spawns.length] };
     const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
     const broadRoads = this.data.roads.filter((road) => road.width >= 8);
     const candidates = broadRoads.length ? broadRoads : this.data.roads;

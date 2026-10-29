@@ -41,7 +41,9 @@ export interface PeerRoomEvents {
   onProps?: (states: PropState[]) => void;
 }
 
-function mapKey(arena: Arena): string {
+// Peers only exchange packets for the same map; San Jose keys also carry its centre and size.
+function mapKey(arena: Arena, mapId: string): string {
+  if (mapId !== "san-jose") return `${mapId}-v1`;
   return `san-jose-v1:${arena.latitude.toFixed(6)}:${arena.longitude.toFixed(6)}:${arena.sizeMeters}`;
 }
 
@@ -116,11 +118,12 @@ export class PeerRoom {
     this.events.onPeers(members.length, members.indexOf(selfId));
   }
 
-  constructor(code: string, private arena: Arena, private match: MatchState, private events: PeerRoomEvents) {
+  constructor(code: string, private arena: Arena, private match: MatchState, private events: PeerRoomEvents, mapId = "san-jose") {
     this.code = normalizeRoomCode(code);
     if (this.code.length < 6 || this.code.length > 24) throw new Error("Room code must be 6–24 letters or numbers.");
-    this.expectedMap = mapKey(arena);
-    this.room = joinRoom({ appId: APP_ID, password: this.code }, this.code, {
+    this.expectedMap = mapKey(arena, mapId);
+    // The same code on another map is a different room, so players never meet across maps.
+    this.room = joinRoom({ appId: APP_ID, password: this.code }, mapId === "san-jose" ? this.code : `${this.code}@${mapId}`, {
       onJoinError: () => this.events.onStatus("A peer could not connect. Try another network or leave and rejoin."),
     });
     this.poseAction = this.room.makeAction<PosePacket>("pose-v1");
