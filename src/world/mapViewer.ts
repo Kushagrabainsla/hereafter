@@ -15,6 +15,7 @@ import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
 import { loadArenaData, terrainHeight, toLocal, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
 import { addCover } from "./cover";
+import { PhysicsWorld, type ShotRay } from "./physics";
 import { addBuildingDoors, addBuildingWindows, addFacadeTrim, addStorefronts, addStreetLights, createSkyTexture, makeRoadDetails, makeStreetFurniture } from "./scenery";
 
 export type MapState = "loading" | "ready" | "error";
@@ -37,6 +38,7 @@ export interface MapViewer {
   setArena: (arena: Arena) => void;
   setPaused: (paused: boolean) => void;
   playerPose: () => PlayerPose;
+  clearShot: (ray: ShotRay) => boolean;
   setSpawnSlot: (slot: number) => void;
   respawn: () => void;
   setWeapon: (kind: WeaponKind) => void;
@@ -480,7 +482,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   await renderer.init();
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
   container.appendChild(renderer.domElement);
-  const player = new PlayerController(camera, renderer.domElement, data, arena);
+  const physics = new PhysicsWorld(data, arena);
+  const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
   const remotePlayers = new RemotePlayers(scene, data);
   scene.add(camera);
   const hands = new PlayerHands(camera);
@@ -575,6 +578,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     playerPose() {
       return player.pose();
     },
+    clearShot(ray) {
+      return physics.clearShot(ray);
+    },
     setSpawnSlot(slot) {
       player.setSpawnSlot(slot);
     },
@@ -609,6 +615,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       renderer.setAnimationLoop(null);
       observer.disconnect();
       player.destroy();
+      physics.dispose();
       remotePlayers.clear();
       disposeScene(scene);
       textures.dispose();

@@ -1,6 +1,6 @@
 import { type Arena, type ArenaData } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
-import { hitDistance, makeWeaponPickups, WEAPONS, type WeaponKind, type WeaponPickup } from "./combatRules";
+import { hitDistance, makeWeaponPickups, WEAPONS, type ShotClear, type WeaponKind, type WeaponPickup } from "./combatRules";
 import { type PlayerPose } from "./playerController";
 
 export interface CombatPlayer {
@@ -61,9 +61,10 @@ export class MatchState {
   private collision: CollisionWorld;
   private snapshot: CombatSnapshot = { version: 1, revision: 0, players: {}, taken: [], pickupReturns: {}, event: null };
   private poses = new Map<string, PlayerPose>();
+  private poseTimes = new Map<string, number>();
   private lastAttack = new Map<string, number>();
 
-  constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void) {
+  constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void, private shotClear?: ShotClear) {
     this.collision = new CollisionWorld(data);
     this.pickups = makeWeaponPickups(data, arena);
   }
@@ -71,14 +72,15 @@ export class MatchState {
   reset(selfId: string): void {
     this.snapshot = { version: 1, revision: 0, players: { [selfId]: freshPlayer() }, taken: [], pickupReturns: {}, event: null };
     this.poses.clear();
+    this.poseTimes.clear();
     this.lastAttack.clear();
     this.onChange(this.snapshot);
   }
 
   getState(): CombatSnapshot { return structuredClone(this.snapshot); }
   player(id: string): CombatPlayer | undefined { return this.snapshot.players[id]; }
-  setPose(id: string, pose: PlayerPose): void { this.poses.set(id, pose); }
-  removePose(id: string): void { this.poses.delete(id); }
+  setPose(id: string, pose: PlayerPose): void { this.poses.set(id, pose); this.poseTimes.set(id, Date.now()); }
+  removePose(id: string): void { this.poses.delete(id); this.poseTimes.delete(id); }
 
   ensurePlayer(id: string): boolean {
     if (this.snapshot.players[id]) return false;
@@ -122,6 +124,7 @@ export class MatchState {
       player.owned = ["knife"];
       player.ammo = { pistol: 12, rifle: 30 };
       player.reloadUntil = 0;
+      this.removePose(actor);
       this.event("respawn", actor);
       return true;
     }
@@ -129,7 +132,8 @@ export class MatchState {
     if (intent.kind === "pickup") {
       const pickup = this.pickups.find((item) => item.id === intent.pickupId);
       const pose = this.poses.get(actor);
-      if (!pickup || !pose || this.snapshot.taken.includes(pickup.id) || Math.hypot(pose.east - pickup.east, pose.north - pickup.north) > 2.3) return false;
+      if (!pickup || !pose || now - (this.poseTimes.get(actor) ?? 0) > 1500 || this.snapshot.taken.includes(pickup.id)
+        || Math.hypot(pose.east - pickup.east, pose.north - pickup.north) > 2.3) return false;
       this.snapshot.taken.push(pickup.id);
       this.snapshot.pickupReturns[pickup.id] = now + 30_000;
       if (!player.owned.includes(pickup.weapon)) player.owned.push(pickup.weapon);
@@ -159,9 +163,10 @@ export class MatchState {
       if (weapon !== "knife") player.ammo[weapon] -= 1;
       const origin = this.poses.get(actor);
       let closest: { id: string; distance: number } | null = null;
-      if (origin) for (const [id, target] of this.poses) {
+      if (origin && now - (this.poseTimes.get(actor) ?? 0) <= 1500) for (const [id, target] of this.poses) {
         if (id === actor || (this.snapshot.players[id]?.health ?? 0) <= 0) continue;
-        const distance = hitDistance(this.data, this.collision, origin, target, weapon);
+        if (now - (this.poseTimes.get(id) ?? 0) > 1500) continue;
+        const distance = hitDistance(this.data, this.collision, origin, target, weapon, this.shotClear);
         if (distance !== null && (!closest || distance < closest.distance)) closest = { id, distance };
       }
       if (closest) {

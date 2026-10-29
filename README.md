@@ -17,7 +17,7 @@ npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite. No API key or billing account is needed. The 3D arena asset is bundled with the site. The browser needs WebGPU or WebGL 2; Three.js uses WebGPU when available and falls back to WebGL 2.
+Open the URL printed by Vite. No API key or billing account is needed. The 3D arena asset is bundled with the site. The browser needs WebGPU or WebGL 2; Three.js uses WebGPU when available and falls back to WebGL 2. Rapier's WebAssembly module handles character movement and collision.
 
 You spawn at walking height on a clear street in a 140 × 140 m playable block, with visible first-person hands and a field knife. Press H, or click the small control hint, to open the controls modal; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and hold C or Ctrl to crouch. Click and drag on the map with a trackpad or mouse to move the view; a short click attacks. Press F to attack from the keyboard. Double-click the map for FPS mouse look and press Esc to release it. The supported arena coordinates can still be supplied in a URL, but are not shown during play.
 
@@ -46,7 +46,8 @@ The adapted OpenStreetMap data in this asset is offered under the [Open Database
 - The arena is geographically based on real roads and building footprints, but its buildings, windows, trees, and street furniture are still approximations. Some building heights are inferred where the data has no height tag.
 - The terrain is interpolated from a 5 × 5 USGS height grid. Walking follows this coarse ground surface.
 - Only the San Jose pilot extract is bundled. A new city needs a new data build and level design.
-- Building footprints, tree trunks, street furniture, concrete cover, and arena edges block walking. This is simple horizontal collision; stairs, detailed physics, fully trusted movement, and robust host migration belong to later phases.
+- Rapier runs a fixed 60 Hz capsule controller against terrain, building walls, trees, furniture, concrete cover, and arena boundaries. It supports wall sliding, ground snapping, low steps, jumping, and crouching with a standing-clearance check. The arena still has no authored stairs, moving platforms, or dynamic props.
+- Gunfire uses a 3D physics ray to check static cover before applying a hit. Peer movement still originates on each player's device; distance and arena checks reject implausible pose packets, but a modified client can still cheat. Robust authority handoff and larger-session testing remain future work.
 - GitHub Pages has [site-size and bandwidth limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits); the current arena is small enough for the intended prototype.
 
 ## Project status

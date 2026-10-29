@@ -295,7 +295,7 @@ void createMapViewer(element("map"), arena, {
   },
 }).then((created) => {
   viewer = created;
-  match = new MatchState(viewer.arenaData(), arena, onMatchChange);
+  match = new MatchState(created.arenaData(), arena, onMatchChange, (ray) => created.clearShot(ray));
   match.reset(selfId);
   const canvas = element("map").querySelector("canvas");
   if (canvas) {

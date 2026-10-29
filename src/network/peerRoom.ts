@@ -1,5 +1,5 @@
 import { joinRoom, selfId } from "trystero";
-import { type Arena } from "../world/arena";
+import { toLocal, type Arena } from "../world/arena";
 import { type PlayerPose } from "../game/playerController";
 import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
 
@@ -47,7 +47,7 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && Number.isFinite(packet.north) && Math.abs(packet.north ?? Infinity) <= 350
     && Number.isFinite(packet.heading) && (packet.heading ?? -1) >= 0 && (packet.heading ?? 361) <= 360
     && Number.isFinite(packet.pitch) && Math.abs(packet.pitch ?? Infinity) <= 80
-    && Number.isFinite(packet.jumpHeight) && (packet.jumpHeight ?? -1) >= 0 && (packet.jumpHeight ?? 11) <= 10
+    && Number.isFinite(packet.jumpHeight) && (packet.jumpHeight ?? -1) >= 0 && (packet.jumpHeight ?? 11) <= 2.5
     && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean";
 }
 
@@ -77,6 +77,7 @@ export class PeerRoom {
   private syncAction;
   private peers = new Set<string>();
   private lastSequence = new Map<string, number>();
+  private lastAcceptedPose = new Map<string, { east: number; north: number; receivedAt: number }>();
   private lastIntentSequence = new Map<string, number>();
   private sequence = 0;
   private intentSequence = 0;
@@ -91,7 +92,7 @@ export class PeerRoom {
     this.events.onPeers(members.length, members.indexOf(selfId));
   }
 
-  constructor(code: string, arena: Arena, private match: MatchState, private events: PeerRoomEvents) {
+  constructor(code: string, private arena: Arena, private match: MatchState, private events: PeerRoomEvents) {
     this.code = normalizeRoomCode(code);
     if (this.code.length < 6 || this.code.length > 24) throw new Error("Room code must be 6–24 letters or numbers.");
     this.expectedMap = mapKey(arena);
@@ -104,9 +105,19 @@ export class PeerRoom {
     this.syncAction = this.room.makeAction<SyncPacket>("combat-sync-v1");
     this.poseAction.onMessage = (value, { peerId }) => {
       if (!this.peers.has(peerId) || !validPose(value, this.expectedMap)) return;
+      const [centerEast, centerNorth] = toLocal(this.arena.latitude, this.arena.longitude);
+      const half = this.arena.sizeMeters / 2 + 0.5;
+      if (Math.abs(value.east - centerEast) > half || Math.abs(value.north - centerNorth) > half) return;
       const previous = this.lastSequence.get(peerId) ?? -1;
       if (value.sequence <= previous) return;
+      const now = performance.now();
+      const last = this.lastAcceptedPose.get(peerId);
+      if (last) {
+        const elapsed = Math.min(0.5, Math.max((now - last.receivedAt) / 1000, Math.min(0.2, (value.sequence - previous) * 0.05)));
+        if (Math.hypot(value.east - last.east, value.north - last.north) > 0.9 + 10 * elapsed) return;
+      }
       this.lastSequence.set(peerId, value.sequence);
+      this.lastAcceptedPose.set(peerId, { east: value.east, north: value.north, receivedAt: now });
       const pose = {
         east: value.east,
         north: value.north,
@@ -125,7 +136,10 @@ export class PeerRoom {
         || !Number.isSafeInteger(value.sequence) || !validIntent(value.intent)) return;
       if (value.sequence <= (this.lastIntentSequence.get(peerId) ?? -1)) return;
       this.lastIntentSequence.set(peerId, value.sequence);
-      if (this.match.apply(peerId, value.intent)) this.broadcastSnapshot();
+      if (this.match.apply(peerId, value.intent)) {
+        if (value.intent.kind === "respawn") this.lastAcceptedPose.delete(peerId);
+        this.broadcastSnapshot();
+      }
     };
     this.snapshotAction.onMessage = (raw, { peerId }) => {
       let value: SnapshotPacket;
@@ -133,9 +147,12 @@ export class PeerRoom {
       if (!value || !value.state) return;
       if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || value.leader !== peerId) return;
       if (peerId !== this.leaderId && !(this.leaderId === selfId && Date.now() < this.handoffUntil)) return;
-      if (this.match.adopt(value.state) && this.leaderId === selfId) {
-        this.match.ensurePlayer(selfId);
-        this.broadcastSnapshot();
+      if (this.match.adopt(value.state)) {
+        if (value.state.event?.kind === "respawn") this.lastAcceptedPose.delete(value.state.event.actor);
+        if (this.leaderId === selfId) {
+          this.match.ensurePlayer(selfId);
+          this.broadcastSnapshot();
+        }
       }
     };
     this.syncAction.onMessage = (value, { peerId }) => {
@@ -155,6 +172,7 @@ export class PeerRoom {
     this.room.onPeerLeave = (peerId) => {
       this.peers.delete(peerId);
       this.lastSequence.delete(peerId);
+      this.lastAcceptedPose.delete(peerId);
       this.lastIntentSequence.delete(peerId);
       this.match.removePose(peerId);
       this.events.onPeerLeave(peerId);
@@ -237,6 +255,7 @@ export class PeerRoom {
     await this.room.leave();
     this.peers.clear();
     this.lastSequence.clear();
+    this.lastAcceptedPose.clear();
     this.lastIntentSequence.clear();
   }
 }

@@ -1,6 +1,9 @@
 import { type Arena, type ArenaData, terrainHeight, toLocal } from "../world/arena";
 import { CollisionWorld } from "../world/collision";
 import { type PlayerPose } from "./playerController";
+import { type ShotRay } from "../world/physics";
+
+export type ShotClear = (ray: ShotRay) => boolean;
 
 export type WeaponKind = "knife" | "pistol" | "rifle";
 
@@ -64,7 +67,7 @@ function visibleBetween(collision: CollisionWorld, from: PlayerPose, target: Pla
   return true;
 }
 
-export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker: PlayerPose, target: PlayerPose, weapon: WeaponKind): number | null {
+export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker: PlayerPose, target: PlayerPose, weapon: WeaponKind, shotClear?: ShotClear): number | null {
   const definition = WEAPONS[weapon];
   const horizontal = Math.hypot(target.east - attacker.east, target.north - attacker.north);
   if (horizontal > definition.range + 0.7 || horizontal < 0.2) return null;
@@ -75,7 +78,6 @@ export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker
   const dz = Math.cos(heading) * Math.cos(pitch);
   const eyeY = terrainHeight(data, attacker.east, attacker.north) + (attacker.crouching ? 1.12 : 1.72) + attacker.jumpHeight;
   const targetY = terrainHeight(data, target.east, target.north) + (target.crouching ? 0.7 : 1.1) + target.jumpHeight;
-  if (!visibleBetween(collision, attacker, target, horizontal, eyeY, targetY)) return null;
   const vx = target.east - attacker.east;
   const vy = targetY - eyeY;
   const vz = target.north - attacker.north;
@@ -83,5 +85,9 @@ export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker
   if (along <= 0 || along > definition.range) return null;
   const miss = Math.hypot(vx - dx * along, vy - dy * along, vz - dz * along);
   if (miss > (weapon === "knife" ? 0.8 : 0.62)) return null;
+  if (shotClear) {
+    if (!shotClear({ origin: { x: attacker.east, y: eyeY, z: attacker.north },
+      direction: { x: dx, y: dy, z: dz }, distance: Math.max(0, along - 0.28) })) return null;
+  } else if (!visibleBetween(collision, attacker, target, horizontal, eyeY, targetY)) return null;
   return along;
 }
