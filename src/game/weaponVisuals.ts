@@ -71,6 +71,11 @@ export const VIEW_POSES: Record<WeaponKind, ViewPose> = {
   rifle: { position: [0.25, -0.23, -0.6], rotation: [0.03, 0.12, 0.1], scale: 0.85, sprint: [0.04, -0.13, 0.06, -0.45, 0.5, -0.4] },
 };
 
+// Per-frame state shared with the authored view models: which weapon is visibly held
+// (after the switch midpoint), how far the lower-and-raise switch has tucked it away,
+// and the small turn, pitch and landing offsets.
+export interface ViewDynamics { active: WeaponKind; lower: number; turnLag: number; pitchLag: number; landing: number; }
+
 export class WeaponVisuals {
   private held = new Map<WeaponKind, Group>();
   private pickups = new Map<string, PickupView>();
@@ -79,6 +84,7 @@ export class WeaponVisuals {
   private switchPhase = 0;
   private switching = false;
   private fallbackVisible = true;
+  private lower = 0;
   private turnLag = 0;
   private pitchLag = 0;
   private lastHeading: number | null = null;
@@ -149,6 +155,11 @@ export class WeaponVisuals {
 
   setFallbackVisible(visible: boolean): void {
     this.fallbackVisible = visible;
+    for (const [kind, model] of this.held) model.visible = visible && kind === this.active;
+  }
+
+  dynamics(): ViewDynamics {
+    return { active: this.active, lower: this.lower, turnLag: this.turnLag, pitchLag: this.pitchLag, landing: this.landing };
   }
 
   setTaken(taken: string[]): void {
@@ -199,6 +210,7 @@ export class WeaponVisuals {
       const amplitude = motion.running ? 0.018 : 0.009;
       // Switching tucks the weapon down and inward; sprinting carries it low across the body.
       const lower = this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0;
+      this.lower = lower;
       const sprint = this.sprintBlend;
       const breath = Math.sin(this.time * 1.8) * 0.006;
       held.position.set(

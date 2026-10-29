@@ -497,10 +497,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     player.update(delta);
     remotePlayers.update(delta);
     shotEffects.update(delta);
-    authoredViewModel.update(delta, player.motion());
-    weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
     const pose = player.pose();
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch);
+    authoredViewModel.update(delta, player.motion(), weaponVisuals.dynamics());
+    weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
     updateTrees(time / 1000);
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x - 180, 300, camera.position.z + 130);
@@ -571,7 +571,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       return player.pose();
     },
     traceShot(ray) { return physics.traceShot(ray); },
-    showShot(event, local) { shotEffects.show(event, local ? weaponVisuals.muzzle()?.applyMatrix4(camera.matrixWorld) : undefined); },
+    showShot(event, local) { shotEffects.show(event, local ? (authoredViewModel.muzzle() ?? weaponVisuals.muzzle())?.applyMatrix4(camera.matrixWorld) : undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
     },
@@ -583,7 +583,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     setWeapon(kind) {
       weaponVisuals.setActive(kind);
-      authoredViewModel.setActive(kind);
     },
     setTakenPickups(taken) {
       weaponVisuals.setTaken(taken);

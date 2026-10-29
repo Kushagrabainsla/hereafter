@@ -1,8 +1,9 @@
 node_modules/
 dist/
 coverage/
-.env
-.env.*
-!.env.example
+.env.local
+.env.*.local
 *.local
 .DS_Store
+# Downloaded view-model sources (scripts/viewmodels/fetch.sh); only the built GLBs are committed.
+assets-src/

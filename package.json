@@ -11,7 +11,8 @@
     "build:arena": "node scripts/build-arena.mjs && node scripts/build-block.mjs",
     "build:block": "node scripts/build-block.mjs",
     "preview": "vite preview",
-    "preview:pages": "vite preview --mode pages"
+    "preview:pages": "vite preview --mode pages",
+    "build:viewmodels": "sh scripts/viewmodels/build-all.sh"
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.21.0",
