@@ -10,7 +10,9 @@
     <div id="app">
       <main id="map" aria-label="First-person view of the San Jose arena"></main>
       <div class="crosshair" aria-hidden="true"></div>
-      <div id="hit-marker" class="hit-marker" aria-hidden="true">✕</div>
+      <div id="hit-marker" class="hit-marker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <div id="damage-direction" class="damage-direction" aria-hidden="true"></div>
+      <div id="kill-banner" class="kill-banner" role="status" aria-live="polite"><strong>ELIMINATED</strong><span id="kill-detail"></span></div>
       <div id="damage-flash" class="damage-flash" aria-hidden="true"></div>
 
       <div class="brand" aria-label="Hereafter, San Jose"><strong>Hereafter<span>.</span></strong><small>San Jose</small></div>
@@ -36,6 +38,7 @@
           <div><dt>Weapons</dt><dd><kbd>1</kbd> knife · <kbd>2</kbd> pistol · <kbd>3</kbd> rifle</dd></div>
           <div><dt>Reload</dt><dd><kbd>R</kbd> with a gun equipped</dd></div>
           <div><dt>Respawn</dt><dd><kbd>Enter</kbd> after elimination</dd></div>
+          <div><dt>Sound</dt><dd><kbd>M</kbd> mutes or unmutes</dd></div>
           <div><dt>FPS mouse look</dt><dd>Double-click the world; <kbd>Esc</kbd> releases it</dd></div>
         </dl>
         <p class="dialog-footer"><span>Press <kbd>H</kbd> or <kbd>Esc</kbd> to close</span><span id="performance">Loading graphics…</span></p>

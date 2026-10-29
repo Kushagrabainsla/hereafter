@@ -1,6 +1,6 @@
 import {
   BoxGeometry, CapsuleGeometry, Color, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
-  Scene, SphereGeometry,
+  Scene, SphereGeometry, Vector3,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
@@ -142,6 +142,15 @@ export class RemotePlayers {
     // The character plays its death clip and stays down; the mannequin simply hides.
     avatar.root.visible = avatar.model !== null || health > 0;
     avatar.model?.setDead(health <= 0);
+  }
+
+  // Smoothed feet positions and latest poses, for footsteps and other positioned sounds.
+  each(visit: (peerId: string, feet: Vector3, pose: PlayerPose, dead: boolean) => void): void {
+    for (const [peerId, avatar] of this.avatars) visit(peerId, avatar.root.position, avatar.pose, this.dead.has(peerId));
+  }
+
+  position(peerId: string): Vector3 | null {
+    return this.avatars.get(peerId)?.root.position ?? null;
   }
 
   remove(peerId: string): void {

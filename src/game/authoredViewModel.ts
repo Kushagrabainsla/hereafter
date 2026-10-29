@@ -79,9 +79,11 @@ export class AuthoredViewModel {
     model.mixer.update(seconds);
     // Turn settling, landing dips and the lower-and-raise switch come from the shared
     // procedural state so authored and fallback weapons behave the same way.
-    const lower = dynamics.lower;
-    model.root.position.set(dynamics.turnLag + lower * 0.05, dynamics.pitchLag - dynamics.landing - lower * 0.55, lower * 0.06);
-    model.root.rotation.set(-lower * 0.6, -dynamics.turnLag * 0.8 + lower * 0.25, -lower * 0.3);
+    // A reload cants the weapon and tips the muzzle up, with a small kick as the magazine
+    // seats and the action closes; the root pivots at the camera, so offsets keep it low.
+    const lower = dynamics.lower, reload = dynamics.reload, jolt = dynamics.jolt;
+    model.root.position.set(dynamics.turnLag + lower * 0.05 - reload * 0.06, dynamics.pitchLag - dynamics.landing - lower * 0.55 - reload * 0.1 + jolt * 0.012, lower * 0.06);
+    model.root.rotation.set(-lower * 0.6 + reload * 0.1 + jolt * 0.03, -dynamics.turnLag * 0.8 + lower * 0.25, -lower * 0.3 + reload * 0.32);
   }
   private release(root: Group): void {
     root.traverse((object) => {

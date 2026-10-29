@@ -12,7 +12,8 @@
     "build:block": "node scripts/build-block.mjs",
     "preview": "vite preview",
     "preview:pages": "vite preview --mode pages",
-    "build:viewmodels": "sh scripts/viewmodels/build-all.sh"
+    "build:viewmodels": "sh scripts/viewmodels/build-all.sh",
+    "build:audio": "sh scripts/audio/fetch.sh && sh scripts/audio/build.sh"
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.21.0",

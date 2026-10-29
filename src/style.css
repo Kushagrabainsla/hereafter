@@ -16,8 +16,45 @@ button { font: inherit; }
 .crosshair::before, .crosshair::after { content: ""; position: absolute; top: 50%; left: 50%; background: #f1fbfc; box-shadow: 0 0 5px #17313c; border-radius: 2px; }
 .crosshair::before { width: 16px; height: 2px; transform: translate(-50%, -50%); }
 .crosshair::after { width: 2px; height: 16px; transform: translate(-50%, -50%); }
-.hit-marker { position: absolute; z-index: 4; top: calc(50% + 21px); left: 50%; transform: translateX(-50%) scale(.5); color: #e9ffff; font-size: 24px; line-height: 1; text-shadow: 0 0 12px #78e2df; opacity: 0; pointer-events: none; transition: opacity .13s, transform .13s; }
-.hit-marker.visible { opacity: 1; transform: translateX(-50%) scale(1); }
+/* Hit marker: four strokes around the crosshair. White for a hit, amber for a headshot,
+   red and larger for an elimination. */
+.hit-marker { --marker: #f6fbff; position: absolute; z-index: 4; top: 50%; left: 50%; width: 38px; height: 38px; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; }
+.hit-marker i { position: absolute; width: 11px; height: 2.5px; border-radius: 2px; background: var(--marker); box-shadow: 0 0 3px rgba(0, 0, 0, .8); }
+.hit-marker i:nth-child(1) { top: 8px; left: 4px; transform: rotate(45deg); }
+.hit-marker i:nth-child(2) { top: 8px; right: 4px; transform: rotate(-45deg); }
+.hit-marker i:nth-child(3) { bottom: 8px; left: 4px; transform: rotate(-45deg); }
+.hit-marker i:nth-child(4) { bottom: 8px; right: 4px; transform: rotate(45deg); }
+.hit-marker.headshot { --marker: #ffd35c; }
+.hit-marker.kill { --marker: #ff4b3e; width: 48px; height: 48px; }
+.hit-marker.kill i { width: 15px; height: 3px; }
+.hit-marker.kill i:nth-child(-n+2) { top: 10px; }
+.hit-marker.kill i:nth-child(n+3) { bottom: 10px; }
+.hit-marker.show { animation: hit-pop .24s ease-out forwards; }
+.hit-marker.kill.show { animation-duration: .6s; }
+@keyframes hit-pop {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(1.45); }
+  25% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Incoming damage: a red arc around the crosshair pointing toward the attacker. */
+.damage-direction { position: absolute; z-index: 3; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
+.damage-arc { position: absolute; left: -118px; top: -118px; width: 236px; height: 236px; border: 7px solid transparent; border-top-color: rgba(255, 58, 46, .92); border-radius: 50%; filter: drop-shadow(0 0 7px rgba(255, 40, 30, .7)); transform: rotate(var(--angle)); animation: damage-arc 1.3s ease-out forwards; }
+@keyframes damage-arc { 0% { opacity: 1; } 55% { opacity: .85; } 100% { opacity: 0; } }
+
+/* Elimination confirmation above the crosshair. */
+.kill-banner { position: absolute; z-index: 5; top: 31%; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 5px; transform: translateX(-50%); opacity: 0; text-shadow: 0 2px 8px rgba(0, 0, 0, .8); pointer-events: none; white-space: nowrap; }
+.kill-banner strong { color: #ff5a47; font-size: 21px; font-weight: 850; letter-spacing: .22em; }
+.kill-banner span { color: #f5ece0; font-size: 11px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+.kill-banner.show { animation: kill-in 1.9s ease-out forwards; }
+@keyframes kill-in {
+  0% { opacity: 0; transform: translateX(-50%) scale(1.3); }
+  9% { opacity: 1; transform: translateX(-50%) scale(1); }
+  78% { opacity: 1; transform: translateX(-50%) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1); }
+}
+.score-label.show { transform-origin: left center; animation: score-bump .6s ease-out; }
+@keyframes score-bump { 0% { color: #ff7a6b; transform: scale(1.12); } 100% { transform: scale(1); } }
 .damage-flash { position: absolute; z-index: 3; inset: 0; pointer-events: none; box-shadow: inset 0 0 0 0 rgba(204, 32, 37, 0); transition: box-shadow .4s; }
 .damage-flash.visible { box-shadow: inset 0 0 160px 28px rgba(204, 32, 37, .55); transition: none; }
 
@@ -101,8 +138,7 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
   .pickup-hint { bottom: 113px; }
 }
 
-.damage-readout { position: absolute; pointer-events: none; z-index: 5; left: 50%; top: calc(50% + 32px); transform: translateX(-50%); color: #ffe2ac; font: 700 12px system-ui; letter-spacing: .08em; text-shadow: 0 2px 5px #000; opacity: 0; transition: opacity .2s; }
+.damage-readout { position: absolute; pointer-events: none; z-index: 5; left: 50%; top: calc(50% + 32px); transform: translateX(-50%); color: #f6fbff; font: 750 12px system-ui; letter-spacing: .08em; text-shadow: 0 2px 5px #000; opacity: 0; transition: opacity .2s; }
+.damage-readout.headshot { color: #ffd35c; }
 .damage-readout.visible { opacity: 1; }
 
-.hit-marker { top: 50%; transform: translate(-50%, -50%) scale(.5); }
-.hit-marker.visible { transform: translate(-50%, -50%) scale(1); }

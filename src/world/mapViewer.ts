@@ -14,6 +14,8 @@ import { PlayerModelLibrary } from "../game/playerModel";
 import { ShotEffects } from "../game/shotEffects";
 import { type CombatEvent } from "../game/matchState";
 import { WeaponVisuals } from "../game/weaponVisuals";
+import { gameAudio } from "../game/gameAudio";
+import { SoundStage } from "../game/soundStage";
 import { makeWeaponPickups, type WeaponKind } from "../game/combatRules";
 import { loadArenaData, terrainHeight, type Arena, type ArenaData, type Point } from "./arena";
 import { loadSurfaceTextures, type SurfaceTextures } from "./surfaceTextures";
@@ -50,6 +52,10 @@ export interface MapViewer {
   setTakenPickups: (taken: string[]) => void;
   weaponReady: () => boolean;
   playAttack: (weapon: WeaponKind) => void;
+  startReload: (weapon: WeaponKind, durationMs: number) => void;
+  cancelReload: () => void;
+  combatSound: (event: CombatEvent, selfId: string) => void;
+  remoteReload: (peerId: string, weapon: WeaponKind) => void;
   setRemotePose: (peerId: string, pose: PlayerPose) => void;
   setRemoteHealth: (peerId: string, health: number) => void;
   setRemoteWeapon: (peerId: string, weapon: WeaponKind) => void;
@@ -463,6 +469,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
   const playerModels = new PlayerModelLibrary();
   const remotePlayers = new RemotePlayers(scene, data, playerModels);
+  // Sounds behind buildings and cover are dulled: one ray from the listener toward the source.
+  gameAudio.occlusion = (from, to) => {
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance < 1.5) return false;
+    return !physics.clearShot({ origin: { x: from.x, y: from.y, z: from.z }, direction: { x: dx / distance, y: dy / distance, z: dz / distance }, distance: distance - 0.4 });
+  };
+  const soundStage = new SoundStage(data, (peerId) => remotePlayers.position(peerId));
   scene.add(camera);
   const viewScene = new Scene();
   viewScene.environment = scene.environment;
@@ -498,6 +512,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     player.update(delta);
     remotePlayers.update(delta);
+    soundStage.update(camera, player.gait(), player.motion(), remotePlayers);
     shotEffects.update(delta);
     const pose = player.pose();
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch);
@@ -593,7 +608,23 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     playAttack(weapon) {
       weaponVisuals.attack();
       authoredViewModel.fire();
+      gameAudio.fire(weapon);
       if (weapon !== "knife") player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
+    },
+    startReload(weapon, durationMs) {
+      weaponVisuals.reload(weapon, durationMs);
+      gameAudio.reload(weapon);
+    },
+    cancelReload() {
+      weaponVisuals.cancelReload();
+      gameAudio.cancelReload();
+    },
+    combatSound(event, selfId) {
+      soundStage.combat(event, selfId);
+    },
+    remoteReload(peerId, weapon) {
+      const at = remotePlayers.position(peerId);
+      if (at) gameAudio.remoteReload(weapon, { x: at.x, y: at.y + 1.1, z: at.z });
     },
     setRemotePose(peerId, pose) {
       remotePlayers.setPose(peerId, pose);
@@ -613,6 +644,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     destroy() {
       renderer.setAnimationLoop(null);
       observer.disconnect();
+      gameAudio.occlusion = () => false;
       player.destroy();
       physics.dispose();
       shotEffects.dispose();

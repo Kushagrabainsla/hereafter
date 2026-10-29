@@ -11,6 +11,17 @@ export interface PlayerMotion {
   speed: number;
 }
 
+// Footstep and landing cues: stride advances with the head bob, and jumps and landings
+// count up so listeners can tell when one happened since they last looked.
+export interface PlayerGait {
+  stride: number;
+  grounded: boolean;
+  aboveGround: number;
+  jumps: number;
+  landings: number;
+  landingSpeed: number;
+}
+
 export interface PlayerPose {
   east: number;
   north: number;
@@ -39,6 +50,10 @@ export class PlayerController {
   private grounded = true;
   private coyote = 0;
   private jumpBuffer = 0;
+  private airTime = 0;
+  private jumps = 0;
+  private landings = 0;
+  private landingSpeed = 0;
   private accumulator = 0;
   private eyeHeight = EYE_HEIGHT;
   private stride = 0;
@@ -88,6 +103,7 @@ export class PlayerController {
     this.velocityNorth = 0;
     this.coyote = 0.1;
     this.jumpBuffer = 0;
+    this.airTime = 0;
     this.accumulator = 0;
     this.eyeHeight = EYE_HEIGHT;
     this.stride = 0;
@@ -107,6 +123,10 @@ export class PlayerController {
 
   motion(): PlayerMotion {
     return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded, speed: this.speed };
+  }
+
+  gait(): PlayerGait {
+    return { stride: this.stride, grounded: this.grounded, aboveGround: this.jumpHeight, jumps: this.jumps, landings: this.landings, landingSpeed: this.landingSpeed };
   }
 
   pose(): PlayerPose {
@@ -188,11 +208,19 @@ export class PlayerController {
       this.grounded = false;
       this.coyote = 0;
       this.jumpBuffer = 0;
+      this.jumps += 1;
     } else this.verticalSpeed = Math.max(-25, this.verticalSpeed - 14 * delta);
+    const falling = -this.verticalSpeed;
     const position = this.physics.move(this.velocityEast * delta, this.velocityNorth * delta, this.verticalSpeed * delta);
     this.east = position.east;
     this.north = position.north;
     this.feet = position.feet;
+    // Short airborne blips on steps and slopes are not landings.
+    if (!this.grounded && position.grounded && this.airTime > 0.18) {
+      this.landings += 1;
+      this.landingSpeed = falling;
+    }
+    this.airTime = position.grounded ? 0 : this.airTime + delta;
     this.grounded = position.grounded;
     if (this.grounded && this.verticalSpeed < 0) this.verticalSpeed = 0;
     this.jumpHeight = Math.max(0, this.feet - terrainHeight(this.data, this.east, this.north));

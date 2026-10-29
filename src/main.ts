@@ -4,7 +4,8 @@ import { createMapViewer, type MapViewer, type MapState } from "./world/mapViewe
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
 import { WEAPONS, type WeaponKind, type WeaponPickup } from "./game/combatRules";
-import { MatchState, type CombatIntent, type CombatSnapshot } from "./game/matchState";
+import { MatchState, type CombatEvent, type CombatIntent, type CombatSnapshot } from "./game/matchState";
+import { gameAudio } from "./game/gameAudio";
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -43,6 +44,9 @@ damageReadout.className = "damage-readout";
 damageReadout.setAttribute("role", "status");
 document.getElementById("map")!.parentElement!.appendChild(damageReadout);
 const hitMarker = element<HTMLElement>("hit-marker");
+const damageDirection = element<HTMLElement>("damage-direction");
+const killBanner = element<HTMLElement>("kill-banner");
+const killDetail = element<HTMLElement>("kill-detail");
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const notice = element<HTMLElement>("notice");
@@ -53,7 +57,11 @@ let peerRoom: PeerRoom | null = null;
 let match: MatchState | null = null;
 let lastEventId = 0;
 let lastLocalAttack = 0;
+let lastDryFire = 0;
 let triggerHeld = false;
+const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: number; health: number }>();
+// Browsers only start audio from a user gesture; every gesture retries until it runs.
+for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(type, () => gameAudio.unlock(), { capture: true, passive: true });
 window.addEventListener("pointerup", () => { triggerHeld = false; });
 window.addEventListener("blur", () => { triggerHeld = false; });
 document.addEventListener("pointerlockchange", () => { triggerHeld = false; });
@@ -101,6 +109,54 @@ function pulse(elementToPulse: HTMLElement, duration: number): void {
   pulseTimers.set(elementToPulse, window.setTimeout(() => elementToPulse.classList.remove("visible"), duration));
 }
 
+// Restart a CSS animation by removing its classes, forcing layout, then adding them back.
+function replay(target: HTMLElement, ...classes: string[]): void {
+  target.classList.remove("show", "headshot", "kill");
+  void target.offsetWidth;
+  target.classList.add("show", ...classes);
+}
+
+// Point an arc from the crosshair toward the attacker. Screen right is forward x up,
+// which is (-cos h, sin h) in east/north for heading h.
+function showDamageDirection(from: { x: number; z: number }): void {
+  if (!viewer) return;
+  const pose = viewer.playerPose();
+  const heading = pose.heading * Math.PI / 180;
+  const east = from.x - pose.east, north = from.z - pose.north;
+  if (Math.hypot(east, north) < 0.3) return;
+  const angle = Math.atan2(-east * Math.cos(heading) + north * Math.sin(heading), east * Math.sin(heading) + north * Math.cos(heading));
+  const arc = document.createElement("div");
+  arc.className = "damage-arc";
+  arc.style.setProperty("--angle", `${angle}rad`);
+  arc.addEventListener("animationend", () => arc.remove());
+  damageDirection.appendChild(arc);
+  while (damageDirection.children.length > 4) damageDirection.firstElementChild?.remove();
+}
+
+function showElimination(event: CombatEvent): void {
+  const details = [event.zone === "head" ? "Headshot" : "", event.weapon ? WEAPONS[event.weapon].label : "", event.shot ? `${Math.max(1, Math.round(event.shot.distance))} m` : ""];
+  killDetail.textContent = details.filter(Boolean).join(" · ");
+  replay(killBanner);
+  replay(scoreLabel);
+}
+
+// Weapon switches and reload starts arrive as state changes rather than events.
+function cueStateChanges(state: CombatSnapshot, newEvent: CombatEvent | null): void {
+  for (const [peerId, player] of Object.entries(state.players)) {
+    const before = previousPlayers.get(peerId);
+    previousPlayers.set(peerId, { active: player.active, reloadUntil: player.reloadUntil, health: player.health });
+    if (!before) continue;
+    const reloadStarted = player.health > 0 && player.reloadUntil > 0 && player.reloadUntil !== before.reloadUntil;
+    if (peerId === selfId) {
+      const pickedUp = newEvent?.kind === "pickup" && newEvent.actor === selfId;
+      if (player.active !== before.active && !pickedUp && player.health > 0) gameAudio.switchWeapon(player.active);
+      if (reloadStarted) viewer?.startReload(player.active, WEAPONS[player.active].reloadMs);
+      if (player.health <= 0 && before.health > 0) viewer?.cancelReload();
+    } else if (reloadStarted) viewer?.remoteReload(peerId, player.active);
+  }
+  for (const peerId of previousPlayers.keys()) if (!state.players[peerId]) previousPlayers.delete(peerId);
+}
+
 function onMatchChange(state: CombatSnapshot): void {
   const player = state.players[selfId];
   if (!player) return;
@@ -111,7 +167,7 @@ function onMatchChange(state: CombatSnapshot): void {
   healthFill.style.width = `${player.health}%`;
   weaponName.textContent = WEAPONS[player.active].label;
   ammoCount.textContent = player.active === "knife" ? "MELEE" : player.reloadUntil > Date.now() ? "RELOADING" : `${player.ammo[player.active]} / ∞`;
-  scoreLabel.textContent = `${player.kills} KILLS · ${player.deaths} DEATHS`;
+  scoreLabel.textContent = `${player.kills} KILL${player.kills === 1 ? "" : "S"} · ${player.deaths} DEATH${player.deaths === 1 ? "" : "S"}`;
   viewer?.setWeapon(player.active);
   viewer?.setTakenPickups(state.taken);
   for (const [peerId, remote] of Object.entries(state.players)) if (peerId !== selfId) {
@@ -121,17 +177,31 @@ function onMatchChange(state: CombatSnapshot): void {
   deathOverlay.hidden = player.health > 0;
   if (wasDead && player.health > 0) viewer?.respawn();
   syncPause();
-  const event = state.event;
-  if (event && event.id !== lastEventId) {
+  gameAudio.setDown(player.health <= 0);
+  const event = state.event && state.event.id !== lastEventId ? state.event : null;
+  cueStateChanges(state, event);
+  if (event) {
     lastEventId = event.id;
     if (event.shot) viewer?.showShot(event, event.actor === selfId);
-    if ((event.kind === "hit" || event.kind === "death") && event.actor === selfId) {
-      damageReadout.textContent = `${event.zone === "head" ? "HEADSHOT · " : ""}${event.damage ?? 0} DAMAGE${event.kind === "death" ? " · ELIMINATED" : ""}`;
-      pulse(damageReadout, 900);
+    viewer?.combatSound(event, selfId);
+    if ((event.kind === "hit" || event.kind === "death") && event.actor === selfId && event.target !== selfId) {
+      const headshot = event.zone === "head", kill = event.kind === "death";
+      damageReadout.textContent = `${headshot ? "HEADSHOT · " : ""}${event.damage ?? 0}`;
+      damageReadout.classList.toggle("headshot", headshot);
+      pulse(damageReadout, 700);
+      replay(hitMarker, ...(headshot ? ["headshot"] : []), ...(kill ? ["kill"] : []));
+      gameAudio.hitConfirm(headshot, kill);
+      if (kill) showElimination(event);
     }
-    if (event.kind === "pickup" && event.actor === selfId && event.weapon) toast(`${WEAPONS[event.weapon].label} equipped`);
-    if ((event.kind === "hit" || event.kind === "death") && event.actor === selfId) pulse(hitMarker, 260);
-    if ((event.kind === "hit" || event.kind === "death") && event.target === selfId) pulse(damageFlash, 420);
+    if (event.kind === "pickup" && event.actor === selfId && event.weapon) {
+      toast(`${WEAPONS[event.weapon].label} equipped`);
+      gameAudio.pickup();
+    }
+    if ((event.kind === "hit" || event.kind === "death") && event.target === selfId) {
+      pulse(damageFlash, 420);
+      gameAudio.hurt(event.damage ?? 0, event.kind === "death");
+      if (event.shot) showDamageDirection(event.shot.origin);
+    }
     if (event.kind === "death" && event.target === selfId) toast("You were eliminated");
   }
 }
@@ -161,7 +231,11 @@ function attack(): void {
   const weapon = player.active;
   const now = Date.now();
   if (now - lastLocalAttack < WEAPONS[weapon].cooldownMs || player.reloadUntil > now) return;
-  if (weapon !== "knife" && player.ammo[weapon] <= 0) { toast("Press R to reload"); return; }
+  if (weapon !== "knife" && player.ammo[weapon] <= 0) {
+    // Held triggers retry every frame; click and remind at most a few times a second.
+    if (now - lastDryFire > 300) { lastDryFire = now; gameAudio.dryFire(); toast("Press R to reload"); }
+    return;
+  }
   lastLocalAttack = now;
   const { heading, pitch } = viewer.playerPose();
   submit({ kind: "attack", weapon, aim: { heading, pitch } });
@@ -274,9 +348,12 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.repeat || event.altKey || event.metaKey || event.ctrlKey || controlsDialog.open || roomDialog.open || document.activeElement instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
-  if (!["f", "e", "1", "2", "3", "r", "enter"].includes(key)) return;
+  if (!["f", "e", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
-  if (key === "f") attack();
+  if (key === "m") {
+    gameAudio.setMuted(!gameAudio.isMuted());
+    toast(gameAudio.isMuted() ? "Sound off · press M to turn it back on" : "Sound on");
+  } else if (key === "f") attack();
   else if (key === "e") interact();
   else if (key === "r") submit({ kind: "reload" });
   else if (key === "enter") submit({ kind: "respawn" });

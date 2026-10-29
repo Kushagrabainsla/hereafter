@@ -73,8 +73,18 @@ export const VIEW_POSES: Record<WeaponKind, ViewPose> = {
 
 // Per-frame state shared with the authored view models: which weapon is visibly held
 // (after the switch midpoint), how far the lower-and-raise switch has tucked it away,
-// and the small turn, pitch and landing offsets.
-export interface ViewDynamics { active: WeaponKind; lower: number; turnLag: number; pitchLag: number; landing: number; }
+// and the small turn, pitch and landing offsets. reload is how far the weapon is canted
+// for a reload (0 to 1) and jolt the decaying kick when a magazine seats or the action closes.
+export interface ViewDynamics { active: WeaponKind; lower: number; turnLag: number; pitchLag: number; landing: number; reload: number; jolt: number; }
+
+// Moments in each reload recording (seconds) when the magazine seats and the action closes,
+// so the weapon jolts in time with the sound (scripts/audio/build.sh cuts the recordings).
+const RELOAD_JOLTS: Record<WeaponKind, number[]> = { knife: [], pistol: [0.42, 0.95], rifle: [1.15, 1.38] };
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
 
 export class WeaponVisuals {
   private held = new Map<WeaponKind, Group>();
@@ -85,6 +95,11 @@ export class WeaponVisuals {
   private switching = false;
   private fallbackVisible = true;
   private lower = 0;
+  private reloadElapsed = 0;
+  private reloadDuration = 0;
+  private reloadWeapon: WeaponKind = "knife";
+  private reloadTilt = 0;
+  private reloadJolt = 0;
   private turnLag = 0;
   private pitchLag = 0;
   private lastHeading: number | null = null;
@@ -151,7 +166,18 @@ export class WeaponVisuals {
     else if (this.switchPhase >= 0.5) this.switchPhase = 1 - this.switchPhase;
     this.recoil = 0;
     this.flashTime = 0;
+    this.cancelReload();
   }
+
+  // Cant the weapon for a reload lasting durationMs, with jolts timed to the reload sound.
+  reload(kind: WeaponKind, durationMs: number): void {
+    if (kind === "knife" || kind !== this.requested) return;
+    this.reloadWeapon = kind;
+    this.reloadElapsed = 0;
+    this.reloadDuration = durationMs / 1000;
+  }
+
+  cancelReload(): void { this.reloadDuration = 0; }
 
   setFallbackVisible(visible: boolean): void {
     this.fallbackVisible = visible;
@@ -159,7 +185,7 @@ export class WeaponVisuals {
   }
 
   dynamics(): ViewDynamics {
-    return { active: this.active, lower: this.lower, turnLag: this.turnLag, pitchLag: this.pitchLag, landing: this.landing };
+    return { active: this.active, lower: this.lower, turnLag: this.turnLag, pitchLag: this.pitchLag, landing: this.landing, reload: this.reloadTilt, jolt: this.reloadJolt };
   }
 
   setTaken(taken: string[]): void {
@@ -201,6 +227,20 @@ export class WeaponVisuals {
     this.sprintBlend += ((motion.running && motion.moving && !motion.airborne ? 1 : 0) - this.sprintBlend) * Math.min(1, seconds * 6);
     if (motion.moving) this.stride += motion.speed * seconds * (motion.running ? 1.55 : 1.25);
     this.recoil = Math.max(0, this.recoil - seconds * (this.active === "knife" ? 4.5 : 7));
+    this.reloadTilt = 0;
+    this.reloadJolt = 0;
+    if (this.reloadDuration > 0) {
+      this.reloadElapsed += elapsed;
+      const progress = this.reloadElapsed / this.reloadDuration;
+      if (progress >= 1 || this.reloadWeapon !== this.active) this.reloadDuration = 0;
+      else {
+        this.reloadTilt = smoothstep(0, 0.16, progress) * (1 - smoothstep(0.84, 1, progress));
+        for (const moment of RELOAD_JOLTS[this.reloadWeapon]) {
+          if (this.reloadElapsed >= moment) this.reloadJolt += Math.exp(-(this.reloadElapsed - moment) * 16);
+        }
+      }
+    }
+    const reload = this.reloadTilt, jolt = this.reloadJolt;
     const held = this.held.get(this.active);
     if (held) {
       const pose = VIEW_POSES[this.active];
@@ -214,14 +254,14 @@ export class WeaponVisuals {
       const sprint = this.sprintBlend;
       const breath = Math.sin(this.time * 1.8) * 0.006;
       held.position.set(
-        pose.position[0] + step * amplitude + this.turnLag + sprint * pose.sprint[0] + lower * 0.06,
-        pose.position[1] + breath + lift * amplitude - this.landing + this.pitchLag + sprint * pose.sprint[1] - lower * 0.75 - this.recoil * (knife ? 0.08 : 0.035),
+        pose.position[0] + step * amplitude + this.turnLag + sprint * pose.sprint[0] + lower * 0.06 - reload * 0.05,
+        pose.position[1] + breath + lift * amplitude - this.landing + this.pitchLag + sprint * pose.sprint[1] - lower * 0.75 - this.recoil * (knife ? 0.08 : 0.035) - reload * 0.06 + jolt * 0.014,
         pose.position[2] + sprint * pose.sprint[2] + this.recoil * (knife ? 0.02 : 0.045) + lower * 0.08,
       );
       held.rotation.set(
-        pose.rotation[0] + this.recoil * (knife ? 0.8 : 0.19) + sprint * pose.sprint[3] - lower * 0.7,
+        pose.rotation[0] + this.recoil * (knife ? 0.8 : 0.19) + sprint * pose.sprint[3] - lower * 0.7 + reload * 0.2 + jolt * 0.05,
         pose.rotation[1] - this.turnLag * 0.8 + sprint * pose.sprint[4] + lower * 0.25,
-        pose.rotation[2] + step * amplitude * 0.8 - this.recoil * (knife ? 0.55 : 0.04) + sprint * pose.sprint[5] - lower * 0.3,
+        pose.rotation[2] + step * amplitude * 0.8 - this.recoil * (knife ? 0.55 : 0.04) + sprint * pose.sprint[5] - lower * 0.3 + reload * 0.5,
       );
     }
     for (const pickup of this.pickups.values()) {
