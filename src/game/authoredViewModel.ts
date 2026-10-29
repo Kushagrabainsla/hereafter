@@ -1,10 +1,10 @@
-import { AnimationMixer, AnimationUtils, Group, LoopOnce, Mesh, Object3D, PerspectiveCamera, Texture, Vector3, type AnimationAction } from "three/webgpu";
-import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3, type AnimationAction } from "three/webgpu";
+import { loadWeaponFile } from "./weaponModels";
 import { type WeaponKind } from "./combatRules";
 import { type PlayerMotion } from "./playerController";
 import { type ViewDynamics } from "./weaponVisuals";
 
-interface Model { root: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null }
+interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null }
 
 // Each GLB contains arms + weapon authored together in camera-local coordinates with
 // idle, walk, run and fire clips (see scripts/viewmodels/build.py). URLs are explicit
@@ -15,13 +15,9 @@ export class AuthoredViewModel {
   private locomotion = "";
   private disposed = false;
   constructor(private camera: PerspectiveCamera) {
-    const paths = { knife: import.meta.env.VITE_KNIFE_VIEWMODEL, pistol: import.meta.env.VITE_PISTOL_VIEWMODEL, rifle: import.meta.env.VITE_RIFLE_VIEWMODEL };
     for (const kind of ["knife", "pistol", "rifle"] as const) {
-      const path: unknown = paths[kind];
-      if (typeof path !== "string" || !path) continue;
-      const url = new URL(path, new URL(import.meta.env.BASE_URL, location.origin));
-      if (url.origin !== location.origin) continue;
-      void new GLTFLoader().loadAsync(url.href).then((gltf) => {
+      void loadWeaponFile(kind).then((gltf) => {
+        if (!gltf) return;
         const root = gltf.scene;
         if (this.disposed) { this.release(root); return; }
         root.traverse((object) => {
@@ -48,12 +44,33 @@ export class AuthoredViewModel {
           clips.set(name, action);
         }
         root.visible = false;
-        camera.add(root);
-        this.models.set(kind, { root, mixer, clips, muzzle: root.getObjectByName("muzzle") ?? null });
+        const rig = new Group();
+        rig.add(root);
+        camera.add(rig);
+        if (kind !== "knife") this.straighten(root, rig, mixer, clips);
+        this.models.set(kind, { root, rig, mixer, clips, muzzle: root.getObjectByName("muzzle") ?? null });
         this.locomotion = "";
       }).catch((error: unknown) => console.warn(`Could not load ${kind} view model; using fallback.`, error));
     }
   }
+  // The authored files hold guns yawed and canted toward the screen centre. Turning the
+  // whole arms-and-weapon rig about the grip so the barrel runs parallel to the view
+  // makes it point at the crosshair from any range (parallel lines meet at the centre on
+  // screen), and tracers from the muzzle then leave along the barrel.
+  private straighten(root: Group, rig: Group, mixer: AnimationMixer, clips: Map<string, AnimationAction>): void {
+    const weapon = root.getObjectByName("weapon");
+    if (!weapon) return;
+    const idle = clips.get("idle");
+    idle?.play();
+    mixer.update(0);
+    root.updateMatrixWorld(true);
+    const grip = new Vector3(), turn = new Quaternion(), scale = new Vector3();
+    new Matrix4().copy(root.matrixWorld).invert().multiply(weapon.matrixWorld).decompose(grip, turn, scale);
+    rig.quaternion.copy(turn).invert();
+    rig.position.copy(grip).sub(grip.clone().applyQuaternion(rig.quaternion));
+    idle?.stop();
+  }
+
   hasModel(): boolean { return this.models.has(this.active); }
   // Muzzle position in camera-local metres for tracers, when the active model has one.
   muzzle(): Vector3 | undefined {
@@ -98,7 +115,7 @@ export class AuthoredViewModel {
   }
   dispose(): void {
     this.disposed = true;
-    for (const model of this.models.values()) { model.mixer.stopAllAction(); model.mixer.uncacheRoot(model.root); this.camera.remove(model.root); this.release(model.root); }
+    for (const model of this.models.values()) { model.mixer.stopAllAction(); model.mixer.uncacheRoot(model.root); this.camera.remove(model.rig); this.release(model.root); }
     this.models.clear();
   }
 }

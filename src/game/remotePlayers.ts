@@ -1,6 +1,6 @@
 import {
   BoxGeometry, CapsuleGeometry, Color, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
-  Scene, SphereGeometry, Vector3,
+  Scene, SphereGeometry, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
@@ -117,6 +117,7 @@ export class RemotePlayers {
   private avatars = new Map<string, RemoteAvatar>();
   private dead = new Set<string>();
   private equipped = new Map<string, WeaponKind>();
+  private weaponModels: Map<WeaponKind, Object3D> | null = null;
 
   constructor(private scene: Scene, private data: ArenaData, private models: PlayerModelLibrary, private physics?: PhysicsWorld) {}
 
@@ -135,6 +136,34 @@ export class RemotePlayers {
       weapon.position.set(...GRIP_OFFSET[kind]);
       weapon.rotation.set(0, 0, 0);
       weapon.scale.setScalar(1);
+    }
+    this.useRealWeapons(avatar);
+  }
+
+  // Characters hold the same weapon models the player sees in first person. Those share
+  // the stand-ins' frame (grip at the origin, barrel along -Z), so they sit on the hand
+  // socket unchanged.
+  setWeaponModels(models: Map<WeaponKind, Object3D>): void {
+    this.weaponModels = models;
+    for (const avatar of this.avatars.values()) if (avatar.model) this.useRealWeapons(avatar);
+  }
+
+  private useRealWeapons(avatar: RemoteAvatar): void {
+    if (!this.weaponModels || !avatar.model?.weaponSocket) return;
+    for (const [kind, old] of avatar.weapons) {
+      const source = this.weaponModels.get(kind);
+      if (!source || old.userData.real) continue;
+      const copy = source.clone(true) as Group;
+      copy.userData.real = true;
+      copy.visible = old.visible;
+      avatar.model.weaponSocket.add(copy);
+      old.removeFromParent();
+      old.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        object.geometry.dispose();
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
+      });
+      avatar.weapons.set(kind, copy);
     }
   }
 

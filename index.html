@@ -80,9 +80,13 @@
       <div id="combat-toast" class="combat-toast" hidden></div>
       <div id="death-overlay" class="death-overlay" hidden><strong>ELIMINATED</strong><span id="respawn-hint">Respawn available shortly</span></div>
 
-      <div id="notice" class="notice" role="status" aria-live="polite">
-        <span id="notice-label" class="notice-label">Preparing arena</span>
-        <p id="notice-message">Loading the San Jose world…</p>
+      <div id="loader" class="loader" role="status" aria-live="polite">
+        <div class="loader-card">
+          <div class="loader-brand"><strong>Hereafter<span>.</span></strong><small>San Jose</small></div>
+          <div class="loader-bar" aria-hidden="true"><span id="loader-fill"></span></div>
+          <div class="loader-row"><span id="loader-step">Loading the San Jose arena</span><span id="loader-percent">0%</span></div>
+          <p id="loader-tip" class="loader-tip">Press H any time to see every control.</p>
+        </div>
       </div>
 
       <div class="attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a><span>Terrain: USGS 3DEP</span><a href="https://polyhaven.com/license" target="_blank" rel="noopener noreferrer">Textures: Poly Haven</a></div>

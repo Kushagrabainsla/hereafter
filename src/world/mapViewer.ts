@@ -3,7 +3,7 @@ import {
   DoubleSide, EquirectangularReflectionMapping, ExtrudeGeometry, Float32BufferAttribute, FogExp2, Group, HemisphereLight, InstancedMesh,
   LineSegments, Mesh, MeshBasicMaterial, MeshStandardMaterial, PCFSoftShadowMap,
   Object3D, PerspectiveCamera, PlaneGeometry, Quaternion, Scene, Shape, ShapeGeometry, SphereGeometry, Vector2, Vector3,
-  WebGPURenderer,
+  DefaultLoadingManager, WebGPURenderer,
 } from "three/webgpu";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
@@ -14,6 +14,7 @@ import { PlayerModelLibrary } from "../game/playerModel";
 import { ShotEffects } from "../game/shotEffects";
 import { type CombatEvent, type CombatWorld } from "../game/matchState";
 import { WeaponVisuals } from "../game/weaponVisuals";
+import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio } from "../game/gameAudio";
 import { SoundStage } from "../game/soundStage";
 import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, type WeaponKind } from "../game/combatRules";
@@ -43,6 +44,9 @@ export interface MapViewerEvents {
   onMetrics: (metrics: MapMetrics) => void;
   // Current hip-fire spread as a crosshair gap in CSS pixels; melee is true for the knife.
   onAim?: (spreadPixels: number, melee: boolean) => void;
+  // Loading progress from 0 to 1 with a short description of the current step.
+  // Loading progress from 0 to 1, with the step under way when it changes.
+  onProgress?: (fraction: number, step?: string) => void;
   // A landing at this speed (m/s), fast enough that it may hurt.
   onHardLanding?: (speed: number) => void;
 }
@@ -426,13 +430,33 @@ function disposeGroup(group: Group): void {
   });
 }
 
+// Gives the browser a chance to paint the loading screen's new step before blocking
+// work starts. requestAnimationFrame does not run in a background tab, so a timeout
+// stands in for it there.
+function paint(): Promise<void> {
+  return new Promise((resolve) => { requestAnimationFrame(() => setTimeout(resolve, 0)); setTimeout(resolve, 60); });
+}
+
 export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
+  // Each step owns a span of the loading bar. Files that finish during a step (Three.js
+  // loaders report them to the default manager) fill that step's span, so the bar keeps
+  // moving on a slow connection without running ahead of the work.
+  let from = 0.04, until = 0.45;
+  DefaultLoadingManager.onProgress = (_url, loaded, total) => { if (total > 0) events.onProgress?.(from + (until - from) * loaded / total); };
+  const step = async (fraction: number, next: number, label: string): Promise<void> => {
+    from = fraction;
+    until = next;
+    events.onProgress?.(fraction, label);
+    await paint();
+  };
   events.onStatus("loading", "Loading the bundled San Jose arena and materials…");
+  events.onProgress?.(0.04, "Loading the San Jose arena");
   const [data, textures, skyHdri] = await Promise.all([
     loadArenaData(arena),
     loadSurfaceTextures(),
     new RGBELoader().loadAsync(`${import.meta.env.BASE_URL}textures/san-jose-sky.hdr`).catch(() => null),
   ]);
+  await step(0.45, 0.55, "Building streets and buildings");
   const scene = new Scene();
   const sky = skyHdri ?? createSkyTexture();
   if (skyHdri) {
@@ -483,6 +507,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.add(streetFurniture);
   const entities = new EntityRegistry();
   for (const entity of buildEntities(data, windows, lights)) entities.add(entity);
+  await step(0.55, 0.7, "Placing cover, props and roofs");
   const propModels = await loadPropModels();
   const propViews = new PropViews(scene);
   await propViews.load(propModels);
@@ -497,6 +522,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
   propViews.build(props);
 
+  await step(0.7, 0.8, "Starting the renderer");
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
   const renderer = new WebGPURenderer({ antialias: true, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
   const maximumPixelRatio = Math.min(window.devicePixelRatio, 2);
@@ -510,6 +536,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   await renderer.init();
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
   container.appendChild(renderer.domElement);
+  await step(0.8, 0.92, "Building physics");
   const physics = new PhysicsWorld(data, arena);
   for (const roof of roofPlan.roofs) physics.addRoof(roof.vertices, roof.indices);
   for (const box of roofPlan.boxes) physics.addBox(box.half, box.position, box.rotation, box.railing ? "boundary" : "metal-solid");
@@ -538,6 +565,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   viewScene.add(viewSun);
   const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, makeWeaponPickups(data, arena));
   const authoredViewModel = new AuthoredViewModel(viewCamera);
+  // Pickups and other players use the first-person weapon models once they load.
+  void loadWeaponModels().then((models) => {
+    weaponVisuals.useModels(models);
+    remotePlayers.setWeaponModels(models);
+  });
   const shotEffects = new ShotEffects(scene);
   const effects = new WorldEffects(scene, data, refs, () => camera.position);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
@@ -637,6 +669,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     renderer.autoClear = true;
     frames += 1;
     renderedFrames += 1;
+    if (renderedFrames === 1) { DefaultLoadingManager.onProgress = () => undefined; events.onProgress?.(0.92, "Preparing shaders"); }
     if (!readySent && renderedFrames >= 2) {
       events.onStatus("ready", "San Jose arena loaded. Use arrow keys to move and drag on the map to look around.");
       readySent = true;

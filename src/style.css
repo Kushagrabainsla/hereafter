@@ -107,12 +107,22 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .room-status { min-height: 18px; margin: 17px 0 0; color: #9ac1c8; font-size: 12px; line-height: 1.5; }
 [hidden] { display: none !important; }
 
-.notice { position: absolute; z-index: 4; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(390px, calc(100vw - 48px)); border: 1px solid #4d747e; border-radius: 13px; padding: 20px 23px; background: rgba(9, 20, 32, .92); backdrop-filter: blur(16px); box-shadow: 0 20px 70px rgba(0, 0, 0, .35); }
-.notice[hidden] { display: none; }
-.notice[data-state="error"] { border-color: #895a58; }
-.notice-label { color: #8de0e3; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-.notice[data-state="error"] .notice-label { color: #ffb0a5; }
-.notice p { margin: 10px 0 0; color: #d9e6ed; font-size: 13px; line-height: 1.55; }
+/* Startup loader: covers the page until the first frames are drawn, then fades away. */
+.loader { position: absolute; z-index: 20; inset: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(120% 90% at 50% 35%, #173445 0%, #0b1723 58%, #070f17 100%); color: #edf5f7; transition: opacity .6s ease; }
+.loader.done { opacity: 0; pointer-events: none; }
+.loader[hidden] { display: none; }
+.loader-card { width: min(420px, 100%); }
+.loader-brand { display: flex; align-items: baseline; gap: 14px; margin-bottom: 26px; }
+.loader-brand strong { font-size: clamp(34px, 8vw, 46px); letter-spacing: -.055em; }
+.loader-brand strong span { color: #90e1df; }
+.loader-brand small { color: #b9cdd2; font-size: 12px; font-weight: 750; letter-spacing: .2em; text-transform: uppercase; }
+.loader-bar { height: 4px; overflow: hidden; border-radius: 4px; background: rgba(157, 214, 218, .16); }
+.loader-bar span { display: block; width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4fc8c4, #9fe9e4); box-shadow: 0 0 12px rgba(120, 226, 223, .55); transition: width .35s ease; }
+.loader-row { display: flex; justify-content: space-between; gap: 16px; margin-top: 12px; color: #c6d8dc; font-size: 13px; }
+.loader-row #loader-percent { color: #9fe3dc; font-variant-numeric: tabular-nums; font-weight: 700; }
+.loader-tip { min-height: 2.6em; margin: 22px 0 0; color: #8fa8ae; font-size: 12px; line-height: 1.5; }
+.loader[data-state="error"] .loader-bar span { background: #c9665d; box-shadow: none; }
+.loader[data-state="error"] #loader-step { color: #ffb0a5; }
 
 .combat-hud { position: absolute; z-index: 3; left: 26px; bottom: 24px; width: 242px; padding: 14px 16px 12px; border: 1px solid rgba(161, 219, 218, .35); border-radius: 10px; background: rgba(8, 24, 32, .79); box-shadow: 0 10px 34px rgba(0, 0, 0, .2); backdrop-filter: blur(11px); }
 .hud-health-label, .hud-weapon-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

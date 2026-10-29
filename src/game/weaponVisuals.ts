@@ -1,6 +1,6 @@
 import {
-  BoxGeometry, CylinderGeometry, ExtrudeGeometry, Group, Mesh, MeshStandardMaterial,
-  PerspectiveCamera, PointLight, MeshBasicMaterial, Vector3, Scene, Shape, SphereGeometry, TorusGeometry,
+  Box3, BoxGeometry, CylinderGeometry, ExtrudeGeometry, Group, Mesh, MeshStandardMaterial,
+  PerspectiveCamera, PointLight, MeshBasicMaterial, Vector3, Scene, Shape, SphereGeometry, TorusGeometry, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type WeaponKind, type WeaponPickup } from "./combatRules";
@@ -59,7 +59,7 @@ export function makeWeapon(kind: WeaponKind, viewModel: boolean): Group {
   return group;
 }
 
-interface PickupView { root: Group; ring: Mesh; beamMaterial: MeshStandardMaterial; }
+interface PickupView { root: Group; ring: Mesh; beamMaterial: MeshStandardMaterial; holder: Group; weapon: WeaponKind }
 
 // Rest pose of each held weapon in camera-local metres and radians, plus the offset
 // (dx, dy, dz, rx, ry, rz) blended in while sprinting. Guns yaw slightly inward so the
@@ -148,16 +148,19 @@ export class WeaponVisuals {
       ring.rotation.x = Math.PI / 2;
       const beam = add(root, new CylinderGeometry(0.24, 0.38, 1.7, 16, 1, true), beamMaterial, 0, 0.91, 0);
       beam.visible = true;
+      // The holder spins and bobs; it shows a simple stand-in until the real model loads.
+      const holder = new Group();
+      holder.position.y = 0.48;
+      holder.rotation.set(-0.1, Math.PI / 5, -0.1);
       const model = makeWeapon(pickup.weapon, false);
-      model.position.y = 0.48;
-      model.rotation.set(-0.1, Math.PI / 5, -0.1);
       model.scale.setScalar(pickup.weapon === "rifle" ? 0.9 : 1.2);
-      root.add(model);
+      holder.add(model);
+      root.add(holder);
       const light = new PointLight(0x5bdad8, 0.8, 5);
       light.position.y = 0.65;
       root.add(light);
       scene.add(root);
-      this.pickups.set(pickup.id, { root, ring, beamMaterial });
+      this.pickups.set(pickup.id, { root, ring, beamMaterial, holder, weapon: pickup.weapon });
     }
   }
 
@@ -188,6 +191,26 @@ export class WeaponVisuals {
 
   dynamics(): ViewDynamics {
     return { active: this.active, lower: this.lower, turnLag: this.turnLag, pitchLag: this.pitchLag, landing: this.landing, reload: this.reloadTilt, jolt: this.reloadJolt };
+  }
+
+  // Shows each pickup as the same model the player holds, spinning about its middle and
+  // drawn a little larger than life so it reads at a distance.
+  useModels(models: Map<WeaponKind, Object3D>): void {
+    for (const pickup of this.pickups.values()) {
+      const source = models.get(pickup.weapon);
+      if (!source) continue;
+      const model = source.clone(true);
+      const center = new Box3().setFromObject(model).getCenter(new Vector3());
+      model.position.sub(center);
+      pickup.holder.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        object.geometry.dispose();
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
+      });
+      pickup.holder.clear();
+      pickup.holder.add(model);
+      pickup.holder.scale.setScalar(pickup.weapon === "rifle" ? 1.05 : 1.6);
+    }
   }
 
   setTaken(taken: string[]): void {
@@ -278,11 +301,8 @@ export class WeaponVisuals {
     for (const pickup of this.pickups.values()) {
       pickup.ring.rotation.z += seconds * 0.5;
       pickup.beamMaterial.opacity = 0.085 + Math.sin(this.time * 2.5) * 0.025;
-      const model = pickup.root.children[3];
-      if (model instanceof Group) {
-        model.rotation.y += seconds * 0.55;
-        model.position.y = 0.46 + Math.sin(this.time * 2.2) * 0.06;
-      }
+      pickup.holder.rotation.y += seconds * 0.55;
+      pickup.holder.position.y = 0.48 + Math.sin(this.time * 2.2) * 0.06;
     }
   }
 }

@@ -51,9 +51,11 @@ const grenadeCount = element<HTMLElement>("grenade-count");
 const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall" };
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
-const notice = element<HTMLElement>("notice");
-const noticeLabel = element<HTMLElement>("notice-label");
-const noticeMessage = element<HTMLElement>("notice-message");
+const loader = element<HTMLElement>("loader");
+const loaderFill = element<HTMLElement>("loader-fill");
+const loaderStep = element<HTMLElement>("loader-step");
+const loaderPercent = element<HTMLElement>("loader-percent");
+const loaderTip = element<HTMLElement>("loader-tip");
 let viewer: MapViewer | null = null;
 let peerRoom: PeerRoom | null = null;
 let match: MatchState | null = null;
@@ -77,11 +79,42 @@ window.setInterval(() => {
 let toastTimer = 0;
 const arena = arenaFromUrl(window.location.search);
 
+// The loader's bar never moves backward.
+let loadProgress = 0;
+const LOADER_TIPS = [
+  "Press H any time to see every control.",
+  "Hold Q or E to lean around cover.",
+  "Press G to throw a grenade. It bounces, rolls and bursts after 2.6 seconds.",
+  "Crouch while sprinting to slide.",
+  "Press Space facing cover or a ledge to climb onto it.",
+  "Walk into a ladder to climb to the roofs. Long falls hurt.",
+  "Rounds go through glass, crates, bins and cardboard, but not concrete.",
+];
+let tipIndex = 0;
+const tipTimer = window.setInterval(() => { tipIndex = (tipIndex + 1) % LOADER_TIPS.length; loaderTip.textContent = LOADER_TIPS[tipIndex]; }, 3500);
+
+function showProgress(fraction: number, step?: string): void {
+  loadProgress = Math.max(loadProgress, Math.min(1, fraction));
+  loaderFill.style.width = `${(loadProgress * 100).toFixed(1)}%`;
+  loaderPercent.textContent = `${Math.round(loadProgress * 100)}%`;
+  if (step) loaderStep.textContent = step;
+}
+
 function setStatus(state: MapState, message: string): void {
-  notice.dataset.state = state;
-  notice.hidden = state === "ready";
-  noticeLabel.textContent = state === "error" ? "Arena unavailable" : "Preparing arena";
-  noticeMessage.textContent = message;
+  loader.dataset.state = state;
+  if (state === "error") {
+    window.clearInterval(tipTimer);
+    loaderStep.textContent = message;
+    loaderTip.textContent = "Arena unavailable. Reload the page to try again.";
+    return;
+  }
+  if (state !== "ready") return;
+  window.clearInterval(tipTimer);
+  showProgress(1, "Ready");
+  window.setTimeout(() => {
+    loader.classList.add("done");
+    window.setTimeout(() => { loader.hidden = true; }, 650);
+  }, 250);
 }
 
 function openControls(): void {
@@ -443,6 +476,7 @@ window.addEventListener("beforeunload", () => { void peerRoom?.leave(); });
 
 void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
+  onProgress: showProgress,
   onHardLanding(speed) { submit({ kind: "fall", speed }); },
   onAim(spreadPixels, melee) {
     crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
