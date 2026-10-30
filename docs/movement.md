@@ -1,6 +1,6 @@
 # Movement and accuracy
 
-Walking, running, jumping and crouching run on the Rapier capsule controller in `src/game/playerController.ts` at a fixed 60 Hz. This note covers the slide, the mantle, firing out of a sprint, and the spread that movement adds to shots.
+Walking, running, jumping and crouching run on the Rapier capsule controller in `src/game/playerController.ts` at a fixed 60 Hz. This note covers the slide, the mantle, firing out of a sprint, carried weight, how the held weapon moves, and the spread that movement adds to shots.
 
 ## Slide
 
@@ -16,7 +16,17 @@ The climb rises beside the ledge first, then moves over its top, taking 0.3 s pl
 
 ## Firing out of a sprint
 
-Firing while running drops the sprint, and the shot leaves once the weapon is up: 60 ms for the knife, 140 ms for the pistol and 220 ms for the carbine. Each attack holds the sprint off for 0.35 s. A held trigger therefore walks, and a released one runs again on its own if Shift is still held. The weapon now comes out of the sprint carry about twice as fast as it drops into it.
+Firing while running drops the sprint, and the shot leaves once the weapon is up: 60 ms for the knife, 140 ms for the pistol and 220 ms for the carbine. A knife stroke then takes its own time to land (see [physics notes](physics.md#the-knife)). Each attack holds the sprint off for 0.35 s. A held trigger therefore walks, and a released one runs again on its own if Shift is still held. The weapon now comes out of the sprint carry about twice as fast as it drops into it.
+
+## Carried weight
+
+Guns, magazines and grenades weigh what they really do, and the load slows walking, sprinting, jumping, starting and stopping, ladder climbs and mantles; see [physics notes](physics.md#weight) for the figures. Hard work builds exertion: sprinting, climbing, jumping and mantling raise it, faster under a heavy load, and walking or standing lets it ease. Exertion shows in the hands as heavier breathing.
+
+Outside forces add velocity on top of walking, which the feet bleed off at 8 per second on the ground and slowly in the air: a stab's lunge (2.8 m/s), a knife cut or a carbine round knocking you back, and a nearby grenade throwing you off your feet. Heavier players are moved less.
+
+## How the held weapon moves
+
+The weapon hangs off the hands like a mass on a spring (`WeaponVisuals` in `src/game/weaponVisuals.ts`). Each frame the spring is driven by the eyes' acceleration along the camera's own axes and by how the view turns. Turning drags the weapon behind the turn, sudden starts and stops add a swing, starting to run leaves it behind and stopping throws it forward, a jump or a landing dips it, and strafing rolls it a little. Heavier weapons swing slower and further: natural frequencies are 2.6 Hz for the knife, 2.1 Hz for the pistol and 1.5 Hz for the carbine, at half critical damping. Breathing raises and tips the weapon about 14 times a minute at rest, deepening and quickening to about 40 a minute after a hard sprint, over a faint tremor of the hands.
 
 ## Spread
 
@@ -59,6 +69,7 @@ Headless Chrome checks drove the running game and stepped the controller directl
 | Carbine bloom over 11 shots at 140 ms | mean deviation 0.27° rising to 1.26° |
 | Crosshair gap, carbine | 3.7 px standing, 9.6 walking, 18.5 in the air, 3.0 crouched |
 | Lean | full lean in about half a second, eyes moved 0.32 m; a shot 0.3 m beside an upright head misses it and hits the leaning head |
+| Sprint loads | 1.1 kg: full speed; 2.4 kg (pistol, two magazines): 97.5%; 11.7 kg: 81% |
 
 ## Limits
 

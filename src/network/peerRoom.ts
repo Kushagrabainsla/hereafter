@@ -4,8 +4,8 @@ import { type PlayerPose } from "../game/playerController";
 import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
-// Version 3 carries event lists, entity health and grenades in snapshots, so it does not mix with 2.
-const PROTOCOL_VERSION = 3;
+// Version 4 carries spare magazines, dropped guns and knife strokes, so it does not mix with 3.
+const PROTOCOL_VERSION = 4;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -32,6 +32,9 @@ type SyncPacket = { version: number; map: string };
 // Loose prop transforms from the coordinator: [id, x, y, z, qx, qy, qz, qw].
 export type PropState = [string, number, number, number, number, number, number, number];
 type PropsPacket = { version: number; map: string; states: PropState[] };
+// Shoves a player gave loose props the coordinator simulates: [id, impulse x, y, z] in N·s.
+export type PropPush = [string, number, number, number];
+type PushPacket = { version: number; map: string; pushes: PropPush[] };
 
 export interface PeerRoomEvents {
   onPeers: (count: number, spawnSlot: number) => void;
@@ -39,6 +42,7 @@ export interface PeerRoomEvents {
   onPeerLeave: (peerId: string) => void;
   onStatus: (message: string) => void;
   onProps?: (states: PropState[]) => void;
+  onPushes?: (pushes: PropPush[]) => void;
 }
 
 // Peers only exchange packets for the same map and protocol.
@@ -70,6 +74,7 @@ function validIntent(value: unknown): value is CombatIntent {
   const intent = value as CombatIntent;
   if (intent.kind === "attack") {
     if (!["knife", "pistol", "rifle"].includes(intent.weapon ?? "")) return false;
+    if (intent.stroke !== undefined && intent.stroke !== "slash" && intent.stroke !== "stab") return false;
     if (intent.aim !== undefined && !validAim(intent.aim)) return false;
     return intent.seen === undefined || (typeof intent.seen === "object" && intent.seen !== null && Object.keys(intent.seen).length <= 16
       && Object.values(intent.seen).every((time) => typeof time === "number" && Number.isFinite(time)));
@@ -98,6 +103,7 @@ export class PeerRoom {
   private snapshotAction;
   private syncAction;
   private propsAction;
+  private pushAction;
   private peers = new Set<string>();
   private lastSequence = new Map<string, number>();
   private lastAcceptedPose = new Map<string, { east: number; north: number; receivedAt: number }>();
@@ -128,6 +134,14 @@ export class PeerRoom {
     this.snapshotAction = this.room.makeAction<string>("combat-state-v1");
     this.syncAction = this.room.makeAction<SyncPacket>("combat-sync-v1");
     this.propsAction = this.room.makeAction<PropsPacket>("props-v1");
+    this.pushAction = this.room.makeAction<PushPacket>("prop-push-v1");
+    this.pushAction.onMessage = (value, { peerId }) => {
+      if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.pushes)) return;
+      // A body can only lean so hard on a prop in the time between packets.
+      const pushes = value.pushes.filter((push) => Array.isArray(push) && push.length === 4 && typeof push[0] === "string" && push[0].length < 40
+        && push.slice(1).every((n) => typeof n === "number" && Number.isFinite(n)) && Math.hypot(push[1], push[2], push[3]) <= 120).slice(0, 8);
+      if (pushes.length) this.events.onPushes?.(pushes);
+    };
     this.propsAction.onMessage = (value, { peerId }) => {
       if (peerId !== this.leaderId || this.leaderId === selfId || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.states)) return;
       const states = value.states.filter((state) => Array.isArray(state) && state.length === 8 && typeof state[0] === "string" && state[0].length < 40 && state.slice(1).every((n) => typeof n === "number" && Number.isFinite(n))).slice(0, 200);
@@ -257,6 +271,11 @@ export class PeerRoom {
   sendProps(states: PropState[]): void {
     if (this.leaderId !== selfId || !this.peers.size || !states.length) return;
     void this.propsAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, states }).catch(() => undefined);
+  }
+
+  sendPushes(pushes: PropPush[]): void {
+    if (this.leaderId === selfId || !pushes.length) return;
+    void this.pushAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, pushes }, { target: this.leaderId }).catch(() => undefined);
   }
 
   sendPose(pose: PlayerPose): void {

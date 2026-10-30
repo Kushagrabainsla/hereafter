@@ -10,7 +10,7 @@ The same module draws the market. Static geometry is merged per material so the 
 
 ## Rendering
 
-`src/world/mapViewer.ts` creates the scene, the renderer and the frame loop. Three.js `WebGPURenderer` uses WebGPU when available and WebGL 2 otherwise. On WebGPU, clustered lighting lets every lamp and sign be a real light. The world and the first-person view render as two multisampled passes in a post-processing pipeline that adds bloom and a vignette before tone mapping. Render resolution adapts to sustained frame rates. See [rendering notes](rendering.md).
+`src/world/mapViewer.ts` creates the scene, the renderer and the frame loop. Three.js `WebGPURenderer` uses WebGPU when available and WebGL 2 otherwise. On WebGPU, clustered lighting lets every lamp and sign be a real light, and `src/game/viewLighting.ts` lights the first-person arms from the lamps around the player. The world and the first-person view render as two multisampled passes in a post-processing pipeline that adds bloom and a vignette before tone mapping. Render resolution adapts to sustained frame rates. See [rendering notes](rendering.md).
 
 ## Movement and physics
 
@@ -18,6 +18,6 @@ The same module draws the market. Static geometry is merged per material so the 
 
 ## Combat and rooms
 
-`src/game/matchState.ts` holds health, inventory, ammo, pickups, grenades, entity health and respawns, and resolves shots through the physics world on the coordinating peer. `src/network/peerRoom.ts` carries poses, combat intents, snapshots and prop transforms between peers. `src/main.ts` connects the viewer, the match, the room and the HUD. See [multiplayer architecture](multiplayer.md).
+`src/game/matchState.ts` holds health, inventory, the rounds in each gun and spare magazine, pickups, dropped guns, grenades, entity health and respawns, and resolves shots and knife strokes through the physics world on the coordinating peer. `src/game/loot.ts` draws spare magazines and dropped guns, and `src/game/ejecta.ts` throws spent cases and empty magazines. `src/network/peerRoom.ts` carries poses, combat intents, snapshots and prop transforms between peers. `src/main.ts` connects the viewer, the match, the room and the HUD. See [multiplayer architecture](multiplayer.md).
 
 The original plan in the [handoff](REAL_WORLD_FPS_AGENT_HANDOFF.md) built arenas from real city data (first Google 3D Tiles, then OpenStreetMap). The game has since replaced that with the hand-built market, which suits close fights better than real streets.

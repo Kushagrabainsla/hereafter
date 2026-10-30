@@ -8,7 +8,7 @@ The files in `public/textures/` are 1K diffuse and normal maps from [Poly Haven]
 
 `storefront-stone.jpg` and `storefront-cafe.jpg` were generated with the built-in imagegen tool for this project. Their prompts requested flat, front-facing, photo-real downtown California storefront textures: one with a stone base and recessed glass entry, the other a dark green cafe with a warm interior. Both prompts excluded people, text, logos, signs, and perspective distortion. They are the shop interiors seen behind the market's shopfront glass.
 
-The dusk sky, the sign faces, the window interiors, the posters, the mural, the awning stripes, the wood grain and the kitchen tiles are drawn in code when the map loads.
+The dusk sky, the sign faces, the window interiors, the posters, the mural, the awning stripes, the wood grain and the kitchen tiles are drawn in code when the map loads. The spare magazines, the spent cases and the pickup markers are modelled in code at real size.
 
 ## First-person view models
 
@@ -22,7 +22,7 @@ The dusk sky, the sign faces, the window interiors, the posters, the mural, the 
 | [AKM](https://opengameart.org/content/akm) | carbine | LonesomeDucky | OpenGameArt.org, `akm54.blend` | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
 | Whole avatar `Military_Male_03` and the clips `m_idle_neutral_01`, `m_walk_neutral`, `m_run_neutral`, `m_crouch_idle` from the Rocketbox animation library | `public/models/player.glb`, the third-person character | Microsoft, [Microsoft Rocketbox Avatar Library](https://github.com/microsoft/Microsoft-Rocketbox) (commit `0943055`) | `Assets/Avatars/Professions/Military_Male_03`, `Assets/Animations` | [MIT](https://github.com/microsoft/Microsoft-Rocketbox/blob/master/LICENSE.md) (notice below) |
 
-The Rocketbox body mesh is cut to the faces weighted to the arm bones, the sleeve insignia (a flag, a name tape and unit patches) are painted over with neighbouring fabric, and the two arm islands of the 2K body atlas are repacked into one 1K WebP texture set (colour, normal and a roughness map derived from the specular map). The watch keeps a crop of the equipment atlas. The AKM's 4K textures are reduced to 1K and its ambient-occlusion map is dropped. The third-person character (`scripts/viewmodels/build_player.py`) is the same avatar decimated to about 8,000 triangles with its face bones and holstered pistol removed, its body atlas at 1K (insignia painted over) and head, helmet and equipment at 512 px; the Rocketbox clips are retargeted onto it and a death fall is generated. No asset is fetched at runtime.
+The Rocketbox body mesh is cut to the faces weighted to the arm bones and subdivided once, the sleeve insignia (a flag, a name tape and unit patches) are painted over with neighbouring fabric, and the two arm islands of the 2K body atlas are repacked into one 1200 px WebP texture set (colour, normal and a 600 px roughness map derived from the specular map). The watch keeps a crop of the equipment atlas. The AKM's 4K textures are reduced to 1K and its ambient-occlusion map is dropped. The third-person character (`scripts/viewmodels/build_player.py`) is the same avatar decimated to about 8,000 triangles with its face bones and holstered pistol removed, its body atlas at 1K (insignia painted over) and head, helmet and equipment at 512 px; the Rocketbox clips are retargeted onto it and a death fall is generated. No asset is fetched at runtime.
 
 ## Sound effects
 

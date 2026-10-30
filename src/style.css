@@ -136,6 +136,16 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .hud-grenade-row { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; color: #b9cbcd; font-size: 11px; font-weight: 650; }
 .hud-grenade-row kbd { min-width: 0; padding: 0 4px; font-size: 9px; }
 .hud-grenade-row strong { color: #9fe3dc; font-size: 11px; letter-spacing: .12em; }
+.hud-mag-row, .hud-load-row { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; color: #b9cbcd; font-size: 11px; font-weight: 650; }
+.hud-mag-row[hidden] { display: none; }
+.hud-mag-row kbd { min-width: 0; padding: 0 4px; font-size: 9px; }
+.hud-load-row strong { color: #9fe3dc; font-size: 11px; font-variant-numeric: tabular-nums; }
+.hud-load-row.heavy strong { color: #f1c27a; }
+/* One bar per spare magazine, filled by the rounds left in it. */
+.mag-pips { display: flex; gap: 3px; align-items: flex-end; min-height: 12px; }
+.mag-pips i { position: relative; width: 6px; height: 12px; border: 1px solid rgba(159, 227, 220, .7); border-radius: 1px; overflow: hidden; }
+.mag-pips i::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--fill) * 100%); background: #9fe3dc; }
+.mag-pips em { color: #8fa3a6; font-style: normal; font-size: 10px; letter-spacing: .06em; }
 .score-label { margin-top: 7px; color: #8da9ae; font-size: 10px; font-weight: 650; letter-spacing: .08em; }
 .pickup-hint, .combat-toast { position: absolute; z-index: 4; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 30px); padding: 9px 13px; border: 1px solid rgba(155, 223, 218, .5); border-radius: 7px; background: rgba(8, 24, 32, .86); color: #eef9f8; font-size: 12px; font-weight: 650; white-space: nowrap; backdrop-filter: blur(8px); pointer-events: none; }
 .pickup-hint { bottom: 122px; }

@@ -17,7 +17,22 @@ There is high ground in two places:
 - **The bar** has a stair along its back wall up to an upper room. The room opens onto a balcony over the service alley, which a ladder also reaches.
 - **A fire escape** on the market alley's west side is reached by a ladder. Its platform at 4.6 m overlooks the stalls.
 
-Spawns sit at the four ends of the alleys, in the gap beside the food truck and in the end passages. The first two players start at opposite corners. A pistol lies a few steps from the south market spawn and from the north service spawn.
+Spawns sit at the four ends of the alleys, in the gap beside the food truck and in the end passages. The first two players start at opposite corners with only a knife. A pistol lies a few steps from the south market spawn and from the north service spawn, and carbines lie in the cut-through and the restaurant kitchen.
+
+Each gun holds one magazine, so the eight spare-magazine pickups decide how long a fight lasts. Each holds two magazines:
+
+| Pickup | Magazines | Where |
+|---|---|---|
+| `mags-table-south` | pistol | on the south market table |
+| `mags-dining` | pistol | on a restaurant dining table |
+| `mags-bar` | pistol | on the bar counter |
+| `mags-cut` | pistol | on the ground in the cut-through |
+| `mags-table-north` | carbine | on the north market table |
+| `mags-fire-escape` | carbine | on the fire escape platform |
+| `mags-upstairs` | carbine | on the bar's upper floor |
+| `mags-dumpster` | carbine | on a dumpster lid in the service alley |
+
+Pickups have a height, so the fire escape's magazines can only be taken from the platform, not from the alley below.
 
 ## What breaks
 
@@ -38,7 +53,7 @@ The market is lit at dusk by a painted sky, a low orange sun on the upper floors
 
 - **`solids`** are boxes with a material. Walls, floors, counters, the stair ramp and railings are all solids. Railings use the `boundary` material, so they block players but not bullets.
 - **`spawns`** are the starting points.
-- **`pickups`** are the weapon spots.
+- **`pickups`** are the gun and magazine spots, each with the height of the surface it rests on.
 
 The physics world adds every solid as a box collider. Spawns and pickups come straight from the layout, and footsteps are always on a hard surface.
 

@@ -2,7 +2,7 @@ import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
-import { LEAN_OFFSET } from "./combatRules";
+import { BODY_MASS, LEAN_OFFSET, loadEffects } from "./combatRules";
 import { type Ladder } from "../world/climbing";
 
 export interface PlayerMotion {
@@ -14,6 +14,9 @@ export interface PlayerMotion {
   mantling: boolean;
   climbing: boolean;
   speed: number;
+  // How hard the player has been working, from 0 at rest to 1 after a long sprint. It
+  // builds faster with a heavy load and shows as heavier breathing in the hands.
+  exertion: number;
 }
 
 // Footstep and landing cues: stride advances with the head bob, and jumps and landings
@@ -62,6 +65,8 @@ const LEAN_SPEED = 0.7;
 // Being hit jolts the aim and slows movement briefly ("tagging").
 const TAG_SECONDS = 0.55;
 const TAG_SLOW = 0.45;
+// Shoves (a stab's lunge, a blast, a heavy blow) add velocity that the feet bleed off.
+const SHOVE_DECAY = 8;
 
 interface Mantle { fromEast: number; fromNorth: number; fromFeet: number; to: Ledge; elapsed: number; duration: number }
 
@@ -108,6 +113,12 @@ export class PlayerController {
   private punchPitch = 0;
   private punchYaw = 0;
   private tagged = 0;
+  private load = loadEffects(0);
+  private shoveEast = 0;
+  private shoveNorth = 0;
+  private shoveUp = 0;
+  private swingRoll = 0;
+  private exertion = 0;
   private accumulator = 0;
   private eyeHeight = EYE_HEIGHT;
   private stride = 0;
@@ -166,6 +177,9 @@ export class PlayerController {
     this.punchPitch = 0;
     this.punchYaw = 0;
     this.tagged = 0;
+    this.shoveEast = this.shoveNorth = this.shoveUp = 0;
+    this.swingRoll = 0;
+    this.exertion = 0;
     this.accumulator = 0;
     this.eyeHeight = EYE_HEIGHT;
     this.stride = 0;
@@ -184,8 +198,27 @@ export class PlayerController {
   }
 
   motion(): PlayerMotion {
-    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed };
+    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed, exertion: this.exertion };
   }
+
+  // The mass of everything carried, in kilograms (see loadEffects).
+  setLoad(kilograms: number): void {
+    this.load = loadEffects(kilograms);
+    this.physics.setCharacterMass(BODY_MASS + kilograms);
+  }
+
+  // Velocity added to the body in metres per second along east, north and up: a stab's
+  // lunge, a blast or a heavy blow. Heavier players are moved less by outside forces.
+  shove(east: number, north: number, up = 0, own = false): void {
+    if (this.climbing || this.mantle) return;
+    const scale = own ? 1 : 1 / this.load.inertia;
+    this.shoveEast += east * scale;
+    this.shoveNorth += north * scale;
+    if (up > 0 && this.grounded) { this.shoveUp = Math.max(this.shoveUp, up * scale); }
+  }
+
+  // A cosmetic roll of the view that follows a knife stroke; it does not move the aim.
+  swingView(roll: number): void { this.swingRoll += roll; }
 
   setLadders(ladders: Ladder[]): void { this.ladders = ladders; }
 
@@ -265,6 +298,10 @@ export class PlayerController {
     const settle = Math.exp(-delta * 8);
     this.punchPitch *= settle;
     this.punchYaw *= settle;
+    this.swingRoll *= Math.exp(-delta * 7);
+    // Sprinting, climbing and jumping build exertion, faster under load; it eases at rest.
+    const working = this.running ? 0.11 : this.climbing ? 0.08 : this.moving ? -0.03 : -0.07;
+    this.exertion = Math.max(0, Math.min(1, this.exertion + delta * (working > 0 ? working * this.load.inertia ** 2 : working)));
     this.tagged = Math.max(0, this.tagged - delta);
     const targetFov = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
@@ -285,7 +322,7 @@ export class PlayerController {
     const crouchPressed = crouchKey && !this.crouchHeld;
     this.crouchHeld = crouchKey;
     const heading = this.heading * Math.PI / 180;
-    if (this.climbing) { this.stepLadder(delta, forward); return; }
+    if (this.climbing) { this.stepLadder(delta, forward * this.load.walk); return; }
     // Walking into a ladder while facing the wall takes hold of it.
     if (forward > 0 && !this.sliding && !crouchKey) {
       const ladder = this.ladderInReach(heading);
@@ -326,26 +363,33 @@ export class PlayerController {
       this.velocityEast = this.slideEast * this.slideSpeed - Math.cos(heading) * strafe * 1.2;
       this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
     } else if (!jumpFromSlide) {
-      const targetSpeed = (this.crouching ? 2.3 : wantsRun ? 8.2 : 4.5) * slow;
+      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow;
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;
       // In the air, faster-than-input momentum from a sprint or slide jump is kept.
       const carrying = !this.grounded && Math.hypot(this.velocityEast, this.velocityNorth) > Math.hypot(targetEast, targetNorth) + 0.5;
-      const response = 1 - Math.exp(-delta * (this.grounded ? (forward || strafe ? 14 : 19) : carrying ? 0.8 : 4));
+      // A heavier body takes longer to get going and to stop.
+      const response = 1 - Math.exp(-delta * (this.grounded ? (forward || strafe ? 14 : 19) / this.load.inertia : carrying ? 0.8 : 4));
       this.velocityEast += (targetEast - this.velocityEast) * response;
       this.velocityNorth += (targetNorth - this.velocityNorth) * response;
     }
     this.coyote = this.grounded ? 0.11 : Math.max(0, this.coyote - delta);
     if (this.jumpBuffer > 0 && this.coyote > 0 && !this.crouching) {
-      this.verticalSpeed = 5.2;
+      this.verticalSpeed = 5.2 * this.load.jump;
+      this.exertion = Math.min(1, this.exertion + 0.04 * this.load.inertia);
       this.grounded = false;
       this.coyote = 0;
       this.jumpBuffer = 0;
       this.jumps += 1;
     } else this.verticalSpeed = Math.max(-25, this.verticalSpeed - 14 * delta);
+    if (this.shoveUp > 0) { this.verticalSpeed = Math.max(this.verticalSpeed, this.shoveUp); this.grounded = false; this.coyote = 0; this.shoveUp = 0; }
     const falling = -this.verticalSpeed;
-    const position = this.physics.move(this.velocityEast * delta, this.velocityNorth * delta, this.verticalSpeed * delta);
+    // Shoves ride on top of walking and fade as the feet catch the body.
+    const shoveFade = Math.exp(-delta * (this.grounded ? SHOVE_DECAY : 1.5));
+    const position = this.physics.move((this.velocityEast + this.shoveEast) * delta, (this.velocityNorth + this.shoveNorth) * delta, this.verticalSpeed * delta);
+    this.shoveEast *= shoveFade;
+    this.shoveNorth *= shoveFade;
     this.east = position.east;
     this.north = position.north;
     this.feet = position.feet;
@@ -386,7 +430,8 @@ export class PlayerController {
     if (!ledge || this.physics.setCrouched(false)) return false;
     this.crouching = false;
     const height = ledge.feet - this.feet;
-    this.mantle = { fromEast: this.east, fromNorth: this.north, fromFeet: this.feet, to: ledge, elapsed: 0, duration: 0.3 + 0.18 * height };
+    this.mantle = { fromEast: this.east, fromNorth: this.north, fromFeet: this.feet, to: ledge, elapsed: 0, duration: (0.3 + 0.18 * height) * this.load.inertia ** 1.5 };
+    this.exertion = Math.min(1, this.exertion + 0.06 * this.load.inertia);
     this.jumpBuffer = 0;
     this.velocityEast = 0;
     this.velocityNorth = 0;
@@ -542,7 +587,7 @@ export class PlayerController {
       this.camera.position.y + Math.sin(pitch),
       this.camera.position.z + Math.cos(heading) * Math.cos(pitch),
     );
-    const roll = this.roll - this.lean * LEAN_ROLL;
+    const roll = this.roll - this.lean * LEAN_ROLL + this.swingRoll;
     if (roll) this.camera.rotateZ(roll);
   }
 }

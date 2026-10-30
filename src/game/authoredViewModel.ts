@@ -1,19 +1,67 @@
-import { AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3, type AnimationAction } from "three/webgpu";
+import {
+  AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, MeshSSSNodeMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3,
+  type AnimationAction,
+} from "three/webgpu";
+import { clamp, dot, float, materialColor, materialRoughness, mix, smoothstep, vec3 } from "three/tsl";
 import { loadWeaponFile } from "./weaponModels";
-import { type WeaponKind } from "./combatRules";
+import { type KnifeStroke, type WeaponKind } from "./combatRules";
 import { type PlayerMotion } from "./playerController";
 import { type ViewDynamics } from "./weaponVisuals";
 
 interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null }
 
+// The knife's slash and stab clips are authored at 1/ATTACK_RATE speed so the fast arcs get
+// more keyframes, and play back at ATTACK_RATE (see scripts/viewmodels/build.py).
+const ATTACK_RATE = 2.5;
+const ATTACKS = ["fire", "slash", "stab"];
+
+// Skin and cloth from the one arm texture. Skin is told apart by colour: it is redder than
+// it is green, where the gloves, sleeves and watch strap are grey or grey-green. Cloth gets
+// a soft sheen at grazing angles and stays rough; skin is smoother with a faint sheen of
+// fine hair, and light passing through thin skin comes out red, so fingers and the edge of
+// the forearm glow when a lamp is behind them.
+function realisticArms(source: MeshStandardMaterial): MeshSSSNodeMaterial {
+  const material = new MeshSSSNodeMaterial();
+  material.name = source.name;
+  material.map = source.map;
+  material.normalMap = source.normalMap;
+  material.normalScale.copy(source.normalScale).multiplyScalar(1.35);
+  material.roughnessMap = source.roughnessMap;
+  material.roughness = source.roughness;
+  material.metalness = 0;
+  const color = materialColor;
+  const skin = smoothstep(0.045, 0.11, color.r.sub(color.g)).mul(smoothstep(0.04, 0.1, color.r));
+  // The painted skin is far more saturated than real skin, which reads as orange plastic
+  // under the market's warm lamps: pull it part way toward its own brightness.
+  const luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  material.colorNode = mix(color, mix(vec3(luma), color, 0.8).mul(0.88), skin);
+  material.roughnessNode = mix(clamp(materialRoughness.mul(1.1), 0.62, 1), float(0.6), skin);
+  material.sheenNode = mix(vec3(0.3, 0.31, 0.28), vec3(0.05, 0.035, 0.03), skin);
+  material.sheenRoughnessNode = mix(float(0.8), float(0.5), skin);
+  material.specularIntensityNode = mix(float(0.22), float(0.35), skin);
+  material.thicknessColorNode = vec3(1, 0.3, 0.18).mul(skin);
+  material.thicknessDistortionNode = float(0.18);
+  material.thicknessAmbientNode = float(0);
+  material.thicknessAttenuationNode = float(0.55);
+  material.thicknessPowerNode = float(3);
+  material.thicknessScaleNode = float(5);
+  return material;
+}
+
 // Each GLB contains arms + weapon authored together in camera-local coordinates with
-// idle, walk, run and fire clips (see scripts/viewmodels/build.py). URLs are explicit
-// build settings: no downloads or third-party requests by default.
+// idle, walk, run and fire clips, and slash and stab for the knife (see
+// scripts/viewmodels/build.py). URLs are explicit build settings: no downloads or
+// third-party requests by default.
 export class AuthoredViewModel {
   private models = new Map<WeaponKind, Model>();
   private active: WeaponKind = "knife";
   private locomotion = "";
   private disposed = false;
+  private attacking: AnimationAction | null = null;
+  private hitStop = 0;
+  // A blade turned by something hard kicks the hand back and up, then settles.
+  private recoil = 0;
+  private recoilSpeed = 0;
   constructor(private camera: PerspectiveCamera) {
     for (const kind of ["knife", "pistol", "rifle"] as const) {
       void loadWeaponFile(kind).then((gltf) => {
@@ -24,6 +72,14 @@ export class AuthoredViewModel {
           if (object instanceof Mesh) {
             object.renderOrder = 50;
             object.frustumCulled = false;
+            // Fingers and the weapon shade each other under the key light.
+            object.castShadow = true;
+            object.receiveShadow = true;
+            if (object.name === "arms" || object.parent?.name === "arms") {
+              const materials = Array.isArray(object.material) ? object.material : [object.material];
+              const upgraded = materials.map((material) => material.name === "arms" && material instanceof MeshStandardMaterial ? realisticArms(material) : material);
+              object.material = Array.isArray(object.material) ? upgraded : upgraded[0];
+            }
             for (const material of Array.isArray(object.material) ? object.material : [object.material]) { material.depthTest = true; material.depthWrite = true; }
           }
         });
@@ -32,15 +88,15 @@ export class AuthoredViewModel {
         for (const source of gltf.animations) {
           const name = source.name.toLowerCase();
           let clip = source;
-          if (name === "fire") {
-            // The fire clip starts on the neutral pose, so it layers over whichever
-            // locomotion clip is playing instead of averaging with it. It is cloned first:
+          if (ATTACKS.includes(name)) {
+            // Attack clips start on the neutral pose, so they layer over whichever
+            // locomotion clip is playing instead of averaging with it. Each is cloned first:
             // exporters share one accessor between identical constant tracks of different
             // clips, and makeClipAdditive subtracts from the track arrays in place.
             clip = AnimationUtils.makeClipAdditive(source.clone());
           }
           const action = mixer.clipAction(clip);
-          if (name === "fire") action.setLoop(LoopOnce, 1);
+          if (ATTACKS.includes(name)) { action.setLoop(LoopOnce, 1); action.clampWhenFinished = false; }
           clips.set(name, action);
         }
         root.visible = false;
@@ -77,12 +133,26 @@ export class AuthoredViewModel {
     const muzzle = this.models.get(this.active)?.muzzle;
     return muzzle ? muzzle.getWorldPosition(new Vector3()) : undefined;
   }
-  fire(): void {
-    const action = this.models.get(this.active)?.clips.get("fire");
-    if (action) { action.reset().play(); action.clampWhenFinished = false; }
+  // The gun's recoil clip, or the knife stroke's.
+  fire(stroke?: KnifeStroke): void {
+    const clips = this.models.get(this.active)?.clips;
+    const action = stroke ? clips?.get(stroke) ?? clips?.get("fire") : clips?.get("fire");
+    if (!action) return;
+    this.attacking?.stop();
+    action.reset().setEffectiveWeight(1).play();
+    action.timeScale = stroke && clips?.has(stroke) ? ATTACK_RATE : 1;
+    this.attacking = action;
+    this.hitStop = 0;
+  }
+  // The blade bites: the stroke all but stops for a moment, as flesh resists it.
+  bite(): void { this.hitStop = 0.075; }
+  // The blade struck something hard: the stroke stops dead and the hand jolts back.
+  deflect(): void {
+    this.attacking?.fadeOut(0.16);
+    this.recoilSpeed = 14;
   }
   update(seconds: number, motion: PlayerMotion, dynamics: ViewDynamics): void {
-    if (dynamics.active !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.locomotion = ""; this.active = dynamics.active; }
+    if (dynamics.active !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.locomotion = ""; this.attacking = null; this.active = dynamics.active; }
     for (const [kind, model] of this.models) model.root.visible = kind === this.active;
     const model = this.models.get(this.active);
     if (!model) return;
@@ -93,14 +163,21 @@ export class AuthoredViewModel {
       model.clips.get(next)?.reset().fadeIn(0.15).play();
       this.locomotion = next;
     }
+    if (this.attacking && this.hitStop > 0) {
+      this.hitStop = Math.max(0, this.hitStop - seconds);
+      this.attacking.timeScale = this.hitStop > 0 ? ATTACK_RATE * 0.08 : ATTACK_RATE;
+    }
     model.mixer.update(seconds);
-    // Turn settling, landing dips and the lower-and-raise switch come from the shared
-    // procedural state so authored and fallback weapons behave the same way.
-    // A reload cants the weapon and tips the muzzle up, with a small kick as the magazine
-    // seats and the action closes; the root pivots at the camera, so offsets keep it low.
-    const lower = dynamics.lower, reload = dynamics.reload, jolt = dynamics.jolt;
-    model.root.position.set(dynamics.turnLag + lower * 0.05 - reload * 0.06, dynamics.pitchLag - dynamics.landing - lower * 0.55 - reload * 0.1 + jolt * 0.012, lower * 0.06);
-    model.root.rotation.set(-lower * 0.6 + reload * 0.1 + jolt * 0.03, -dynamics.turnLag * 0.8 + lower * 0.25, -lower * 0.3 + reload * 0.32);
+    // A critically damped kick: out fast, back without overshoot.
+    this.recoilSpeed += (-140 * this.recoil - 2 * Math.sqrt(140) * this.recoilSpeed) * seconds;
+    this.recoil += this.recoilSpeed * seconds;
+    // Switching, the spring sway and breathing come from the shared procedural state so
+    // authored and fallback weapons behave the same way. A reload cants the weapon and tips
+    // the muzzle up, with a small kick as the magazine seats and the action closes; the
+    // root pivots at the camera, so offsets keep it low.
+    const lower = dynamics.lower, reload = dynamics.reload, jolt = dynamics.jolt, sway = dynamics.sway, kick = this.recoil;
+    model.root.position.set(sway.x + lower * 0.05 - reload * 0.06, sway.y - lower * 0.55 - reload * 0.1 + jolt * 0.012 - kick * 0.01, sway.z + lower * 0.06 + kick * 0.035);
+    model.root.rotation.set(sway.pitch - lower * 0.6 + reload * 0.1 + jolt * 0.03 + kick * 0.12, sway.yaw + lower * 0.25 - kick * 0.05, sway.roll - lower * 0.3 + reload * 0.32 + kick * 0.08);
   }
   private release(root: Group): void {
     root.traverse((object) => {

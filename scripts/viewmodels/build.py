@@ -9,8 +9,10 @@ Sources are read from assets-src/viewmodels (see scripts/viewmodels/fetch.sh).
 The output is authored in camera-local metres: the camera sits at the origin,
 +Y forward and +Z up in Blender, which the glTF exporter turns into the
 -Z forward, +Y up frame that src/game/authoredViewModel.ts attaches to the
-first-person camera. Clips are named idle, walk, run and fire; the fire clip
-starts on the neutral pose so the game can play it additively.
+first-person camera. Clips are named idle, walk, run and fire (slash and stab for
+the knife); attack clips start on the neutral pose so the game can play them
+additively. The knife's strokes are authored ATTACK_SLOW times slower than real
+time so their fast arcs get more keyframes; the game plays them that much faster.
 """
 
 import argparse
@@ -27,6 +29,11 @@ from mathutils import Euler, Matrix, Vector
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 SRC = os.path.join(ROOT, "assets-src", "viewmodels")
 FPS = 24
+ATTACK_SLOW = 2.5
+# Catmull-Clark levels applied to the arms: the source avatar's hands are low-poly.
+SUBDIVISIONS = 1
+# Side of the packed arm texture: each arm gets half its width at the atlas's own detail.
+ARM_TEXTURE = 1200
 ARM_BONE_KEYS = (" UpperArm", " Forearm", " Hand", " Finger")
 KEEP_BONES = {"Bip01 Pelvis", "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2", "Bip01 Neck", "Bip01 L Clavicle", "Bip01 R Clavicle"}
 FINGERS = {"thumb": 0, "index": 1, "middle": 2, "ring": 3, "pinky": 4}
@@ -38,8 +45,8 @@ ERASE_PATCHES = [(275, 1020, 158, 190, -158), (1590, 1053, 152, 158, 152)]
 RAD = math.radians
 
 
-def hand(palm, normal, fingers, curl, thumb, pole, spread=0.0, depth=0.012, fraction=0.55, space="weapon"):
-    return {"palm": palm, "normal": normal, "fingers": fingers, "curl": curl, "thumb": thumb, "pole": pole, "spread": spread, "depth": depth, "fraction": fraction, "space": space}
+def hand(palm, normal, fingers, curl, thumb, pole, spread=0.0, depth=0.012, fraction=0.55, space="weapon", chain=2):
+    return {"palm": palm, "normal": normal, "fingers": fingers, "curl": curl, "thumb": thumb, "pole": pole, "spread": spread, "depth": depth, "fraction": fraction, "space": space, "chain": chain}
 
 
 GUN_CURL = {"index": (18, 30, 22), "middle": (58, 72, 48), "ring": (64, 78, 52), "pinky": (70, 82, 56)}
@@ -89,11 +96,23 @@ WEAPONS = {
         "muzzle": None,
         "pose": {"location": (0.17, 0.26, -0.16), "rotation": (0.55, 0.3, 0.35)},
         "run": {"location": (0.03, -0.04, -0.06), "rotation": (-0.7, -0.2, 0.3)},
-        "fire": {"frames": 11, "stab": (-0.05, 0.16, 0.02), "pitch": -0.25, "roll": 0.1},
+        # Keys in real seconds: (time, location delta, rotation delta) of the weapon root,
+        # joined by a Catmull-Rom curve. The slash cocks the blade up and right, sweeps it
+        # down and across through the middle of the view at 0.13 s and follows through to
+        # the lower left; the stab draws back, drives the point out at 0.24 s, twists and
+        # pulls free. The game lands each stroke at those moments (KNIFE in combatRules.ts).
+        "attacks": {
+            "slash": [(0.0, (0, 0, 0), (0, 0, 0)), (0.07, (0.06, -0.03, 0.08), (0.35, 0.5, -0.5)), (0.13, (-0.13, 0.08, 0.05), (-0.4, 1.1, 0.5)),
+                      (0.2, (-0.32, 0.02, -0.03), (-0.65, 1.25, 0.95)), (0.3, (-0.24, -0.03, -0.08), (-0.45, 0.8, 0.6)), (0.52, (0, 0, 0), (0, 0, 0))],
+            "stab": [(0.0, (0, 0, 0), (0, 0, 0)), (0.16, (0.02, -0.03, 0.01), (-0.2, 0.0, -0.05)), (0.24, (-0.08, 0.15, 0.05), (-0.38, 0.05, -0.22)),
+                     (0.33, (-0.08, 0.14, 0.045), (-0.38, 0.6, -0.22)), (0.5, (-0.02, 0.05, 0.0), (-0.15, 0.2, -0.08)), (0.9, (0, 0, 0), (0, 0, 0))],
+        },
         "torso_yaw": 0.0,
         "hands": {
-            "R": hand((0.012, 0.0, 0.0), (-1, 0, 0), (0, 0.0, -1.0), FIST_CURL, ((10, 0, 60), (25, 0, 0), (25, 0, 0)), (0.42, 0.08, -0.5)),
-            "L": hand((-0.19, 0.30, -0.24), (0.7, 0.4, -0.3), (0.2, 0.8, 0.5), FIST_CURL, ((15, 0, 55), (35, 0, 0), (35, 0, 0)), (-0.40, 0.05, -0.5), space="camera"),
+            # the shoulder joins in so a stroke can reach across and out
+            "R": hand((0.012, 0.0, 0.0), (-1, 0, 0), (0, 0.0, -1.0), FIST_CURL, ((10, 0, 60), (25, 0, 0), (25, 0, 0)), (0.42, 0.08, -0.5), chain=3),
+            # the off hand rests low and out of view, clear of the strokes
+            "L": hand((-0.24, 0.17, -0.36), (0.7, 0.4, -0.3), (0.2, 0.8, 0.5), FIST_CURL, ((15, 0, 55), (35, 0, 0), (35, 0, 0)), (-0.40, 0.05, -0.5), space="camera"),
         },
     },
 }
@@ -269,6 +288,22 @@ def cut_arms(arm, mesh):
     bpy.ops.object.vertex_group_normalize_all(lock_active=False)
 
 
+def subdivide(mesh):
+    """Smooth the low-poly arms with Catmull-Clark subdivision, interpolating the skin weights."""
+    if SUBDIVISIONS <= 0:
+        return
+    select_only([mesh])
+    mod = mesh.modifiers.new("Subdivision", "SUBSURF")
+    mod.levels = mod.render_levels = SUBDIVISIONS
+    mod.uv_smooth = "PRESERVE_BOUNDARIES"
+    mod.quality = 3
+    bpy.ops.object.modifier_move_to_index(modifier=mod.name, index=0)
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+    for p in mesh.data.polygons:
+        p.use_smooth = True
+    log("arms subdivided to", len(mesh.data.polygons), "faces")
+
+
 def left_weights(mesh):
     left_groups = {vg.index for vg in mesh.vertex_groups if " L " in vg.name}
     left = np.zeros(len(mesh.data.vertices))
@@ -356,7 +391,8 @@ def build_arm_textures(mesh):
         u0 = max(0.0, boxes[side][0][0] - margin)
         u1 = min(1.0, boxes[side][1][0] + margin)
         cols[side] = (u0, u1)
-    size = 1024
+    size = ARM_TEXTURE
+    log("arm crops in source pixels", {side: (round((cols[side][1] - cols[side][0]) * W), round((v1 - v0) * H)) for side in cols})
     packed = {}
     for name, src in (("color", color), ("normal", normal), ("spec", spec)):
         out = np.zeros((size, size, 4), np.float32)
@@ -371,7 +407,7 @@ def build_arm_textures(mesh):
     images = {
         "color": np_to_image("arms_color", packed["color"], True),
         "normal": np_to_image("arms_normal", packed["normal"], False),
-        "rough": np_to_image("arms_rough", rough, False),
+        "rough": np_to_image("arms_rough", resample(rough, size // 2, size // 2), False),
     }
     # watch crop from the equipment atlas at source resolution
     eq_color = load_tga(os.path.join(rb, "sm004_equipment_color_acu.tga"))
@@ -556,7 +592,7 @@ def place_hands(arm, info, cfg, root, body):
         fore = arm.pose.bones[f"Bip01 {side} Forearm"]
         ik = fore.constraints.new("IK")
         ik.target, ik.pole_target = target, pole
-        ik.chain_count = 2
+        ik.chain_count = hc["chain"]
         ik.iterations = 500
         ik.use_tail = True
         hb = arm.pose.bones[f"Bip01 {side} Hand"]
@@ -648,6 +684,21 @@ def author_clips(cfg, root, body, flash):
     loop("walk", 0.9, walk)
     loop("run", 0.58, runf)
 
+    for name, keys in cfg.get("attacks", {}).items():
+        n = int(round(keys[-1][0] * ATTACK_SLOW * FPS))
+        act = bpy.data.actions.new(f"{name}.root")
+        assign_action(root, act)
+        bact = bpy.data.actions.new(f"{name}.body")
+        assign_action(body, bact)
+        for f in range(n + 1):
+            dloc, drot = stroke_at(keys, f / (ATTACK_SLOW * FPS))
+            set_keys(root, f, base_loc + Vector(dloc), Euler(base_rot + Vector(drot)))
+            # the shoulders lean into the stroke a little
+            set_keys(body, f, Vector(dloc) * 0.25)
+        clips[name] = (0, n)
+    if "fire" not in cfg:
+        return clips
+
     fire = cfg["fire"]
     n = fire["frames"]
     act = bpy.data.actions.new("fire.root")
@@ -684,6 +735,19 @@ def author_clips(cfg, root, body, flash):
     return clips
 
 
+def stroke_at(keys, t):
+    """Location and rotation deltas at time t on a Catmull-Rom curve through the keys."""
+    t = min(max(t, keys[0][0]), keys[-1][0])
+    i = max(k for k in range(len(keys) - 1) if keys[k][0] <= t)
+    t0, t1 = keys[i][0], keys[i + 1][0]
+    u = (t - t0) / (t1 - t0)
+    out = []
+    for part in (1, 2):
+        p0, p1, p2, p3 = (Vector(keys[max(0, min(len(keys) - 1, j))][part]) for j in (i - 1, i, i + 1, i + 2))
+        out.append(0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (-p0 + 3 * p1 - 3 * p2 + p3) * u ** 3))
+    return tuple(out[0]), tuple(out[1])
+
+
 def bake_arms(arm, root, body, flash, clips):
     scene = bpy.context.scene
     objs = [o for o in (root, body, flash) if o is not None]
@@ -697,9 +761,15 @@ def bake_arms(arm, root, body, flash, clips):
             if act is not None:
                 assign_action(o, act)
         frames = {}
+        worst = 0.0
+        target = bpy.data.objects.get("target_R")
         for f in range(start, end + 1):
             scene.frame_set(f)
             frames[f] = {pb.name: arm.convert_space(pose_bone=pb, matrix=pb.matrix, from_space="POSE", to_space="LOCAL") for pb in arm.pose.bones}
+            if target is not None:
+                wrist = arm.matrix_world @ arm.pose.bones["Bip01 R Hand"].head
+                worst = max(worst, (wrist - target.matrix_world.translation).length)
+        log(f"{name}: {end - start + 1} frames, worst right-wrist reach error {worst * 100:.1f} cm")
         samples[name] = frames
     for pb in arm.pose.bones:
         for c in list(pb.constraints):
@@ -755,7 +825,8 @@ def render_previews(weapon, outdir, objs, clips):
     os.makedirs(outdir, exist_ok=True)
     scene = bpy.context.scene
     helpers = setup_preview_scene()
-    shots = {"idle": [0], "walk": [5, 16], "run": [0, 7], "fire": [0, 1, 3, 6]}
+    shots = {"idle": [0], "walk": [5, 16], "run": [0, 7], "fire": [0, 1, 3, 6],
+             "slash": [round(t * ATTACK_SLOW * FPS) for t in (0.07, 0.13, 0.2, 0.3)], "stab": [round(t * ATTACK_SLOW * FPS) for t in (0.16, 0.24, 0.33)]}
     for name, (start, end) in clips.items():
         solo_track(objs, name)
         for f in shots.get(name, [0]):
@@ -832,6 +903,7 @@ def main():
     arm, mesh = load_arms()
     scene.render.fps = FPS  # the FBX importer resets the scene frame rate to the file's 30 fps
     cut_arms(arm, mesh)
+    subdivide(mesh)
     info = {side: hand_info(arm, mesh, side) for side in "LR"}
     for side in "LR":
         log(side, "wrist", tuple(round(v, 3) for v in info[side]["wrist"]), "palm normal", tuple(round(v, 2) for v in info[side]["n"]), "d_palm", round(info[side]["d_palm"], 3))

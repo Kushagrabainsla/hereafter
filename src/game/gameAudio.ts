@@ -141,9 +141,9 @@ export class GameAudio {
 
   // Local player ------------------------------------------------------------------------
 
-  fire(weapon: WeaponKind): void {
+  fire(weapon: WeaponKind, stab = false): void {
     if (!this.live()) return;
-    if (weapon === "knife") { this.swing(); return; }
+    if (weapon === "knife") { this.swing(undefined, stab); return; }
     this.play(weapon === "pistol" ? "pistol-near" : "rifle-near", { gain: weapon === "pistol" ? 0.95 : 0.85, rate: 0.97 + Math.random() * 0.06, reverb: 0.42, bus: this.mix });
     this.thump(weapon === "pistol" ? 0.55 : 0.45);
   }
@@ -263,10 +263,10 @@ export class GameAudio {
 
   // Other players -----------------------------------------------------------------------
 
-  remoteFire(weapon: WeaponKind, at: Vec3): void {
+  remoteFire(weapon: WeaponKind, at: Vec3, stab = false): void {
     if (!this.live()) return;
     const distance = this.distanceTo(at);
-    if (weapon === "knife") { this.swing(at); return; }
+    if (weapon === "knife") { this.swing(at, stab); return; }
     const name: SoundName = weapon === "pistol" ? distance < 14 ? "pistol-near" : "pistol-far" : distance < 14 ? "rifle-near" : "rifle-far";
     this.spatial(name, at, { gain: weapon === "pistol" ? 1 : 0.95, ref: 7, rolloff: 0.95, rate: 0.97 + Math.random() * 0.06, reverb: 0.3 + 0.35 * Math.min(1, distance / 60), priority: "high" });
   }
@@ -327,6 +327,46 @@ export class GameAudio {
     if (at) { this.spatial("latch", at, { gain: 0.3, ref: 2, rolloff: 1.5, rate: 1.4 }); this.spatial("cloth", at, { gain: 0.3, ref: 2, rolloff: 1.5, when: this.time() + 0.12 }); return; }
     this.play("latch", { gain: 0.16, rate: 1.4 });
     this.play("cloth", { gain: 0.16, when: this.time() + 0.12 });
+  }
+
+  // Spent cases ring briefly as they land, brass brighter than lacquered steel; an empty
+  // magazine clatters.
+  clink(at: Vec3, speed: number, kind: "brass" | "steel" | "magazine"): void {
+    const context = this.live();
+    if (!context || this.distanceTo(at) > 25) return;
+    if (kind === "magazine") { this.spatial("impact-metal", at, { gain: Math.min(0.45, 0.12 + speed * 0.08), ref: 1.5, rolloff: 1.6, rate: 0.72 + Math.random() * 0.1 }); return; }
+    const level = Math.min(0.2, 0.03 + speed * 0.035), now = context.currentTime;
+    const out = new GainNode(context, { gain: 1 });
+    out.connect(this.panner(at, 1.2, 1.6)).connect(this.mix);
+    const base = kind === "brass" ? 3700 : 2600;
+    for (const [ratio, share, decay] of [[1, 1, 0.07], [1.73, 0.55, 0.05], [2.61, 0.35, 0.035], [3.9, 0.2, 0.02]]) {
+      const oscillator = new OscillatorNode(context, { type: "sine", frequency: base * ratio * (0.95 + Math.random() * 0.1) });
+      const gain = new GainNode(context, { gain: 0 });
+      gain.gain.setValueAtTime(level * share, now);
+      gain.gain.exponentialRampToValueAtTime(0.0005, now + decay * (kind === "brass" ? 1.5 : 0.8));
+      oscillator.connect(gain).connect(out);
+      oscillator.start(now);
+      oscillator.stop(now + 0.15);
+    }
+  }
+
+  // A blade turned by something hard: a dull knock and a short metallic ring from the steel.
+  blade(at: Vec3, hard: boolean): void {
+    const context = this.live();
+    if (!context || this.distanceTo(at) > 30) return;
+    this.spatial(hard ? "impact-metal" : "impact-wood", at, { gain: 0.32, ref: 2, rolloff: 1.4, rate: hard ? 1.35 : 1.1, priority: "high" });
+    if (!hard) return;
+    const now = context.currentTime, out = new GainNode(context, { gain: 1 });
+    out.connect(this.panner(at, 2, 1.4)).connect(this.mix);
+    for (const [frequency, level, decay] of [[2240, 0.05, 0.22], [3810, 0.035, 0.16], [5930, 0.02, 0.1]]) {
+      const oscillator = new OscillatorNode(context, { type: "sine", frequency: frequency * (0.97 + Math.random() * 0.06) });
+      const gain = new GainNode(context, { gain: 0 });
+      gain.gain.setValueAtTime(level, now + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0005, now + decay);
+      oscillator.connect(gain).connect(out);
+      oscillator.start(now);
+      oscillator.stop(now + decay + 0.02);
+    }
   }
 
   grenadeBounce(at: Vec3, speed: number): void {
@@ -603,25 +643,29 @@ export class GameAudio {
   }
 
   // Knife swing: band-passed noise swept up then down, moving right to left for the
-  // player's own swing and positioned for other players.
-  private swing(at?: Vec3): void {
+  // player's own slash and positioned for other players. A stab is a shorter, lower rush
+  // that peaks as the arm drives forward, after the draw-back.
+  private swing(at?: Vec3, stab = false): void {
     const context = this.live();
     if (!context || !this.noise) return;
-    const now = context.currentTime;
-    const source = this.noiseSource(now, 0.26);
-    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency: 500, Q: 1.3 });
-    filter.frequency.setValueAtTime(500, now);
-    filter.frequency.exponentialRampToValueAtTime(2300, now + 0.09);
-    filter.frequency.exponentialRampToValueAtTime(650, now + 0.26);
+    // Other players' strokes are heard when the blade lands; the player's own as the arm moves.
+    const now = context.currentTime + (at ? 0 : stab ? 0.15 : 0.04);
+    const length = stab ? 0.18 : 0.26;
+    const source = this.noiseSource(now, length);
+    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency: 500, Q: stab ? 0.9 : 1.3 });
+    filter.frequency.setValueAtTime(stab ? 380 : 500, now);
+    filter.frequency.exponentialRampToValueAtTime(stab ? 1400 : 2300, now + (stab ? 0.07 : 0.09));
+    filter.frequency.exponentialRampToValueAtTime(stab ? 420 : 650, now + length);
     const gain = new GainNode(context, { gain: 0 });
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(at ? 0.5 : 0.55, now + 0.07);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+    gain.gain.exponentialRampToValueAtTime(at ? 0.5 : 0.55, now + (stab ? 0.06 : 0.07));
+    gain.gain.exponentialRampToValueAtTime(0.001, now + length);
     source.connect(filter).connect(gain);
     if (at) gain.connect(this.panner(at, 2, 1.5)).connect(this.mix);
     else {
-      const pan = new StereoPannerNode(context, { pan: 0.35 });
-      pan.pan.linearRampToValueAtTime(-0.3, now + 0.24);
+      const pan = new StereoPannerNode(context, { pan: stab ? 0.12 : 0.35 });
+      pan.pan.setValueAtTime(stab ? 0.12 : 0.35, now);
+      pan.pan.linearRampToValueAtTime(stab ? 0 : -0.3, now + length);
       gain.connect(pan).connect(this.mix);
     }
   }

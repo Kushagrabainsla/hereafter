@@ -44,6 +44,7 @@ export class PlayerModelLibrary {
 const FADE = 0.2;
 const WORLD_RIGHT = new Vector3(1, 0, 0);
 const WORLD_FORWARD = new Vector3(0, 0, 1);
+const WORLD_UP = new Vector3(0, 1, 0);
 
 export class PlayerModelInstance {
   readonly root: Object3D;
@@ -61,6 +62,9 @@ export class PlayerModelInstance {
   private frozen: { bone: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 }[] | null = null;
   private materials: MeshStandardMaterial[] = [];
   private scratch = new Quaternion();
+  // The right upper arm and forearm, for strokes.
+  private arm: Object3D[] = [];
+  private stroke: { kind: "slash" | "stab" | "shot"; time: number } | null = null;
 
   constructor(library: Library, tint: Color) {
     this.root = cloneSkeleton(library.scene);
@@ -94,8 +98,15 @@ export class PlayerModelInstance {
       const inverse = bone.getWorldQuaternion(new Quaternion()).invert();
       this.spine.push({ bone, axis: WORLD_RIGHT.clone().applyQuaternion(inverse).normalize(), forward: WORLD_FORWARD.clone().applyQuaternion(inverse).normalize() });
     }
+    for (const name of ["Bip01 R UpperArm", "Bip01 R Forearm"]) {
+      const bone = this.root.getObjectByName(name.replace(/\s+/g, "_")) ?? this.root.getObjectByName(name);
+      if (bone) this.arm.push(bone);
+    }
     this.play("idle");
   }
+
+  // Plays a knife stroke or a shot's recoil on the right arm over whatever the body is doing.
+  attack(kind: "slash" | "stab" | "shot"): void { this.stroke = { kind, time: 0 }; }
 
   setStance(stance: PlayerStance): void {
     if (this.dead || stance === this.stance) return;
@@ -151,6 +162,43 @@ export class PlayerModelInstance {
       bone.quaternion.multiply(this.scratch.setFromAxisAngle(axis, angle));
       if (bend) bone.quaternion.multiply(this.scratch.setFromAxisAngle(forward, bend));
     }
+    this.strike(seconds);
+  }
+
+  // A slash raises the arm forward and sweeps it across the body; a stab draws the arm back
+  // and drives it straight out; a shot kicks it up a little. Each eases in and out.
+  private strike(seconds: number): void {
+    const stroke = this.stroke;
+    if (!stroke || this.arm.length < 2) return;
+    stroke.time += seconds;
+    const length = stroke.kind === "slash" ? 0.5 : stroke.kind === "stab" ? 0.75 : 0.16;
+    const t = stroke.time / length;
+    if (t >= 1) { this.stroke = null; return; }
+    const ease = (from: number, to: number): number => Math.max(0, Math.min(1, (t - from) / (to - from)));
+    const bell = (from: number, peak: number, to: number): number => t < peak ? Math.sin(ease(from, peak) * Math.PI / 2) : 1 - ease(peak, to) ** 2;
+    const [upper, fore] = this.arm;
+    // Rotations about the character's own side-to-side and vertical axes, expressed in
+    // each bone's parent frame as the animation has posed it this frame.
+    const around = (bone: Object3D, axis: Vector3, angle: number): void => {
+      const parent = bone.parent!.getWorldQuaternion(new Quaternion()).invert();
+      const local = axis.clone().applyQuaternion(this.root.getWorldQuaternion(new Quaternion())).applyQuaternion(parent);
+      bone.quaternion.premultiply(this.scratch.setFromAxisAngle(local, angle));
+    };
+    let raise = 0, sweep = 0, bend = 0;
+    if (stroke.kind === "slash") {
+      raise = 1.25 * bell(0, 0.25, 1);
+      sweep = 0.7 - 1.6 * ease(0.15, 0.45);
+      sweep *= bell(0, 0.2, 1);
+      bend = 0.6 * bell(0, 0.2, 0.7);
+    } else if (stroke.kind === "stab") {
+      raise = 1.35 * bell(0.25, 0.42, 1) - 0.3 * bell(0, 0.2, 0.32);
+      bend = 1.3 * bell(0, 0.22, 0.38);
+    } else {
+      raise = 0.12 * bell(0, 0.15, 1);
+    }
+    around(upper, WORLD_RIGHT, -raise);
+    around(upper, WORLD_UP, sweep);
+    if (bend) around(fore, WORLD_RIGHT, -bend);
   }
 
   dispose(): void {

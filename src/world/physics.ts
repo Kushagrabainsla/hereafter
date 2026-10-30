@@ -14,6 +14,13 @@ const MAX_MANTLE = 1.6;
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 const PLAYER_GROUPS = (0x0002 << 16) | 0xffff;
 const RAGDOLL_GROUPS = (0x0004 << 16) | 0x0001;
+// Other players' bodies on the coordinating peer take part in no contacts: they reach loose
+// props only through their character controller, which pushes with a body's mass rather
+// than the unstoppable force of a moving kinematic body.
+const PUSHER_GROUPS = 0x0008 << 16;
+// The most force a player's body puts into a prop it walks into, in newtons: enough to
+// shove a crate or a bin along, not a full drum.
+const PUSH_FORCE = 800;
 
 export interface Quat { x: number; y: number; z: number; w: number }
 export interface RagdollPart { name: string; position: Vec3; rotation: Quat; shape: { type: "capsule"; halfHeight: number; radius: number; rotation: Quat } | { type: "ball"; radius: number } }
@@ -67,7 +74,13 @@ export class PhysicsWorld {
   // Loose props: simulated here when this peer coordinates the room, otherwise moved to
   // the coordinator's reported transforms.
   private props = new Map<string, RAPIER.RigidBody>();
+  private propHandles = new Set<number>();
   private authority = true;
+  // Other players as kinematic capsules, so they shove props on the coordinating peer.
+  private pushers = new Map<string, { body: RAPIER.RigidBody; collider: RAPIER.Collider; crouched: boolean }>();
+  private pusherController: RAPIER.KinematicCharacterController;
+  // Shoves the player gave props this peer does not simulate, waiting to be sent.
+  private shoves = new Map<string, Vec3>();
 
   constructor(private data: ArenaData, arena: Arena) {
     this.world = new RAPIER.World({ x: 0, y: -14, z: 0 });
@@ -81,8 +94,53 @@ export class PhysicsWorld {
     this.controller.enableAutostep(0.22, 0.2, false);
     this.controller.enableSnapToGround(0.28);
     this.controller.setMaxSlopeClimbAngle(45 * Math.PI / 180);
+    // Walking into a loose prop shoves it with the force a body of the player's mass can
+    // put into it: a cardboard box flies, a full drum barely shifts.
+    this.controller.setApplyImpulsesToDynamicBodies(true);
+    this.controller.setCharacterMass(80);
+    this.pusherController = this.world.createCharacterController(0.015);
+    this.pusherController.setApplyImpulsesToDynamicBodies(true);
+    this.pusherController.setCharacterMass(80);
     this.world.step();
   }
+
+  setCharacterMass(kilograms: number): void { this.controller.setCharacterMass(kilograms); }
+
+  // Moves another player's body to where they are, shoving any loose prop in the way with
+  // their mass. Their own client decides where they go; this only pushes the props.
+  movePusher(id: string, east: number, north: number, feet: number, crouched: boolean, kilograms: number): void {
+    if (!this.authority) return;
+    let pusher = this.pushers.get(id);
+    const halfHeight = crouched ? CROUCHED_HALF_HEIGHT : STANDING_HALF_HEIGHT;
+    const target = { x: east, y: feet + halfHeight + RADIUS, z: north };
+    if (!pusher) {
+      const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(target.x, target.y, target.z));
+      const collider = this.world.createCollider(RAPIER.ColliderDesc.capsule(halfHeight, RADIUS).setCollisionGroups(PUSHER_GROUPS), body);
+      this.cosmetic.add(collider.handle);
+      pusher = { body, collider, crouched };
+      this.pushers.set(id, pusher);
+      return;
+    }
+    if (pusher.crouched !== crouched) { pusher.collider.setShape(new RAPIER.Capsule(halfHeight, RADIUS)); pusher.crouched = crouched; }
+    const current = pusher.body.translation();
+    const delta = { x: target.x - current.x, y: target.y - current.y, z: target.z - current.z };
+    // Respawns and corrections teleport without sweeping through props.
+    if (Math.hypot(delta.x, delta.z) < 1.5) {
+      this.pusherController.setCharacterMass(kilograms);
+      this.pusherController.computeColliderMovement(pusher.collider, delta, undefined, undefined, (collider) => this.propHandles.has(collider.handle));
+    }
+    pusher.body.setNextKinematicTranslation(target);
+  }
+
+  removePusher(id: string): void {
+    const pusher = this.pushers.get(id);
+    if (!pusher) return;
+    this.cosmetic.delete(pusher.collider.handle);
+    this.world.removeRigidBody(pusher.body);
+    this.pushers.delete(id);
+  }
+
+  pusherIds(): string[] { return [...this.pushers.keys()]; }
 
   private addTerrain(): void {
     const segments = 42;
@@ -126,6 +184,7 @@ export class PhysicsWorld {
         .setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation).setLinearDamping(0.1).setAngularDamping(0.5).setCcdEnabled(true));
       collider = this.world.createCollider(desc.setDensity(entity.mass / volume).setFriction(0.7).setRestitution(0.15), body);
       this.props.set(entity.id, body);
+      this.propHandles.add(collider.handle);
     } else {
       collider = this.world.createCollider(desc.setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation));
     }
@@ -138,6 +197,7 @@ export class PhysicsWorld {
     const collider = this.entityColliders.get(id);
     if (!collider) return;
     this.tags.delete(collider.handle);
+    this.propHandles.delete(collider.handle);
     const body = this.props.get(id);
     if (body) { this.world.removeRigidBody(body); this.props.delete(id); }
     else this.world.removeCollider(collider, true);
@@ -183,6 +243,7 @@ export class PhysicsWorld {
     if (authority === this.authority) return;
     this.authority = authority;
     for (const body of this.props.values()) body.setBodyType(authority ? RAPIER.RigidBodyType.Dynamic : RAPIER.RigidBodyType.KinematicPositionBased, true);
+    if (!authority) for (const id of this.pusherIds()) this.removePusher(id);
   }
 
   // A bullet or blast pushing a loose prop.
@@ -250,12 +311,58 @@ export class PhysicsWorld {
 
   move(east: number, north: number, vertical: number): CharacterStep {
     this.controller.computeColliderMovement(this.collider, { x: east, y: vertical, z: north }, undefined, undefined, this.solid);
+    if (!this.authority) this.collectShoves(east, north);
     this.steps += 1;
     const movement = this.controller.computedMovement();
     const current = this.body.translation();
     this.body.setNextKinematicTranslation({ x: current.x + movement.x, y: current.y + movement.y, z: current.z + movement.z });
     this.world.step();
     return this.position(this.controller.computedGrounded());
+  }
+
+  // Where another peer simulates the props, the local copies cannot move, so the character
+  // controller's own push does nothing. Walking into one is recorded instead, as the impulse
+  // the player's mass would give it: as much of the walk as the prop blocked, up to a
+  // body's pushing force.
+  private collectShoves(east: number, north: number): void {
+    const mass = this.controller.characterMass() ?? 80;
+    for (let index = 0; index < this.controller.numComputedCollisions(); index += 1) {
+      const hit = this.controller.computedCollision(index);
+      const handle = hit?.collider?.handle;
+      if (!hit || handle === undefined || !this.propHandles.has(handle)) continue;
+      const id = this.tags.get(handle)?.entity;
+      const n = hit.normal1, flat = Math.hypot(n.x, n.z);
+      if (!id || flat < 0.3) continue;
+      const into = -(east * n.x + north * n.z) / flat / STEP_SECONDS;
+      if (into <= 0.05) continue;
+      const impulse = Math.min(mass * into, PUSH_FORCE * STEP_SECONDS);
+      const total = this.shoves.get(id) ?? { x: 0, y: 0, z: 0 };
+      total.x -= n.x / flat * impulse;
+      total.z -= n.z / flat * impulse;
+      this.shoves.set(id, total);
+    }
+  }
+
+  takeShoves(): [string, number, number, number][] {
+    // A long frame can gather more than a packet may carry; the excess is lost, as a body
+    // cannot lean harder than that anyway.
+    const shoves = [...this.shoves].map(([id, v]): [string, number, number, number] => {
+      const scale = Math.min(1, 100 / (Math.hypot(v.x, v.z) || 1));
+      return [id, Math.round(v.x * scale * 100) / 100, 0, Math.round(v.z * scale * 100) / 100];
+    });
+    this.shoves.clear();
+    return shoves;
+  }
+
+  // Shoves another player gave props this peer simulates, applied a little above the
+  // middle of each prop the way a hip or hand meets it.
+  applyShoves(shoves: [string, number, number, number][]): void {
+    for (const [id, x, y, z] of shoves) {
+      const body = this.props.get(id);
+      if (!body || !body.isDynamic()) continue;
+      const at = body.translation();
+      body.applyImpulseAtPoint({ x, y, z }, { x: at.x, y: at.y + 0.1, z: at.z }, true);
+    }
   }
 
   // A ledge in the given horizontal direction the standing character can climb onto:
@@ -417,6 +524,12 @@ export class PhysicsWorld {
         bodies.clear();
       },
     };
+  }
+
+  // The first solid surface along a short segment and its normal, for small debris.
+  sweep(origin: Vec3, direction: Vec3, distance: number): { distance: number; normal: Vec3 } | null {
+    const hit = this.world.castRayAndGetNormal(new RAPIER.Ray(origin, direction), distance, true, undefined, undefined, this.collider, undefined, this.solid);
+    return hit ? { distance: hit.timeOfImpact, normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z } } : null;
   }
 
   traceShot({ origin, direction, distance }: ShotRay): number {

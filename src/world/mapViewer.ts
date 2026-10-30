@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, PCFShadowMap, PerspectiveCamera, Quaternion,
+  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, PCFShadowMap, PerspectiveCamera, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry,
 } from "three/webgpu";
 import { float, pass, screenUV, smoothstep, vec4 } from "three/tsl";
@@ -10,21 +10,24 @@ import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
 import { PlayerModelLibrary } from "../game/playerModel";
 import { ShotEffects } from "../game/shotEffects";
-import { type CombatEvent, type CombatWorld } from "../game/matchState";
+import { BLAST_RADIUS, type CombatEvent, type CombatWorld, type Drop } from "../game/matchState";
+import { ViewLighting } from "../game/viewLighting";
+import { LootViews } from "../game/loot";
+import { Ejecta } from "../game/ejecta";
 import { WeaponVisuals } from "../game/weaponVisuals";
 import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio } from "../game/gameAudio";
 import { SoundStage } from "../game/soundStage";
-import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, type WeaponKind } from "../game/combatRules";
+import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, KNIFE, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
 import { buildNightMarket, nightMarketData } from "./nightMarket";
 import { duskSky } from "./duskSky";
 import { loadSurfaceTextures } from "./surfaceTextures";
-import { PhysicsWorld, type ShotRay } from "./physics";
+import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
 import { WorldEffects } from "./worldEffects";
 import { loadPropModels, PropViews } from "./props";
-import { type PropState } from "../network/peerRoom";
+import { type PropPush, type PropState } from "../network/peerRoom";
 
 export type MapState = "loading" | "ready" | "error";
 
@@ -73,7 +76,16 @@ export interface MapViewer {
   setAuthority: (authority: boolean) => void;
   resetWorld: () => void;
   quickThrow: () => void;
-  playAttack: (weapon: WeaponKind) => void;
+  playAttack: (weapon: WeaponKind, stroke?: KnifeStroke) => void;
+  // The mass of everything the player carries, in kilograms.
+  setLoad: (kilograms: number) => void;
+  // Another player's carried mass, for how hard they shove props.
+  setRemoteMass: (peerId: string, kilograms: number) => void;
+  // Dropped guns and magazines; ones named in fresh just fell and tumble into place.
+  setDrops: (drops: Drop[], fresh: Set<string>) => void;
+  // Props this player walked into since the last call, for the coordinating peer to shove.
+  takeShoves: () => PropPush[];
+  applyShoves: (shoves: PropPush[]) => void;
   startReload: (weapon: WeaponKind, durationMs: number) => void;
   cancelReload: () => void;
   combatSound: (event: CombatEvent, selfId: string) => void;
@@ -201,12 +213,17 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.add(camera);
   const viewScene = new Scene();
   viewScene.environment = scene.environment;
+  viewScene.environmentIntensity = scene.environmentIntensity;
   const viewCamera = new PerspectiveCamera(camera.fov, camera.aspect, 0.01, 10);
   viewScene.add(viewCamera);
-  viewScene.add(new HemisphereLight(0x9aa4c8, 0x605b4a, 1.0));
-  const viewSun = new DirectionalLight(0xffc890, 1.4);
-  viewSun.position.set(-2, 4, 3);
-  viewScene.add(viewSun);
+  // The arms and weapon are lit by the lamps around the player, not a studio light.
+  const viewLighting = new ViewLighting(viewScene, built.lightSources, sunOffset.clone().normalize(), sun.intensity, (from, to) => {
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, distance = Math.hypot(dx, dy, dz);
+    return distance < 0.4 || physics.clearShot({ origin: from, direction: { x: dx / distance, y: dy / distance, z: dz / distance }, distance: distance - 0.3 });
+  });
+  // On WebGPU a muzzle flash lights the alley around the shooter for a moment.
+  const muzzleLight = clustered ? new PointLight(0xffb45a, 0, 9, 2) : null;
+  if (muzzleLight) scene.add(muzzleLight);
   // The world and the first-person view render as two multisampled passes; the view is laid
   // over the world by its own coverage (both clear to transparent), then bloom makes lamps,
   // lanterns, neon, lit windows and muzzle flashes glow and a soft vignette frames the
@@ -220,7 +237,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const glow = bloom(vec4(picture, 1), 0.75, 0.55, 0.9);
   const vignette = float(1).sub(smoothstep(0.32, 0.95, screenUV.sub(0.5).length()).mul(0.42));
   pipeline.outputNode = vec4(picture.add(glow.rgb).mul(vignette), 1);
-  const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, makeWeaponPickups(data));
+  const pickupData = makeWeaponPickups(data);
+  const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, pickupData);
   const authoredViewModel = new AuthoredViewModel(viewCamera);
   // Pickups and other players use the first-person weapon models once they load.
   void loadWeaponModels().then((models) => {
@@ -228,6 +246,27 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     remotePlayers.setWeaponModels(models);
   });
   const shotEffects = new ShotEffects(scene);
+  const loot = new LootViews(scene, pickupData);
+  void loadWeaponModels().then((models) => loot.setWeaponModels(models));
+  const ejecta = new Ejecta(scene, (origin, direction, distance) => physics.sweep(origin, direction, distance));
+  const remoteMass = new Map<string, number>();
+  let muzzleGlow = 0;
+  // Where the camera was and how fast it moved, for what spent cases inherit.
+  const eyeVelocity = new Vector3();
+  const lastEye = new Vector3();
+  const flashAt = (at: Vector3, strength: number): void => {
+    if (!muzzleLight) return;
+    muzzleLight.position.copy(at);
+    muzzleGlow = Math.max(muzzleGlow, strength);
+  };
+  // A spent case from the local gun's ejection port, behind the muzzle on the right side.
+  const ejectLocal = (gun: GunKind): void => {
+    const muzzle = (authoredViewModel.muzzle() ?? weaponVisuals.muzzle())?.applyMatrix4(camera.matrixWorld);
+    const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    const forward = new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
+    const port = (muzzle ?? camera.position.clone().addScaledVector(forward, 0.6).addScaledVector(up, -0.15)).addScaledVector(forward, gun === "rifle" ? -0.33 : -0.13).addScaledVector(right, 0.02).addScaledVector(up, 0.03);
+    ejecta.ejectCase(gun, port, right, forward, eyeVelocity);
+  };
   const effects = new WorldEffects(scene, data, refs, () => camera.position, groups);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
   const combatWorld: CombatWorld = {
@@ -269,7 +308,21 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   renderer.setAnimationLoop((time) => {
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     const steps = physics.steps;
+    // Other players shove props on the coordinating peer before the world steps.
+    const present = new Set<string>();
+    remotePlayers.each((peerId, feet, pose, dead) => {
+      if (dead) return;
+      present.add(peerId);
+      physics.movePusher(peerId, feet.x, feet.z, feet.y, pose.crouching, 80 + (remoteMass.get(peerId) ?? 1));
+    });
+    for (const id of physics.pusherIds()) if (!present.has(id)) physics.removePusher(id);
     player.update(delta);
+    camera.updateMatrixWorld();
+    const eye = camera.position.clone();
+    if (delta > 0) eyeVelocity.copy(eye).sub(lastEye).divideScalar(delta);
+    if (eyeVelocity.length() > 15) eyeVelocity.set(0, 0, 0);
+    lastEye.copy(eye);
+    const axes = { right: new Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up: new Vector3().setFromMatrixColumn(camera.matrixWorld, 1), forward: new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate() };
     // Paused or eliminated players do not move the world, so step it for ragdolls and props.
     if (physics.steps === steps) physics.advance(delta);
     if (deathView) {
@@ -287,6 +340,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
     shotEffects.update(delta);
     effects.update(Math.min(delta, 0.1));
+    loot.update(Math.min(delta, 0.1));
+    ejecta.update(delta);
+    if (muzzleLight) { muzzleLight.intensity = muzzleGlow * 40; muzzleGlow *= Math.exp(-Math.min(delta, 0.1) * 40); }
     for (const prop of props) {
       const pose = physics.propPose(prop.id);
       if (pose) propViews.place(prop.id, pose.position, pose.rotation);
@@ -299,7 +355,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       camera.rotateZ((Math.random() - 0.5) * effects.shake * 0.02);
     }
     const pose = player.pose();
-    weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch);
+    // The spring sway works in world terms: the eyes' acceleration along the camera's own axes.
+    weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch, eye, axes);
     authoredViewModel.update(delta, player.motion(), weaponVisuals.dynamics());
     weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
     // The crosshair opens with the same spread the leader applies to this player's shots.
@@ -318,6 +375,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     viewCamera.aspect = camera.aspect;
     viewCamera.fov = camera.fov;
     viewCamera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    viewLighting.update(Math.min(delta, 0.1), camera);
     pipeline.render();
     frames += 1;
     renderedFrames += 1;
@@ -379,6 +438,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     setTakenPickups(taken) {
       weaponVisuals.setTaken(taken);
+      loot.setTaken(taken);
     },
     weaponReady() { const motion = player.motion(); return weaponVisuals.ready() && !motion.mantling && !motion.climbing; },
     holdSprint(seconds) { player.holdSprint(seconds); },
@@ -402,6 +462,59 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     playEvent(event, selfId) {
       soundStage.combat(event, selfId);
+      const own = event.actor === selfId;
+      if (event.kind === "shot") {
+        if (event.weapon === "knife" && own && event.impact) {
+          // The blade met something hard and turned.
+          authoredViewModel.deflect();
+          const strike = event.impacts?.[0];
+          if (strike) gameAudio.blade(strike, !["wood", "timber", "cardboard", "plastic", "glass"].includes(strike.material));
+        } else if (event.weapon === "knife" && event.impact) {
+          const strike = event.impacts?.[0];
+          if (strike) gameAudio.blade(strike, !["wood", "timber", "cardboard", "plastic", "glass"].includes(strike.material));
+        }
+        if (!own && event.weapon) {
+          remotePlayers.attack(event.actor, event.weapon, event.stroke);
+          if (event.weapon !== "knife") {
+            const hands = remotePlayers.hands(event.actor);
+            if (hands) {
+              const yaw = hands.heading * Math.PI / 180;
+              const right = new Vector3(-Math.cos(yaw), 0, Math.sin(yaw)), forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+              ejecta.ejectCase(event.weapon, hands.position.clone().addScaledVector(right, 0.03), right, forward);
+              flashAt(hands.position.clone().addScaledVector(forward, event.weapon === "rifle" ? 0.7 : 0.35), 1);
+            }
+          }
+        }
+      }
+      if (event.kind === "reload" && event.dropped && event.weapon && event.weapon !== "knife") {
+        const gun = event.weapon;
+        if (own) {
+          // The empty magazine falls from under the gun as the reload starts.
+          const down = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1).negate(), forward = new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
+          ejecta.dropMagazine(gun, camera.position.clone().addScaledVector(forward, 0.45).addScaledVector(down, 0.35), eyeVelocity);
+        } else {
+          const hands = remotePlayers.hands(event.actor);
+          if (hands) ejecta.dropMagazine(gun, hands.position.clone().add(new Vector3(0, -0.15, 0)));
+        }
+      }
+      if ((event.kind === "hit" || event.kind === "death") && own && event.cause === "knife") authoredViewModel.bite();
+      // A blade or a heavy round knocks the body back a little.
+      if ((event.kind === "hit" || event.kind === "death") && event.target === selfId && event.from && (event.cause === "knife" || event.cause === "rifle")) {
+        const dx = camera.position.x - event.from.x, dz = camera.position.z - event.from.z, length = Math.hypot(dx, dz) || 1;
+        const strength = event.cause === "knife" ? (event.stroke === "stab" ? 1.8 : 1.1) : 0.6;
+        player.shove(dx / length * strength, dz / length * strength);
+      }
+      // A blast in the open throws the player away from it; cover shelters them.
+      if (event.kind === "explode" && event.position) {
+        const at = event.position, chest = { x: camera.position.x, y: camera.position.y - 0.6, z: camera.position.z };
+        const dx = chest.x - at.x, dy = chest.y - at.y, dz = chest.z - at.z, distance = Math.hypot(dx, dy, dz);
+        const open = distance < 0.5 || physics.clearShot({ origin: { x: at.x, y: at.y + 0.2, z: at.z }, direction: { x: dx / distance, y: (dy - 0.2) / distance, z: dz / distance }, distance: Math.max(0, distance - 0.4) });
+        if (distance < BLAST_RADIUS && open) {
+          const strength = 7 * (1 - distance / BLAST_RADIUS) ** 1.5, flat = Math.hypot(dx, dz) || 1;
+          player.shove(dx / flat * strength, dz / flat * strength, strength * 0.45);
+        }
+        flashAt(new Vector3(at.x, at.y + 0.4, at.z), 4);
+      }
       for (const impact of event.impacts ?? []) effects.impact(impact, { x: impact.nx, y: impact.ny, z: impact.nz }, impact.material, impact.exit);
       if (event.kind === "throw" && event.position && event.velocity && event.grenade !== undefined) {
         effects.throwGrenade(event.grenade, physics.grenadePath(event.position, event.velocity, (event.fuseMs ?? 2600) / 1000));
@@ -433,19 +546,41 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     propStates(all) { return physics.propStates(all); },
     applyPropStates(states) { physics.applyPropStates(states); },
     setAuthority(authority) { physics.setAuthority(authority); },
-    resetWorld() { physics.resetProps(); },
+    resetWorld() { physics.resetProps(); ejecta.clear(); loot.clear(); },
     setLocalDead(dead) {
       if (dead && !deathView) deathView = { position: camera.position.clone(), quaternion: camera.quaternion.clone(), time: 0 };
       if (!dead) deathView = null;
     },
-    playAttack(weapon) {
+    playAttack(weapon, stroke) {
       weaponVisuals.attack();
-      authoredViewModel.fire();
-      gameAudio.fire(weapon);
+      authoredViewModel.fire(weapon === "knife" ? stroke ?? "slash" : undefined);
+      gameAudio.fire(weapon, stroke === "stab");
+      if (weapon === "knife") {
+        // The body turns into a slash and steps into a stab as the arm drives forward.
+        if (stroke === "stab") window.setTimeout(() => {
+          const yaw = player.pose().heading * Math.PI / 180;
+          player.shove(Math.sin(yaw) * 2.8, Math.cos(yaw) * 2.8, 0, true);
+          player.swingView(0.025);
+        }, KNIFE.stab.contactMs - 90);
+        else window.setTimeout(() => player.swingView(-0.05), 40);
+        return;
+      }
       const now = performance.now();
       localBloom = bloomAfterShot(weapon, localBloom, (now - lastLocalShot) / 1000);
       lastLocalShot = now;
-      if (weapon !== "knife") player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
+      player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
+      ejectLocal(weapon);
+      viewLighting.muzzleFlash(authoredViewModel.muzzle() ?? weaponVisuals.muzzle(), weapon === "rifle" ? 1.2 : 1);
+      flashAt(camera.position.clone().add(new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-0.8)), 1);
+    },
+    setLoad(kilograms) { player.setLoad(kilograms); },
+    takeShoves() { return physics.takeShoves(); },
+    applyShoves(shoves) { physics.applyShoves(shoves); },
+    setRemoteMass(peerId, kilograms) { remoteMass.set(peerId, kilograms); },
+    setDrops(drops, fresh) {
+      const falling = new Map<string, GrenadePath>();
+      for (const drop of drops) if (fresh.has(drop.id)) falling.set(drop.id, physics.grenadePath(drop.from, drop.velocity, 1.6));
+      loot.setDrops(drops, falling);
     },
     startReload(weapon, durationMs) {
       weaponVisuals.reload(weapon, durationMs);

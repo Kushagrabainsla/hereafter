@@ -233,7 +233,21 @@ export class RemotePlayers {
   setWeapon(peerId: string, weapon: WeaponKind): void {
     this.equipped.set(peerId, weapon);
     const avatar = this.avatars.get(peerId);
-    if (avatar) for (const [kind, model] of avatar.weapons) model.visible = kind === weapon;
+    // A fallen player's guns lie where they dropped, so the body holds nothing.
+    if (avatar) for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && !this.dead.has(peerId);
+  }
+
+  // Another player's knife stroke or shot, on their character's arm.
+  attack(peerId: string, weapon: WeaponKind, stroke?: "slash" | "stab"): void {
+    this.avatars.get(peerId)?.model?.attack(weapon === "knife" ? stroke ?? "slash" : "shot");
+  }
+
+  // Where another player's hands hold their weapon, for spent cases.
+  hands(peerId: string): { position: Vector3; heading: number } | null {
+    const avatar = this.avatars.get(peerId);
+    if (!avatar || this.dead.has(peerId)) return null;
+    const yaw = avatar.heading * Math.PI / 180, crouch = avatar.pose.crouching ? 0.45 : 0;
+    return { position: avatar.root.position.clone().add(new Vector3(Math.sin(yaw) * 0.35 - Math.cos(yaw) * 0.12, 1.35 - crouch, Math.cos(yaw) * 0.35 + Math.sin(yaw) * 0.12)), heading: avatar.heading };
   }
 
   setHealth(peerId: string, health: number): void {
@@ -242,6 +256,7 @@ export class RemotePlayers {
     if (health <= 0) this.dead.add(peerId);
     else this.dead.delete(peerId);
     if (!avatar) return;
+    this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
     // The character falls as a ragdoll (or plays its death clip without physics) and stays
     // down until respawn; the mannequin simply hides.
     avatar.root.visible = avatar.model !== null || health > 0;

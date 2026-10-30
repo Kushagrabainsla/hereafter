@@ -197,6 +197,15 @@ export const NIGHT_MARKET: MapLayout = {
     { id: "pistol-north", weapon: "pistol", east: 12.75, north: -21.5 },
     { id: "rifle-cut", weapon: "rifle", east: 4.5, north: 1 },
     { id: "rifle-kitchen", weapon: "rifle", east: -13.45, north: 3.6 },
+    // Spare magazines, two to a pickup, on tables, counters and the high ground.
+    { id: "mags-table-south", weapon: "pistol", item: "magazines", east: -4, north: 12.5, y: 0.76 },
+    { id: "mags-dining", weapon: "pistol", item: "magazines", east: -10.3, north: -2, y: 0.76 },
+    { id: "mags-bar", weapon: "pistol", item: "magazines", east: 21, north: 3.6, y: 1.1 },
+    { id: "mags-cut", weapon: "pistol", item: "magazines", east: 2.2, north: -1.2 },
+    { id: "mags-table-north", weapon: "rifle", item: "magazines", east: -4.2, north: -15, y: 0.76 },
+    { id: "mags-fire-escape", weapon: "rifle", item: "magazines", east: -7.8, north: -19.4, y: 4.6 },
+    { id: "mags-upstairs", weapon: "rifle", item: "magazines", east: 18.4, north: 8.8, y: 4.2 },
+    { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 9.2, north: 11.5, y: 1.3 },
   ],
   solids,
 };
@@ -478,6 +487,9 @@ export interface BuiltMap {
   // Adds the market's lights: every lamp, bulb string, sign and lit shop when the renderer
   // can afford many lights, otherwise six key lights and painted pools of light.
   light: (many: boolean) => void;
+  // Every lamp, bulb string, lantern and sign as [x, y, z, colour, intensity, distance],
+  // whichever renderer draws them, so the first-person view can be lit like the spot it is in.
+  lightSources: [number, number, number, number, number, number][];
   // Lanterns sway, a neon sign flickers and steam rises.
   update: (seconds: number) => void;
   dispose: () => void;
@@ -896,7 +908,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   let last = 0;
   return {
-    refs, groups, entities, props, ladders,
+    refs, groups, entities, props, ladders, lightSources: many,
     light(manyLights) {
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
       for (const [x, y, z, color, intensity, distance] of list) {

@@ -24,13 +24,14 @@ export interface LayoutBox {
   look: string;
 }
 
-// What every client must agree on for a map: where players start, where weapons
-// lie and what is solid. How it looks is built from the same definition (see nightMarket.ts).
+// What every client must agree on for a map: where players start, where weapons and
+// spare magazines lie and what is solid. How it looks is built from the same definition (see nightMarket.ts).
 export interface MapLayout {
   id: string;
   name: string;
   spawns: { east: number; north: number; heading: number }[];
-  pickups: { id: string; weapon: "pistol" | "rifle"; east: number; north: number }[];
+  // A gun, or spare magazines for one; y is the height of the surface it rests on.
+  pickups: { id: string; weapon: "pistol" | "rifle"; item?: "gun" | "magazines"; east: number; north: number; y?: number }[];
   solids: LayoutBox[];
 }
 

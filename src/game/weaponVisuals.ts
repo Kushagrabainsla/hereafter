@@ -72,10 +72,34 @@ export const VIEW_POSES: Record<WeaponKind, ViewPose> = {
 };
 
 // Per-frame state shared with the authored view models: which weapon is visibly held
-// (after the switch midpoint), how far the lower-and-raise switch has tucked it away,
-// and the small turn, pitch and landing offsets. reload is how far the weapon is canted
-// for a reload (0 to 1) and jolt the decaying kick when a magazine seats or the action closes.
-export interface ViewDynamics { active: WeaponKind; lower: number; turnLag: number; pitchLag: number; landing: number; reload: number; jolt: number; }
+// (after the switch midpoint), how far the lower-and-raise switch has tucked it away, and
+// the sway of the weapon on its spring in camera-local metres and radians, breathing
+// included. reload is how far the weapon is canted for a reload (0 to 1) and jolt the
+// decaying kick when a magazine seats or the action closes.
+export interface Sway { x: number; y: number; z: number; pitch: number; yaw: number; roll: number }
+export interface ViewDynamics { active: WeaponKind; lower: number; sway: Sway; reload: number; jolt: number; }
+
+// The weapon hangs off the hands like a mass on a spring. Turning drags it behind the view,
+// starting, stopping, jumping and landing swing it, and strafing rolls it. Heavier weapons
+// swing slower and further: these are each one's natural frequency (Hz), how far it lags
+// a turn (seconds of turn) and how strongly it follows the body's acceleration.
+const SPRING: Record<WeaponKind, { frequency: number; lag: number; follow: number }> = {
+  knife: { frequency: 2.6, lag: 0.012, follow: 0.16 },
+  pistol: { frequency: 2.1, lag: 0.016, follow: 0.2 },
+  rifle: { frequency: 1.5, lag: 0.024, follow: 0.24 },
+};
+const DAMPING = 0.5;
+
+class SpringAxis {
+  value = 0;
+  speed = 0;
+  step(seconds: number, frequency: number, target: number, push: number): void {
+    const omega = 2 * Math.PI * frequency;
+    this.speed += (omega * omega * (target - this.value) - 2 * DAMPING * omega * this.speed - push) * seconds;
+    this.value += this.speed * seconds;
+  }
+  reset(): void { this.value = 0; this.speed = 0; }
+}
 
 // Moments in each reload recording (seconds) when the magazine seats and the action closes,
 // so the weapon jolts in time with the sound (scripts/audio/build.sh cuts the recordings).
@@ -102,12 +126,15 @@ export class WeaponVisuals {
   private reloadWeapon: WeaponKind = "knife";
   private reloadTilt = 0;
   private reloadJolt = 0;
-  private turnLag = 0;
-  private pitchLag = 0;
   private lastHeading: number | null = null;
   private lastPitch = 0;
-  private landing = 0;
-  private wasAirborne = false;
+  private lastEye: Vector3 | null = null;
+  private velocity = new Vector3();
+  private turnRate = 0;
+  private pitchRate = 0;
+  private springs = { x: new SpringAxis(), y: new SpringAxis(), z: new SpringAxis(), pitch: new SpringAxis(), yaw: new SpringAxis(), roll: new SpringAxis() };
+  private sway: Sway = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 };
+  private breathPhase = 0;
   private recoil = 0;
   private flashTime = 0;
   private flashes = new Map<WeaponKind, Mesh>();
@@ -140,8 +167,9 @@ export class WeaponVisuals {
     const ringMaterial = new MeshStandardMaterial({ color: 0x59d3d0, emissive: 0x237a78, emissiveIntensity: 1.8, metalness: 0.35, roughness: 0.34 });
     const beamMaterial = new MeshStandardMaterial({ color: 0x5bd8d6, emissive: 0x3bbfba, emissiveIntensity: 0.8, transparent: true, opacity: 0.11, depthWrite: false });
     for (const pickup of pickupData) {
+      if (pickup.item !== "gun") continue;
       const root = new Group();
-      root.position.set(pickup.east, terrainHeight(data, pickup.east, pickup.north) + 0.05, pickup.north);
+      root.position.set(pickup.east, terrainHeight(data, pickup.east, pickup.north) + pickup.y + 0.05, pickup.north);
       const plate = add(root, new CylinderGeometry(0.54, 0.58, 0.08, 24), new MeshStandardMaterial({ color: 0x192e34, metalness: 0.4, roughness: 0.65 }), 0, 0, 0);
       plate.receiveShadow = true;
       const ring = add(root, new TorusGeometry(0.46, 0.025, 5, 32), ringMaterial, 0, 0.065, 0);
@@ -190,7 +218,62 @@ export class WeaponVisuals {
   }
 
   dynamics(): ViewDynamics {
-    return { active: this.active, lower: this.lower, turnLag: this.turnLag, pitchLag: this.pitchLag, landing: this.landing, reload: this.reloadTilt, jolt: this.reloadJolt };
+    return { active: this.active, lower: this.lower, sway: this.sway, reload: this.reloadTilt, jolt: this.reloadJolt };
+  }
+
+  // Drives the spring from how the view turned and how the eyes accelerated since the last
+  // frame, expressed along the camera's right, up and forward axes, then adds breathing
+  // that quickens and deepens with exertion and a faint tremor of the hands.
+  private swing(seconds: number, motion: PlayerMotion, heading: number, pitch: number, eye: Vector3 | undefined, right: Vector3, up: Vector3, forward: Vector3): void {
+    if (seconds <= 0) return;
+    const spring = SPRING[this.active];
+    let turn = 0, tilt = 0;
+    if (this.lastHeading !== null) {
+      turn = ((heading - this.lastHeading + 540) % 360) - 180;
+      tilt = pitch - this.lastPitch;
+      if (Math.abs(turn) > 60 || Math.abs(tilt) > 40) turn = tilt = 0;
+    }
+    this.lastHeading = heading;
+    this.lastPitch = pitch;
+    const turnRate = turn * Math.PI / 180 / seconds, pitchRate = tilt * Math.PI / 180 / seconds;
+    const turnAcceleration = (turnRate - this.turnRate) / seconds, pitchAcceleration = (pitchRate - this.pitchRate) / seconds;
+    this.turnRate = turnRate;
+    this.pitchRate = pitchRate;
+    const accel = new Vector3();
+    if (eye) {
+      if (this.lastEye && eye.distanceTo(this.lastEye) < 1.5) {
+        const velocity = eye.clone().sub(this.lastEye).divideScalar(seconds);
+        // Smooth out frame-time noise before differentiating.
+        const smoothed = this.velocity.clone().lerp(velocity, 1 - Math.exp(-seconds / 0.03));
+        accel.copy(smoothed).sub(this.velocity).divideScalar(seconds);
+        this.velocity.copy(smoothed);
+      } else this.velocity.set(0, 0, 0);
+      this.lastEye = (this.lastEye ?? new Vector3()).copy(eye);
+    }
+    const clampTo = (value: number, limit: number): number => Math.max(-limit, Math.min(limit, value));
+    const along = (axis: Vector3, limit: number): number => clampTo(accel.dot(axis), limit) * spring.follow;
+    const s = this.springs, f = spring.frequency;
+    s.x.step(seconds, f, 0, along(right, 40));
+    s.y.step(seconds, f, 0, along(up, 60));
+    s.z.step(seconds, f, 0, -along(forward, 40));
+    // A turn drags the weapon behind it: turning left (rising heading) leaves it pointing
+    // right, and looking up leaves it low. Sudden starts and stops add a swing of their own.
+    s.yaw.step(seconds, f * 1.2, clampTo(-turnRate * spring.lag, 0.08), clampTo(turnAcceleration, 400) * spring.lag * 0.05);
+    s.pitch.step(seconds, f * 1.2, clampTo(-pitchRate * spring.lag, 0.06), clampTo(pitchAcceleration, 400) * spring.lag * 0.05);
+    s.roll.step(seconds, f, clampTo(-this.velocity.dot(right) * 0.008, 0.05), 0);
+    // Breathing: about 14 breaths a minute at rest, up to 40 after a hard sprint.
+    const exertion = motion.exertion;
+    this.breathPhase += seconds * 2 * Math.PI * (0.23 + exertion * 0.45);
+    const breath = Math.sin(this.breathPhase), depth = 0.0012 + exertion * 0.0055;
+    const tremor = (0.00025 + exertion * 0.0008) * (Math.sin(this.time * 47) + Math.sin(this.time * 61 + 1.3) * 0.7);
+    this.sway = {
+      x: s.x.value - s.yaw.value * 0.35 + tremor * 0.6,
+      y: s.y.value + breath * depth + tremor,
+      z: s.z.value,
+      pitch: s.pitch.value + breath * depth * 2.2,
+      yaw: s.yaw.value,
+      roll: s.roll.value + s.yaw.value * 0.4,
+    };
   }
 
   // Shows each pickup as the same model the player holds, spinning about its middle and
@@ -229,7 +312,7 @@ export class WeaponVisuals {
   attack(): void { this.recoil = 1; this.flashTime = 0.055; }
 
 
-  update(seconds: number, motion: PlayerMotion, heading = 0, pitch = 0): void {
+  update(seconds: number, motion: PlayerMotion, heading = 0, pitch = 0, eye?: Vector3, axes?: { right: Vector3; up: Vector3; forward: Vector3 }): void {
     const elapsed = Math.max(0, seconds);
     seconds = Math.min(elapsed, 0.05);
     if (this.switching) {
@@ -238,17 +321,8 @@ export class WeaponVisuals {
       if (this.switchPhase >= 1 - 1e-6) { this.switchPhase = 1; this.switching = false; }
     }
     for (const [kind, model] of this.held) model.visible = this.fallbackVisible && kind === this.active;
-    if (this.lastHeading !== null) {
-      const turn = ((heading - this.lastHeading + 540) % 360) - 180;
-      this.turnLag = Math.max(-0.025, Math.min(0.025, this.turnLag - turn*0.001));
-      this.pitchLag = Math.max(-0.02, Math.min(0.02, this.pitchLag - (pitch-this.lastPitch)*0.001));
-    }
-    this.lastHeading = heading; this.lastPitch = pitch;
-    this.turnLag *= Math.exp(-seconds*9); this.pitchLag *= Math.exp(-seconds*9);
-    if (this.wasAirborne && !motion.airborne) this.landing = 0.025;
-    this.wasAirborne = motion.airborne;
-    this.landing *= Math.exp(-seconds*12);
     this.time += seconds;
+    this.swing(seconds, motion, heading, pitch, eye, axes?.right ?? new Vector3(1, 0, 0), axes?.up ?? new Vector3(0, 1, 0), axes?.forward ?? new Vector3(0, 0, -1));
     this.flashTime = Math.max(0, this.flashTime - seconds);
     for (const [kind, flash] of this.flashes) flash.visible = kind === this.active && this.flashTime > 0;
     this.movementBlend += ((motion.moving && !motion.airborne && !motion.sliding ? 1 : 0) - this.movementBlend) * Math.min(1, seconds * 8);
@@ -286,16 +360,16 @@ export class WeaponVisuals {
       const lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7, throwing);
       this.lower = lower;
       const sprint = this.sprintBlend;
-      const breath = Math.sin(this.time * 1.8) * 0.006;
+      const sway = this.sway;
       held.position.set(
-        pose.position[0] + step * amplitude + this.turnLag + sprint * pose.sprint[0] + lower * 0.06 - reload * 0.05,
-        pose.position[1] + breath + lift * amplitude - this.landing + this.pitchLag + sprint * pose.sprint[1] - lower * 0.75 - this.recoil * (knife ? 0.08 : 0.035) - reload * 0.06 + jolt * 0.014,
-        pose.position[2] + sprint * pose.sprint[2] + this.recoil * (knife ? 0.02 : 0.045) + lower * 0.08,
+        pose.position[0] + step * amplitude + sway.x + sprint * pose.sprint[0] + lower * 0.06 - reload * 0.05,
+        pose.position[1] + lift * amplitude + sway.y + sprint * pose.sprint[1] - lower * 0.75 - this.recoil * (knife ? 0.08 : 0.035) - reload * 0.06 + jolt * 0.014,
+        pose.position[2] + sway.z + sprint * pose.sprint[2] + this.recoil * (knife ? 0.02 : 0.045) + lower * 0.08,
       );
       held.rotation.set(
-        pose.rotation[0] + this.recoil * (knife ? 0.8 : 0.19) + sprint * pose.sprint[3] - lower * 0.7 + reload * 0.2 + jolt * 0.05,
-        pose.rotation[1] - this.turnLag * 0.8 + sprint * pose.sprint[4] + lower * 0.25,
-        pose.rotation[2] + step * amplitude * 0.8 - this.recoil * (knife ? 0.55 : 0.04) + sprint * pose.sprint[5] - lower * 0.3 + reload * 0.5,
+        pose.rotation[0] + sway.pitch + this.recoil * (knife ? 0.8 : 0.19) + sprint * pose.sprint[3] - lower * 0.7 + reload * 0.2 + jolt * 0.05,
+        pose.rotation[1] + sway.yaw + sprint * pose.sprint[4] + lower * 0.25,
+        pose.rotation[2] + sway.roll + step * amplitude * 0.8 - this.recoil * (knife ? 0.55 : 0.04) + sprint * pose.sprint[5] - lower * 0.3 + reload * 0.5,
       );
     }
     for (const pickup of this.pickups.values()) {

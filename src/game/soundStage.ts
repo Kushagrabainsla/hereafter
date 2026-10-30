@@ -82,7 +82,7 @@ export class SoundStage {
     if (event.kind === "shot" && shot) {
       const weapon = event.weapon ?? "pistol";
       if (event.actor !== selfId) {
-        gameAudio.remoteFire(weapon, shot.origin);
+        gameAudio.remoteFire(weapon, shot.origin, event.stroke === "stab");
         if (weapon !== "knife") this.nearMiss(shot.origin, shot.direction, shot.distance);
       }
       // A few audible strikes per round: where it went in, and where it broke through.

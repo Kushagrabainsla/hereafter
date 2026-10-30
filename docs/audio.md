@@ -4,13 +4,14 @@ The game plays recorded CC0 sound for guns, reloads, handling, footsteps and imp
 
 ## What you hear
 
-- **Your weapon.** Close recordings of a Walther PPQ 9 mm and an AK-47, with a random take, a few percent of pitch variation and a low thump underneath. They play the moment you fire, without waiting for the shot to be validated. The knife swing is a swept noise whoosh that crosses from right to left.
-- **Handling.** Switching plays a holster rustle, then a knife draw or a grab and ready click, timed to the 560 ms lower-and-raise. Reloads play a magazine change and slide or charging-handle recording cut to the 1.2 s and 1.7 s reload times. While it plays, the weapon cants and kicks as the magazine seats and the action closes. Picking up a weapon plays a grab and a magazine seat, and an empty gun clicks.
+- **Your weapon.** Close recordings of a Walther PPQ 9 mm and an AK-47, with a random take, a few percent of pitch variation and a low thump underneath. They play the moment you fire, without waiting for the shot to be validated. The knife's slash is a swept noise whoosh that crosses from right to left as the arm moves; a stab is a shorter, lower rush as the arm drives forward. A blade that strikes metal, brick or concrete knocks and rings briefly; on wood it thunks.
+- **Handling.** Switching plays a holster rustle, then a knife draw or a grab and ready click, timed to the 560 ms lower-and-raise. Reloads play a magazine change and slide or charging-handle recording cut to the 1.2 s and 1.7 s reload times. While it plays, the weapon cants and kicks as the magazine seats and the action closes. Picking up a weapon or magazines plays a grab and a magazine seat, and an empty gun clicks.
 - **Movement.** Footsteps follow the head bob, one per low point, alternating slightly left and right. Every surface in the market, paving, asphalt and floors alike, sounds like concrete. Jumps and landings scale with fall speed.
 - **Other players.** Their shots, footsteps, landings, reloads and pickups come from where they are. A shot within 14 m uses the close recording; further away it uses a mid-distance recording with its own street echo. A round that passes within 3 m of your head adds a supersonic crack and whiz from where it passed. Bullets striking cover within 45 m make a stone impact, and hits on other players thud at the target.
 - **Bullets striking things.** Concrete and ground crack and chip, metal rings, wood thunks, glass ticks and cardboard or plastic thump, each positioned where the round struck. Glass shatters, crates splinter and concrete crumbles when they break.
 - **Grenades.** A pin click and swing when thrown, clinks as it bounces, and a synthesised explosion: a sharp crack, a roaring low-passed body and a sub-bass drop with a long street echo. Distant blasts lose the crack and keep the rumble.
 - **Movement extras.** Boots on steel rungs when climbing a ladder.
+- **Brass.** Spent cases ring as they land: a bright ring for 9 mm brass, a duller one for the carbine's lacquered steel, made of four inharmonic partials with a short decay. An empty magazine dropped in a reload clatters. Both are positioned where they land and dulled behind cover.
 - **Being hit.** A body blow and low thump with a brief muffling of the whole mix; elimination keeps the mix muffled until you respawn.
 - **Confirmation.** A short high tick for a hit, a metallic ring added for a headshot, and a heavier thunk with a bright ring for an elimination.
 
@@ -50,3 +51,4 @@ A pistol shot placed 10 m to the screen-right measured 4.6 dB louder in the righ
 - Sound does not travel with a delay over distance, and there is no ambient market sound, voice or music.
 - Other players' weapon switches are silent, and remote reloads start when the leader's snapshot arrives.
 - The reload motion is procedural; the view models still have no authored reload clip.
+- Other players' knife strokes are heard when the blade lands, not as their arm starts to move.
