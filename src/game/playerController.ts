@@ -1,9 +1,9 @@
 import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
-import { CollisionWorld } from "../world/collision";
+import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
 import { LEAN_OFFSET } from "./combatRules";
-import { type Ladder } from "../world/rooftops";
+import { type Ladder } from "../world/climbing";
 
 export interface PlayerMotion {
   moving: boolean;
@@ -121,12 +121,10 @@ export class PlayerController {
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
-  private collision: CollisionWorld;
   private spawnSlot = 0;
 
   constructor(private camera: PerspectiveCamera, private canvas: HTMLCanvasElement, private data: ArenaData, arena: Arena, private physics: PhysicsWorld) {
     this.arena = arena;
-    this.collision = new CollisionWorld(data);
     canvas.tabIndex = 0;
     canvas.addEventListener("pointerdown", this.onPointerDown);
     canvas.addEventListener("pointermove", this.onPointerMove);
@@ -143,7 +141,7 @@ export class PlayerController {
   reset(arena: Arena): void {
     this.arena = arena;
     this.physics.setArena(arena);
-    const spawn = this.collision.findSpawn(arena, this.spawnSlot);
+    const spawn = spawnPoint(this.data, this.spawnSlot);
     const position = this.physics.reset(spawn.east, spawn.north);
     this.east = position.east;
     this.north = position.north;
@@ -227,7 +225,7 @@ export class PlayerController {
 
   setSpawnSlot(slot: number): void {
     if (slot === this.spawnSlot) return;
-    const standingAtSpawn = Array.from({ length: 8 }, (_, index) => this.collision.findSpawn(this.arena, index))
+    const standingAtSpawn = Array.from({ length: 8 }, (_, index) => spawnPoint(this.data, index))
       .some((spawn) => Math.hypot(this.east - spawn.east, this.north - spawn.north) < 1.5);
     this.spawnSlot = slot;
     if (standingAtSpawn) this.reset(this.arena);
@@ -408,7 +406,7 @@ export class PlayerController {
   }
 
   // On a ladder: W climbs, S descends, Space lets go backward. At the top the player climbs
-  // over the edge onto the roof; at the bottom, stepping down lets go.
+  // over the edge onto the platform; at the bottom, stepping down lets go.
   private stepLadder(delta: number, input: number): void {
     const ladder = this.climbing!;
     const climb = input * 2.6 * delta;

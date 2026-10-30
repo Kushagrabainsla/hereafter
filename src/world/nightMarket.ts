@@ -1,16 +1,17 @@
 import {
   AdditiveBlending, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group,
   InstancedMesh, LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D,
-  PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, SphereGeometry, Vector3, type Material as SurfaceMaterial,
+  MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, SphereGeometry, Sprite, SpriteMaterial,
+  Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
+import { clamp, float, materialColor, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { type ArenaData, type LayoutBox, type MapLayout } from "./arena";
+import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
 import { type Material } from "./materials";
-import { type WorldEntity } from "./entities";
-import { type InstanceRef } from "./scenery";
+import { type InstanceRef, type WorldEntity } from "./entities";
 import { type SurfaceTextures } from "./surfaceTextures";
 import { propEntity, type PropModel } from "./props";
-import { addRoofAccess, type Ladder, type Stair } from "./rooftops";
+import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 
 // The SoFA night market: a 60 m square back-alley block at dusk with three lanes. The market
 // alley (x -8.5..0.5) is lined with wooden stalls; the service alley (x 8.5..17) runs behind
@@ -96,7 +97,6 @@ box(20.6, 21.4, 0, 1.1, -0.8, 5.2, "wood", "woodBar");
 box(19.4, 20.8, 0, 0.85, 7.4, 9.6, "wood", "poolTable");
 box(21.2, 22.2, 4.2, 5.0, 7.2, 9.6, "wood", "sofa");
 // The bar stair: a ramp rising north along the back wall from the bar floor to the upper room.
-const STAIR_RISE = 0.18, STAIR_RUN = 0.28;
 const stair: Stair = (() => {
   const height = 4.2, run = Math.ceil(height / STAIR_RISE) * STAIR_RUN, start = { x: 23.85, z: -1.4 };
   return { start, tx: 0, tz: 1, nx: -1, nz: 0, ground: 0, height, run, landing: { x: 23.85, z: start.z + run + 0.7 }, top: height };
@@ -177,7 +177,7 @@ const propSpots: [string, number, number, number, number][] = [
   ["crate_wood_large", 19.0, 1.5, 4.2, 0.3], ["cardboard_box", 18.2, -1.0, 4.2, 0.5],
   ["plastic_crate", -13.9, -5.6, 0, 0.2], ["cardboard_box", -14.0, 13.6, 0, 0.4],
 ];
-// A few real lights; strings, lanterns and signs glow without lighting anything.
+// The key lights used where the renderer cannot cluster many lights (WebGL 2).
 const pointLights: [number, number, number, number, number][] = [
   [-4, 4.6, 14, 0xffb066, 30], [-4, 4.6, -9, 0xffb066, 30], [-11.6, 3.1, 4, 0xffc887, 18],
   [20.2, 3.4, 4, 0xff9ab0, 10], [12.75, 4.2, 12, 0xffa860, 26], [12.75, 4.2, -14, 0xffa860, 26],
@@ -186,10 +186,9 @@ const pointLights: [number, number, number, number, number][] = [
 export const NIGHT_MARKET: MapLayout = {
   id: "night-market",
   name: "Night Market",
-  sky: "dusk",
   spawns: [
     { east: -4, north: 27.6, heading: 180 }, { east: 12.75, north: -27.6, heading: 0 },
-    { east: -4, north: -28.6, heading: 0 }, { east: 12.75, north: 27.6, heading: 180 },
+    { east: -7.8, north: -28.6, heading: 0 }, { east: 12.75, north: 27.6, heading: 180 },
     { east: -6.5, north: 27.6, heading: 180 }, { east: 15, north: -27.6, heading: 0 },
     { east: 4.5, north: -28, heading: 0 }, { east: 4.5, north: 28, heading: 180 },
   ],
@@ -202,16 +201,11 @@ export const NIGHT_MARKET: MapLayout = {
   solids,
 };
 
+// The playable square: 60 m across, centred on the origin.
+export const MARKET_ARENA: Arena = { sizeMeters: 60 };
+
 export function nightMarketData(): ArenaData {
-  return {
-    version: 1,
-    center: { latitude: 0, longitude: 0 },
-    extentMeters: 80,
-    source: { osm: "", osmLicense: "", osmLicenseUrl: "", osmAttribution: "", elevation: "", elevationLicense: "" },
-    elevation: { gridSize: 5, meters: new Array(25).fill(0), baseMeters: 0 },
-    buildings: [], roads: [], parks: [], trees: [],
-    layout: NIGHT_MARKET,
-  };
+  return { extentMeters: 80, elevation: { gridSize: 5, meters: new Array(25).fill(0), baseMeters: 0 }, layout: NIGHT_MARKET };
 }
 
 // ---------- drawing ----------
@@ -234,7 +228,13 @@ function seeded(seed: number): () => number {
   return () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
 }
 function stripes(a: string, b: string): CanvasTexture {
-  return canvasTexture(256, 64, (g, w, h) => { for (let i = 0; i < 8; i += 1) { g.fillStyle = i % 2 ? b : a; g.fillRect(i * w / 8, 0, w / 8 + 1, h); } });
+  return canvasTexture(256, 64, (g, w, h) => {
+    for (let i = 0; i < 8; i += 1) { g.fillStyle = i % 2 ? b : a; g.fillRect(i * w / 8, 0, w / 8 + 1, h); }
+    // Weathering: a darker scalloped hem and faint creases.
+    const hem = g.createLinearGradient(0, h * 0.7, 0, h);
+    hem.addColorStop(0, "rgba(0,0,0,0)"); hem.addColorStop(1, "rgba(0,0,0,0.35)");
+    g.fillStyle = hem; g.fillRect(0, 0, w, h);
+  });
 }
 function planks(base: string, tile = 1): CanvasTexture {
   const r = seeded(base.length * 97 + base.charCodeAt(2));
@@ -243,42 +243,159 @@ function planks(base: string, tile = 1): CanvasTexture {
     for (let y = 0; y < h; y += 32) {
       g.fillStyle = `rgba(0,0,0,${0.2 + r() * 0.15})`; g.fillRect(0, y, w, 3);
       for (let i = 0; i < 12; i += 1) { g.fillStyle = `rgba(255,220,180,${r() * 0.08})`; g.fillRect(0, y + 4 + r() * 26, w, 1); }
+      for (let i = 0; i < 3; i += 1) { g.fillStyle = `rgba(30,15,5,${0.15 + r() * 0.2})`; g.beginPath(); g.ellipse(r() * w, y + 8 + r() * 18, 3 + r() * 5, 1.5 + r() * 2, 0, 0, 7); g.fill(); }
     }
   }, tile);
 }
 function tiles(): CanvasTexture {
   return canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = "#cfd2cc"; g.fillRect(0, 0, w, h);
-    g.fillStyle = "#eef0ea";
-    for (let y = 0; y < h; y += 32) for (let x = 0; x < w; x += 64) g.fillRect(x + 2 + (y / 32 % 2) * 32, y + 2, 60, 28);
+    g.fillStyle = "#b9bdb6"; g.fillRect(0, 0, w, h);
+    const r = seeded(41);
+    for (let y = 0; y < h; y += 32) for (let x = -64; x < w; x += 64) {
+      const shade = 226 + Math.floor(r() * 18);
+      g.fillStyle = `rgb(${shade},${shade + 2},${shade - 4})`;
+      g.fillRect(x + 2 + (y / 32 % 2) * 32, y + 2, 60, 28);
+    }
   }, 1);
 }
 function corrugated(color: string): CanvasTexture {
   return canvasTexture(256, 256, (g, w, h) => {
     g.fillStyle = color; g.fillRect(0, 0, w, h);
     for (let x = 0; x < w; x += 32) { g.fillStyle = "rgba(255,255,255,0.12)"; g.fillRect(x, 0, 8, h); g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(x + 20, 0, 6, h); }
+    const rust = g.createLinearGradient(0, h * 0.6, 0, h);
+    rust.addColorStop(0, "rgba(90,50,30,0)"); rust.addColorStop(1, "rgba(90,50,30,0.45)");
+    g.fillStyle = rust; g.fillRect(0, 0, w, h);
   }, 1.2);
 }
-function signTexture(text: string, background: string, ink: string, width: number, height: number): CanvasTexture {
-  return canvasTexture(width, height, (g) => {
-    g.fillStyle = background; g.fillRect(0, 0, width, height);
-    g.fillStyle = ink; g.font = `700 ${Math.round(height * 0.62)}px Helvetica, Arial, sans-serif`; g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(text, width / 2, height / 2 + 4, width * 0.92);
-  });
-}
-function glowSpot(): CanvasTexture {
+function softSpot(): CanvasTexture {
   return canvasTexture(128, 128, (g, w, h) => {
     const gradient = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
     gradient.addColorStop(0, "rgba(255,255,255,0.9)"); gradient.addColorStop(0.4, "rgba(255,255,255,0.35)"); gradient.addColorStop(1, "rgba(255,255,255,0)");
     g.fillStyle = gradient; g.fillRect(0, 0, w, h);
   });
 }
-export function duskSky(): CanvasTexture {
-  return canvasTexture(64, 512, (g, w, h) => {
-    const gradient = g.createLinearGradient(0, 0, 0, h);
-    gradient.addColorStop(0, "#0d1330"); gradient.addColorStop(0.32, "#2a2f5c"); gradient.addColorStop(0.46, "#7a4f72");
-    gradient.addColorStop(0.5, "#e98a52"); gradient.addColorStop(0.53, "#3a3040"); gradient.addColorStop(1, "#16151c");
-    g.fillStyle = gradient; g.fillRect(0, 0, w, h);
+
+// A sign as a colour map and an emissive map. Neon signs are tubes on a dark board: only the
+// letters and the border glow. Lightboxes glow across the whole face. Vertical signs stack
+// their letters.
+interface SignStyle { neon: boolean; vertical?: boolean }
+function signTextures(text: string, board: string, ink: string, width: number, height: number, style: SignStyle): [CanvasTexture, CanvasTexture] {
+  const letters = style.vertical ? [...text.replace(/ /g, "")] : [text];
+  const size = style.vertical ? Math.min(width * 0.62, height / letters.length * 0.8) : height * 0.56;
+  const at = (i: number): [number, number] => style.vertical ? [width / 2, height * (i + 0.5) / letters.length] : [width / 2, height / 2 + size * 0.04];
+  const lettering = (g: CanvasRenderingContext2D, glowing: boolean): void => {
+    g.font = `${style.neon ? 600 : 700} ${Math.round(size)}px "Avenir Next Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    if (style.neon) {
+      const inset = Math.min(width, height) * 0.08, radius = Math.min(width, height) * 0.12;
+      g.lineWidth = Math.max(2, Math.min(width, height) * 0.035);
+      g.strokeStyle = ink;
+      if (glowing) { g.shadowColor = ink; g.shadowBlur = Math.min(width, height) * 0.12; }
+      g.beginPath();
+      g.roundRect(inset, inset, width - inset * 2, height - inset * 2, radius);
+      g.stroke();
+      g.lineWidth = Math.max(2, size * 0.09);
+      letters.forEach((letter, i) => { const [x, y] = at(i); g.strokeText(letter, x, y, width * 0.84); });
+      g.shadowBlur = 0;
+      // The bright core of each tube.
+      g.lineWidth = Math.max(1, size * 0.035);
+      g.strokeStyle = glowing ? "#ffffff" : ink;
+      g.globalAlpha = glowing ? 0.8 : 0.5;
+      letters.forEach((letter, i) => { const [x, y] = at(i); g.strokeText(letter, x, y, width * 0.84); });
+      g.globalAlpha = 1;
+    } else {
+      g.fillStyle = ink;
+      letters.forEach((letter, i) => { const [x, y] = at(i); g.fillText(letter, x, y, width * 0.9); });
+    }
+  };
+  const color = canvasTexture(width, height, (g) => {
+    g.fillStyle = board; g.fillRect(0, 0, width, height);
+    if (!style.neon) {
+      const shade = g.createLinearGradient(0, 0, 0, height);
+      shade.addColorStop(0, "rgba(255,255,255,0.12)"); shade.addColorStop(1, "rgba(0,0,0,0.25)");
+      g.fillStyle = shade; g.fillRect(0, 0, width, height);
+    }
+    lettering(g, false);
+  });
+  const glow = canvasTexture(width, height, (g) => {
+    g.fillStyle = style.neon ? "#000000" : board; g.fillRect(0, 0, width, height);
+    lettering(g, true);
+  });
+  return [color, glow];
+}
+
+// What a lit window shows: eight kinds of room seen from the alley.
+function windowInterior(kind: number): CanvasTexture {
+  return canvasTexture(128, 160, (g, w, h) => {
+    const vertical = (top: string, bottom: string): void => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, top); gr.addColorStop(1, bottom); g.fillStyle = gr; g.fillRect(0, 0, w, h); };
+    const glowAt = (x: number, y: number, radius: number, color: string): void => { const gr = g.createRadialGradient(x, y, 0, x, y, radius); gr.addColorStop(0, color); gr.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = gr; g.fillRect(0, 0, w, h); };
+    switch (kind) {
+      case 0: // warm room between heavy curtains
+        vertical("#a8603a", "#ffcf8a"); glowAt(w * 0.5, h * 0.35, w * 0.6, "rgba(255,230,170,0.7)");
+        for (const [x0, x1] of [[0, w * 0.27], [w * 0.73, w]]) { g.fillStyle = "#5e1a1e"; g.fillRect(x0, 0, x1 - x0, h); for (let x = x0; x < x1; x += 6) { g.fillStyle = "rgba(255,120,100,0.12)"; g.fillRect(x, 0, 2, h); } }
+        break;
+      case 1: // blinds
+        vertical("#f3d49a", "#ffe9bd");
+        for (let y = 4; y < h; y += 9) { g.fillStyle = "rgba(150,105,60,0.75)"; g.fillRect(0, y, w, 4); }
+        break;
+      case 2: // television light
+        vertical("#16233f", "#2c4c80"); glowAt(w * 0.3, h * 0.55, w * 0.7, "rgba(140,200,255,0.75)");
+        g.fillStyle = "#0b0f18"; g.beginPath(); g.roundRect(w * 0.1, h * 0.72, w * 0.8, h * 0.32, 14); g.fill();
+        break;
+      case 3: // plant against a warm room
+        vertical("#c88a52", "#ffd59a");
+        g.fillStyle = "#15200f";
+        for (let i = 0; i < 9; i += 1) { g.beginPath(); g.ellipse(w * (0.62 + Math.sin(i * 2.3) * 0.18), h * (0.55 + Math.cos(i * 1.7) * 0.14), w * 0.13, h * 0.05, i, 0, 7); g.fill(); }
+        g.fillRect(w * 0.55, h * 0.8, w * 0.22, h * 0.2);
+        break;
+      case 4: // kitchen
+        vertical("#fff6de", "#ffe7b6");
+        g.fillStyle = "#d6bf98"; for (let x = 6; x < w; x += 30) g.fillRect(x, 6, 26, h * 0.3);
+        g.fillStyle = "rgba(90,70,40,0.6)"; g.fillRect(0, h * 0.72, w, 5);
+        break;
+      case 5: // a dim room with one lamp
+        vertical("#1e130d", "#3a2418"); glowAt(w * 0.68, h * 0.6, w * 0.55, "rgba(255,180,100,0.85)");
+        g.fillStyle = "#2a1a10"; g.beginPath(); g.moveTo(w * 0.58, h * 0.48); g.lineTo(w * 0.78, h * 0.48); g.lineTo(w * 0.74, h * 0.38); g.lineTo(w * 0.62, h * 0.38); g.fill();
+        break;
+      case 6: // half curtain
+        vertical("#ffe0a8", "#ffd090");
+        g.fillStyle = "#efe2c8"; g.fillRect(0, h * 0.52, w, h * 0.48);
+        for (let x = 0; x < w; x += 8) { g.fillStyle = "rgba(160,130,90,0.25)"; g.fillRect(x, h * 0.52, 2, h * 0.48); }
+        break;
+      default: // a room lit by a pink sign
+        vertical("#5a1438", "#ff4fa0"); glowAt(w * 0.5, h * 0.8, w * 0.7, "rgba(255,150,210,0.6)");
+    }
+    // The window's own grime and a soft vignette from the reveal.
+    const edge = g.createRadialGradient(w / 2, h / 2, w * 0.35, w / 2, h / 2, w * 0.85);
+    edge.addColorStop(0, "rgba(0,0,0,0)"); edge.addColorStop(1, "rgba(0,0,0,0.45)");
+    g.fillStyle = edge; g.fillRect(0, 0, w, h);
+  });
+}
+
+function poster(lines: string[], background: string, ink: string, accent: string): CanvasTexture {
+  return canvasTexture(192, 272, (g, w, h) => {
+    g.fillStyle = background; g.fillRect(0, 0, w, h);
+    g.fillStyle = accent; g.beginPath(); g.arc(w * 0.72, h * 0.3, w * 0.32, 0, 7); g.fill();
+    g.fillStyle = ink; g.textAlign = "left"; g.textBaseline = "alphabetic";
+    lines.forEach((line, i) => { g.font = `800 ${i === 0 ? 42 : 22}px Helvetica, Arial, sans-serif`; g.fillText(line, 12, h * 0.62 + i * (i === 0 ? 0 : 30) + (i > 0 ? 18 : 0), w - 20); });
+    // Torn, weathered paper.
+    for (let i = 0; i < 40; i += 1) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.06})`; g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 20, 1 + Math.random() * 3); }
+    g.fillStyle = "rgba(255,255,255,0.08)"; g.fillRect(0, 0, w, 6);
+  });
+}
+
+function mural(): CanvasTexture {
+  return canvasTexture(768, 384, (g, w, h) => {
+    g.fillStyle = "#1d2433"; g.fillRect(0, 0, w, h);
+    const blobs: [number, number, number, string][] = [[0.15, 0.6, 0.28, "#ff5f7a"], [0.42, 0.35, 0.24, "#ffb347"], [0.7, 0.62, 0.3, "#3fd0c9"], [0.9, 0.3, 0.2, "#9b6bff"]];
+    for (const [x, y, r, c] of blobs) { g.fillStyle = c; g.beginPath(); g.ellipse(x * w, y * h, r * w * 0.6, r * h * 0.9, 0.4, 0, 7); g.fill(); }
+    g.font = `900 ${Math.round(h * 0.55)}px "Arial Black", Helvetica, Arial, sans-serif`;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.lineWidth = 14; g.strokeStyle = "#111318"; g.strokeText("SOFA", w / 2, h * 0.52);
+    g.fillStyle = "#fff4d6"; g.fillText("SOFA", w / 2, h * 0.52);
+    g.lineWidth = 4; g.strokeStyle = "#ff5f7a"; g.strokeText("SOFA", w / 2 + 6, h * 0.52 + 6);
+    for (let i = 0; i < 24; i += 1) { const x = Math.random() * w; g.fillStyle = blobs[i % 4][3]; g.fillRect(x, h * 0.75, 3, 20 + Math.random() * 60); }
   });
 }
 
@@ -329,6 +446,28 @@ class Batch {
   }
 }
 
+// Vertical blade signs sticking out over the alleys: wall position, height, the wall it hangs
+// from, text and neon colour.
+const blades: [number, number, number, Face, string, string][] = [
+  [-8.5, 24.0, 6.6, "px", "HOTEL", "#ff4f7d"], [-8.5, -3.6, 6.4, "px", "KARAOKE", "#57e6ff"],
+  [0.5, 18.4, 6.2, "nx", "NOODLES", "#ffb347"], [0.5, -18.2, 5.9, "nx", "CAFE", "#7dff9a"],
+  [17, 13.5, 6.2, "nx", "GAME BAR", "#c28bff"], [8.5, -11.5, 5.6, "px", "TATTOO", "#ff5f5f"],
+];
+// Power and phone cables across the alleys: [x0, z0, x1, z1, height, sag].
+const cables: [number, number, number, number, number, number][] = [
+  [-8.5, 26.5, 0.5, 25.5, 9.4, 0.7], [-8.5, 11.5, 0.5, 13.0, 8.4, 0.6], [-8.5, -2.5, 0.5, -1.0, 9.2, 0.8], [-8.5, -17.5, 0.5, -19.0, 8.6, 0.6],
+  [-8.5, 20.0, 0.5, 5.0, 10.2, 0.9], [8.5, 24.5, 17, 22.5, 8.8, 0.6], [8.5, 9.5, 17, 11.0, 9.6, 0.7], [8.5, -6.5, 17, -4.5, 8.2, 0.6], [8.5, -18.5, 17, -21.0, 9.0, 0.8],
+];
+// Water tanks on the roofs that line the alleys, seen against the sky: [x, roof height, z].
+const tanks: [number, number, number][] = [[-11.6, 12, 24], [-12.2, 11, -24], [20.4, 14, 22], [20.2, 13, -18], [4.5, 12, 18]];
+const posters: [number, number, number, Face, string[], string, string, string][] = [
+  [8.5, 14.2, 1.7, "px", ["LIVE", "FRI · SAT", "THE LANTERN"], "#f2e3c4", "#2a1a14", "#ff6b4a"],
+  [8.5, 22.6, 1.6, "px", ["LOST", "ORANGE CAT", "CALL 408"], "#fbf7ee", "#1e1e1e", "#ffb347"],
+  [17, -14.0, 1.7, "nx", ["ART", "WALK", "1ST FRIDAY"], "#1f2a44", "#fff2d0", "#3fd0c9"],
+  [8.5, -15.6, 1.6, "px", ["SOFA", "STREET FOOD", "EVERY NIGHT"], "#2b1420", "#ffd8a8", "#ff4f7d"],
+  [-8.5, -13.4, 1.7, "px", ["NOODS", "OPEN LATE", "2 FOR $9"], "#ffe36e", "#2a1a14", "#e2453c"],
+];
+
 export interface BuiltMap {
   refs: Map<string, InstanceRef[]>;
   // Plain objects drawn for an entity, hidden while it is destroyed.
@@ -336,16 +475,37 @@ export interface BuiltMap {
   entities: WorldEntity[];
   props: WorldEntity[];
   ladders: Ladder[];
+  // Adds the market's lights: every lamp, bulb string, sign and lit shop when the renderer
+  // can afford many lights, otherwise six key lights and painted pools of light.
+  light: (many: boolean) => void;
+  // Lanterns sway, a neon sign flickers and steam rises.
+  update: (seconds: number) => void;
   dispose: () => void;
 }
+
+type NodeOptions = ConstructorParameters<typeof MeshStandardNodeMaterial>[0];
 
 export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[]): BuiltMap {
   const owned: CanvasTexture[] = [];
   const own = <T extends CanvasTexture>(texture: T): T => { owned.push(texture); return texture; };
   const std = (options: ConstructorParameters<typeof MeshStandardMaterial>[0]): MeshStandardMaterial => new MeshStandardMaterial(options);
-  const brick = (color: number): MeshStandardMaterial => std({ map: textures.brick, normalMap: textures.brickNormal, color, roughness: 0.92 });
-  const plaster = (color: number): MeshStandardMaterial => std({ map: textures.plaster, normalMap: textures.plasterNormal, color, roughness: 0.95 });
-  const concrete = (color: number): MeshStandardMaterial => std({ map: textures.concrete, normalMap: textures.concreteNormal, color, roughness: 0.9 });
+  // Walls darken and dirty toward the ground and in broad patches; the paving holds puddles
+  // that turn dark and glossy and pick up the lights and the sky.
+  const P = positionWorld;
+  const patches = clamp(mx_fractal_noise_float(P.mul(vec3(0.21, 0.08, 0.21))).mul(0.5).add(0.5), 0, 1);
+  const footing = smoothstep(0.05, 2.9, P.y.add(mx_noise_float(P.mul(0.75)).mul(0.5)));
+  const grime = mix(float(0.46), float(1), footing).mul(mix(float(0.72), float(1.08), patches));
+  const wall = (options: NodeOptions): MeshStandardNodeMaterial => { const material = new MeshStandardNodeMaterial(options); material.colorNode = materialColor.mul(grime); return material; };
+  const wet = smoothstep(0.16, 0.36, mx_fractal_noise_float(vec3(P.x.mul(0.13), float(0.7), P.z.mul(0.13))));
+  const street = (options: NodeOptions): MeshStandardNodeMaterial => {
+    const material = new MeshStandardNodeMaterial(options);
+    material.colorNode = materialColor.mul(mix(float(1), float(0.55), wet));
+    material.roughnessNode = mix(materialRoughness, float(0.035), wet);
+    return material;
+  };
+  const brick = (color: number): MeshStandardNodeMaterial => wall({ map: textures.brick, normalMap: textures.brickNormal, color, roughness: 0.92 });
+  const plaster = (color: number): MeshStandardNodeMaterial => wall({ map: textures.plaster, normalMap: textures.plasterNormal, color, roughness: 0.95 });
+  const concrete = (color: number): MeshStandardNodeMaterial => wall({ map: textures.concrete, normalMap: textures.concreteNormal, color, roughness: 0.9 });
   const paint = (color: number, metalness = 0.2, roughness = 0.6): MeshStandardMaterial => std({ color, metalness, roughness });
   const glow = (color: number, intensity: number): MeshStandardMaterial => std({ color: 0x000000, emissive: color, emissiveIntensity: intensity });
   const wood = (base: string): MeshStandardMaterial => std({ map: own(planks(base)), roughness: 0.85 });
@@ -354,21 +514,22 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     brickWarm: brick(0xc9a48c), brickDark: brick(0x9b7d6a), brickRed: brick(0xb08a74), brickCap: brick(0xa88672),
     plasterCream: plaster(0xe6cfaa), plasterTeal: plaster(0xa8c0b9), plasterSand: plaster(0xd9b98f), plasterOchre: plaster(0xc9a46a), plasterInside: plaster(0xe8dcc6),
     concreteCap: concrete(0xb7b2aa), slab: concrete(0xbdb8b0),
-    shopGreen: paint(0x1d3b36, 0.1, 0.6), barRed: paint(0x5a1a1f, 0.1, 0.6), tile: std({ map: own(tiles()), roughness: 0.4 }),
-    woodDark: wood("#5e3b22"), woodBar: wood("#4a2a18"), woodTable: wood("#6e4a2c"), woodStall: wood("#8a5a35"), floor: wood("#7a5232"), pallet: wood("#9a7a52"),
+    shopGreen: wall({ color: 0x1d3b36, metalness: 0.1, roughness: 0.55 }), barRed: wall({ color: 0x5a1a1f, metalness: 0.1, roughness: 0.55 }), tile: std({ map: own(tiles()), roughness: 0.3 }),
+    woodDark: wood("#5e3b22"), woodBar: wood("#4a2a18"), woodTable: wood("#6e4a2c"), woodStall: wood("#8a5a35"), floor: wood("#7a5232"), pallet: wood("#9a7a52"), tank: wood("#5a4030"),
     poolTable: paint(0x1f6b3a, 0, 0.9), sofa: paint(0x6b2430, 0, 0.85),
     steel: paint(0x9aa3a8, 0.8, 0.3), steelDark: paint(0x3a3f44, 0.6, 0.45), dumpster: paint(0x2f5d3a, 0.4, 0.55), dumpsterLid: paint(0x1f3a26, 0.3, 0.6),
     grating: paint(0x3d4447, 0.7, 0.5), rail: paint(0x22262a, 0.5, 0.6), stairRail: paint(0x22262a, 0.5, 0.6),
-    frame: paint(0xd9d4c8, 0, 0.7), recess: paint(0x07090c, 0, 1), door: paint(0x3a2a22, 0.1, 0.7), trim: concrete(0xcfc8ba),
+    frame: paint(0xcfc6b4, 0, 0.7), mullion: paint(0x2a2622, 0.2, 0.6), sill: concrete(0xd8d0c0), recess: paint(0x07090c, 0, 1), door: paint(0x3a2a22, 0.1, 0.7), trim: concrete(0xcfc8ba),
     shutter: std({ map: own(corrugated("#7d8287")), metalness: 0.5, roughness: 0.5 }),
-    truck: paint(0xf1e6cc, 0.2, 0.5), truckStripe: paint(0x1f7a74, 0.2, 0.5), rubber: paint(0x151515, 0, 0.9), stool: paint(0xb8432f, 0.1, 0.6),
+    truck: paint(0xf1e6cc, 0.2, 0.45), truckStripe: paint(0x1f7a74, 0.2, 0.5), rubber: paint(0x151515, 0, 0.9), stool: paint(0xb8432f, 0.1, 0.6),
     awning0: awnings[0], awning1: awnings[1], awning2: awnings[2], awning3: awnings[3],
     goods0: paint(0xe8b04a, 0, 0.8), goods1: paint(0xd3542f, 0, 0.8), goods2: paint(0x7fae4a, 0, 0.8), goods3: paint(0xf2e2c0, 0, 0.8),
-    lampGlow: glow(0xffc27a, 3), sconce: glow(0xffb070, 2.5), menuGlow: glow(0xffdca8, 1.4), bottle: glow(0x6fd0c0, 0.6), neonPink: glow(0xff5c9a, 2.2),
-    pavement: std({ map: textures.pavement, normalMap: textures.pavementNormal, color: 0x8e8a86, roughness: 0.92 }),
-    asphalt: std({ map: textures.asphalt, normalMap: textures.asphaltNormal, color: 0x7d7d7d, roughness: 0.95 }),
-    photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.85, roughness: 0.6 }),
-    photoStone: std({ map: textures.storefrontStone, emissive: 0xffffff, emissiveMap: textures.storefrontStone, emissiveIntensity: 0.85, roughness: 0.6 }),
+    lampGlow: glow(0xffc27a, 4), sconce: glow(0xffb070, 3.5), menuGlow: glow(0xffcf8a, 0.45), bottle: glow(0x6fd0c0, 0.9), tailLight: glow(0xff2a1a, 2.4),
+    pavement: street({ map: textures.pavement, normalMap: textures.pavementNormal, color: 0xa29d97, roughness: 0.85 }),
+    asphalt: street({ map: textures.asphalt, normalMap: textures.asphaltNormal, color: 0x7d7d7d, roughness: 0.92 }),
+    photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
+    photoStone: std({ map: textures.storefrontStone, emissive: 0xffffff, emissiveMap: textures.storefrontStone, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
+    poster: std({ color: 0xffffff, roughness: 0.8 }),
   };
   const statics = new Batch(materials);
   const root = new Group();
@@ -412,12 +573,13 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     }
   }
 
-  // Cornices along the top of every alley-facing wall and a base course at the bottom.
+  // Cornices along the top of every alley-facing wall, and a string course under the windows.
   for (const facade of facades) {
     const [nx, nz] = FACE_NORMAL[facade.face], length = facade.to - facade.from, mid = (facade.from + facade.to) / 2;
-    const top = facade.y1 + 1.6;
-    if (nx) statics.box("trim", 0.35, 0.45, length, facade.at + nx * 0.12, top, mid);
-    else statics.box("trim", length, 0.45, 0.35, mid, top, facade.at + nz * 0.12);
+    for (const [y, depth, height] of [[facade.y1 + 1.6, 0.35, 0.45], [facade.y0 - 1.55, 0.14, 0.18]]) {
+      if (nx) statics.box("trim", depth, height, length, facade.at + nx * depth / 3, y, mid);
+      else statics.box("trim", length, height, depth, mid, y, facade.at + nz * depth / 3);
+    }
   }
 
   // ---------- windows: breakable glass on every upper floor ----------
@@ -426,57 +588,85 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     const r = seeded(index * 131 + 7);
     for (let a = facade.from + 1.7; a <= facade.to - 1.6; a += 3.4) for (let y = facade.y0; y <= facade.y1; y += 3.3) {
       const [nx, nz] = FACE_NORMAL[facade.face];
-      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit ? 1 + Math.floor(r() * 2) : 0 });
+      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit ? 1 + Math.floor(r() * 8) : 0 });
     }
   });
-  for (const { z } of upperWindows) windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: 2 });
+  upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: 1 + index }));
   const windowGeometry = new PlaneGeometry(1.38, 1.76);
-  const glassLooks = [std({ color: 0x18212a, roughness: 0.1, metalness: 0.6 }), glow(0xffb866, 0.45), glow(0xffb866, 0.85)];
-  const counts = [0, 0, 0];
+  // Unlit panes are dark glass reflecting the dusk; lit ones show a room.
+  const intensities = [0.8, 0.75, 0.8, 0.75, 0.8, 0.75, 0.75, 0.85];
+  const glassLooks = [std({ color: 0x0e1318, roughness: 0.04, metalness: 0.9 }), ...intensities.map((intensity, kind) => {
+    const room = own(windowInterior(kind));
+    return std({ map: room, emissive: 0xffffff, emissiveMap: room, emissiveIntensity: intensity, roughness: 0.08, metalness: 0.2 });
+  })];
+  const counts = glassLooks.map(() => 0);
   for (const spot of windowSpots) counts[spot.lit] += 1;
   const glassMeshes = glassLooks.map((material, i) => { const mesh = new InstancedMesh(windowGeometry, material, Math.max(1, counts[i])); mesh.count = counts[i]; return mesh; });
+  const crossGeometry = mergeGeometries([new BoxGeometry(0.05, 1.76, 0.04), new BoxGeometry(1.38, 0.05, 0.04).translate(0, 0.3, 0)], false)!;
   const frames = new InstancedMesh(new BoxGeometry(1.62, 2.0, 0.08), materials.frame, windowSpots.length);
+  const mullions = new InstancedMesh(crossGeometry, materials.mullion, windowSpots.length);
+  const sills = new InstancedMesh(new BoxGeometry(1.8, 0.09, 0.2), materials.sill, windowSpots.length);
+  const lintels = new InstancedMesh(new BoxGeometry(1.8, 0.16, 0.08), materials.trim, windowSpots.length);
   const recesses = new InstancedMesh(windowGeometry, materials.recess, windowSpots.length);
   const refs = new Map<string, InstanceRef[]>();
   const entities: WorldEntity[] = [];
-  const used = [0, 0, 0];
-  const matrix = new Matrix4(), q = new Quaternion();
+  const used = glassLooks.map(() => 0);
+  const matrix = new Matrix4(), q = new Quaternion(), one = new Vector3(1, 1, 1);
   windowSpots.forEach((spot, index) => {
     const [nx, nz] = FACE_NORMAL[spot.face];
+    const at = (out: number, up = 0): Vector3 => new Vector3(spot.x + nx * out, spot.y + up, spot.z + nz * out);
     q.setFromAxisAngle(UP, FACE_YAW[spot.face]);
-    frames.setMatrixAt(index, matrix.compose(new Vector3(spot.x, spot.y, spot.z), q, new Vector3(1, 1, 1)));
-    recesses.setMatrixAt(index, matrix.compose(new Vector3(spot.x + nx * 0.045, spot.y, spot.z + nz * 0.045), q, new Vector3(1, 1, 1)));
+    frames.setMatrixAt(index, matrix.compose(at(0), q, one));
+    recesses.setMatrixAt(index, matrix.compose(at(0.045), q, one));
+    mullions.setMatrixAt(index, matrix.compose(at(0.085), q, one));
+    sills.setMatrixAt(index, matrix.compose(at(0.09, -1.05), q, one));
+    lintels.setMatrixAt(index, matrix.compose(at(0.05, 1.08), q, one));
     const mesh = glassMeshes[spot.lit], slot = used[spot.lit]++;
-    mesh.setMatrixAt(slot, matrix.compose(new Vector3(spot.x + nx * 0.06, spot.y, spot.z + nz * 0.06), q, new Vector3(1, 1, 1)));
+    mesh.setMatrixAt(slot, matrix.compose(at(0.06), q, one));
     const id = `window:${index}`;
     refs.set(id, [{ mesh, index: slot }]);
     entities.push({ id, kind: "window", material: "glass", maxHealth: 1, yaw: Math.atan2(nx, nz), center: { x: spot.x, y: spot.y, z: spot.z } });
   });
-  for (const mesh of [frames, recesses, ...glassMeshes]) { mesh.receiveShadow = true; root.add(mesh); }
+  for (const mesh of [frames, recesses, mullions, sills, lintels, ...glassMeshes]) { mesh.receiveShadow = true; root.add(mesh); }
 
   // ---------- shopfronts, signs, doors and shutters ----------
-  const signs: Mesh[] = [];
-  const sign = (text: string, background: string, ink: string, w: number, h: number, x: number, y: number, z: number, face: Face, intensity = 0.55): void => {
-    const height = 128, width = Math.min(2048, Math.round(height * w / h));
-    const texture = own(signTexture(text, background, ink, width, height));
-    const mesh = new Mesh(new PlaneGeometry(w, h), std({ map: texture, emissive: 0xffffff, emissiveMap: texture, emissiveIntensity: intensity, roughness: 0.7, side: DoubleSide }));
+  const signs: { mesh: Mesh; material: MeshStandardMaterial; base: number }[] = [];
+  const sign = (text: string, board: string, ink: string, w: number, h: number, x: number, y: number, z: number, face: Face, intensity: number, style: SignStyle): MeshStandardMaterial => {
+    const px = 128, width = Math.min(2048, Math.round(px * (style.vertical ? 1 : w / h))), height = Math.min(2048, Math.round(px * (style.vertical ? h / w : 1)));
+    const [map, emissiveMap] = signTextures(text, board, ink, width, height, style).map(own);
+    const material = std({ map, emissive: 0xffffff, emissiveMap, emissiveIntensity: intensity, roughness: style.neon ? 0.35 : 0.5, side: DoubleSide });
+    const mesh = new Mesh(new PlaneGeometry(w, h), material);
     mesh.position.set(x, y, z);
     mesh.rotation.y = FACE_YAW[face];
-    signs.push(mesh);
+    signs.push({ mesh, material, base: intensity });
     root.add(mesh);
+    return material;
   };
-  for (const shop of shopfronts) {
+  shopfronts.forEach((shop, index) => {
     const [nx, nz] = FACE_NORMAL[shop.face];
     const x = nx ? shop.at + nx * 0.04 : shop.along, z = nz ? shop.at + nz * 0.04 : shop.along;
     statics.plane(shop.photo === "cafe" ? "photoCafe" : "photoStone", shop.width, 3.1, x, 1.6, z, shop.face);
-    sign(shop.sign[0], shop.sign[1], shop.sign[2], shop.width, 0.7, x + nx * 0.02, 3.55, z + nz * 0.02, shop.face);
+    const neon = index % 2 === 1;
+    sign(shop.sign[0], neon ? "#0b0a0f" : shop.sign[1], shop.sign[2], shop.width, 0.7, x + nx * 0.02, 3.55, z + nz * 0.02, shop.face, neon ? 2.6 : 0.95, { neon });
+  });
+  sign("SOFA KITCHEN", "#2b1d16", "#ffe2b0", 8, 0.75, -8.46, 4.05, 4.5, "px", 1.0, { neon: false });
+  sign("THE LANTERN", "#0b0a0f", "#ff6fae", 4.2, 0.7, 15.38, 3.55, 6.2, "nx", 2.8, { neon: true });
+  sign("SOFA NIGHT MARKET", "#7a1f2b", "#ffe9c2", 7.6, 1.3, -4, 6.3, -23.5, "pz", 1.1, { neon: false });
+  sign("NIGHT MARKET", "#0b0a0f", "#ffcf5a", 7.2, 1.0, -4, 5.6, 29.5, "nz", 2.6, { neon: true });
+  const openSign = sign("OPEN", "#05070a", "#ff3d5a", 1.2, 0.5, 17.24, 2.1, 3.4, "nx", 3.0, { neon: true });
+  sign("MENU", "#1a1a1a", "#ffe9b0", 1.8, 0.9, -11.5, 2.4, 13.96, "nz", 0.8, { neon: false });
+  sign("BAO & BUNS", "#1f7a74", "#fff4dc", 3.0, 0.5, -4, 3.42, -26, "pz", 1.2, { neon: false });
+  statics.box("steelDark", 0.06, 0.2, 0.06, -5.2, 3.05, -26); statics.box("steelDark", 0.06, 0.2, 0.06, -2.8, 3.05, -26);
+  sign("ORDER HERE", "#0b0a0f", "#7dff9a", 1.4, 0.32, -6.1, 2.2, -24.76, "pz", 2.2, { neon: true });
+  // Blade signs: a bracket from the wall and a double-sided neon panel.
+  for (const [at, along, y, face, text, color] of blades) {
+    const [nx] = FACE_NORMAL[face];
+    const height = 0.42 * text.replace(/ /g, "").length + 0.36;
+    const out = at + nx * 0.5;
+    for (const side of [1, -1]) sign(text, "#0b0a0f", color, 0.62, height, out, y, along + side * 0.035, side > 0 ? "pz" : "nz", 2.4, { neon: true, vertical: true });
+    statics.box("steelDark", 0.66, height + 0.08, 0.06, out, y - height / 2 - 0.04, along);
+    statics.box("steelDark", 0.55, 0.05, 0.05, at + nx * 0.27, y + height / 2 - 0.1, along);
   }
-  sign("SOFA KITCHEN", "#2b1d16", "#ffe2b0", 8, 0.75, -8.46, 4.05, 4.5, "px", 0.7);
-  sign("THE LANTERN", "#2a0f1f", "#ff8fc0", 4.2, 0.7, 15.38, 3.55, 6.2, "nx", 1.1);
-  sign("SOFA NIGHT MARKET", "#7a1f2b", "#ffe9c2", 7.6, 1.3, -4, 6.3, -23.5, "pz", 0.8);
-  sign("NIGHT MARKET · OPEN LATE", "#20302f", "#ffd27a", 8, 1.0, -4, 5.6, 29.5, "nz", 0.8);
-  sign("OPEN", "#05070a", "#ff5c9a", 1.2, 0.5, 17.24, 2.1, 3.4, "nx", 1.6);
-  sign("MENU", "#1a1a1a", "#ffe9b0", 1.8, 0.9, -11.5, 2.4, 13.96, "nz", 0.6);
   // Back doors and ground-floor doors on blank walls.
   const doors: [number, number, Face][] = [[8.5, 18, "px"], [8.5, -8, "px"], [8.5, -20, "px"], [17, 15.5, "nx"], [17, -10.5, "nx"], [-8.5, 18.6, "px"], [0.5, 25, "nx"]];
   for (const [at, along, face] of doors) {
@@ -488,6 +678,23 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     statics.plane("shutter", 6, 3.6, x, 1.8, z, face);
     statics.box("trim", 6.6, 0.4, 0.3, x, 3.6, z);
   }
+  // Posters and a mural at street level.
+  const posterMaterials: MeshStandardMaterial[] = [];
+  for (const [at, along, y, face, lines, background, ink, accent] of posters) {
+    const [nx, nz] = FACE_NORMAL[face];
+    const material = std({ map: own(poster(lines, background, ink, accent)), roughness: 0.85 });
+    posterMaterials.push(material);
+    const mesh = new Mesh(new PlaneGeometry(0.62, 0.88), material);
+    mesh.position.set(nx ? at + nx * 0.03 : along, y, nz ? at + nz * 0.03 : along);
+    mesh.rotation.y = FACE_YAW[face];
+    mesh.receiveShadow = true;
+    root.add(mesh);
+  }
+  const muralMesh = new Mesh(new PlaneGeometry(5.6, 2.8), std({ map: own(mural()), roughness: 0.75 }));
+  muralMesh.position.set(16.97, 1.6, 21);
+  muralMesh.rotation.y = FACE_YAW.nx;
+  muralMesh.receiveShadow = true;
+  root.add(muralMesh);
 
   // ---------- restaurant and bar interiors ----------
   for (const z of [-2, 2.4, 6.8]) {
@@ -497,7 +704,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const z of [1, 4.5, 8]) statics.cylinder("lampGlow", 0.14, 0.2, -12.2, 2.8, z, 12, 0.05);
   statics.box("woodDark", 0.35, 0.05, 15, -14.8, 1.7, 5.5);
   statics.box("woodDark", 0.35, 0.05, 15, -14.8, 2.25, 5.5);
-  for (let z = -1.8; z <= 12.8; z += 0.9) statics.box(z % 1.8 < 0.9 ? "goods0" : "goods3", 0.25, 0.3, 0.3, -14.8, 1.75, z);
+  for (let z = -1.8; z <= 12.8; z += 0.9) statics.box(Math.abs(z) % 1.8 < 0.9 ? "goods0" : "goods3", 0.25, 0.3, 0.3, -14.8, 1.75, z);
   for (let z = -0.4; z <= 4.8; z += 0.9) statics.cylinder("stool", 0.2, 0.75, 20.0, 0, z, 10);
   statics.box("woodBar", 0.3, 0.05, 3.6, 24.3, 2.0, 8.0);
   for (let z = 6.2; z <= 9.6; z += 0.35) statics.box("bottle", 0.08, 0.3, 0.08, 24.25, 2.05, z);
@@ -528,7 +735,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   });
 
   // ---------- glass storefronts that shatter and can be climbed through ----------
-  const paneMaterial = std({ color: 0xa9c4cf, roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.22, depthWrite: false, side: DoubleSide });
+  const paneMaterial = std({ color: 0xa9c4cf, roughness: 0.03, metalness: 0.4, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide });
   panes.forEach((pane, index) => {
     const mesh = new Mesh(new PlaneGeometry(pane.z1 - pane.z0, pane.y1 - pane.y0), paneMaterial);
     mesh.position.set(pane.x, (pane.y0 + pane.y1) / 2, (pane.z0 + pane.z1) / 2);
@@ -547,6 +754,11 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   statics.box("truck", 6.2, 2.5, 2.4, -4, 0.55, -26);
   statics.box("truckStripe", 6.22, 0.35, 2.42, -4, 1.25, -26);
   statics.box("menuGlow", 2.8, 1.0, 0.05, -3.6, 1.75, -24.78);
+  statics.box("steelDark", 0.5, 0.3, 0.5, -5.4, 3.05, -26.4);
+  // The back of the truck: doors, a handle and tail lights.
+  statics.box("door", 2.6, 2.1, 0.04, -4, 0.75, -27.22);
+  statics.box("mullion", 0.04, 2.1, 0.06, -4, 0.75, -27.24);
+  for (const x of [-6.7, -1.3]) statics.box("tailLight", 0.32, 0.22, 0.05, x, 1.0, -27.23);
   for (const wx of [-2.1, 2.1]) for (const wz of [1.05, -1.05]) {
     const wheel = new CylinderGeometry(0.42, 0.42, 0.3, 16);
     wheel.applyMatrix4(new Matrix4().makeRotationX(Math.PI / 2));
@@ -562,62 +774,116 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0.15, 18.1);
   for (const [x, y, z] of [[8.8, 3.2, 20], [8.8, 6.6, -4], [8.8, 3.4, -20], [16.7, 5.5, 18], [16.7, 2.8, -24]]) statics.box("steelDark", 0.6, 0.55, 0.9, x, y, z);
   for (const [x, z] of [[16.85, 22], [8.65, -24], [-8.35, 10.3], [0.65, -25]]) statics.box("steelDark", 0.12, 9, 0.12, x, 0, z);
-  // Wall lamps along the service alley.
+  statics.cylinder("steelDark", 0.35, 0.03, 12.75, 0, -6, 20);
   for (const z of [20, 10, 0, -10, -20]) {
     statics.box("sconce", 0.25, 0.3, 0.4, 8.62, 3.3, z);
     statics.box("sconce", 0.25, 0.3, 0.4, 16.88, 3.3, z + 5);
   }
 
-  // ---------- string lights, lanterns and pools of light ----------
+  // ---------- rooftops against the sky ----------
+  for (const [x, roof, z] of tanks) {
+    for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) statics.box("steelDark", 0.12, 1.6, 0.12, x + dx, roof, z + dz);
+    statics.cylinder("tank", 1.15, 2.0, x, roof + 1.6, z, 16);
+    statics.cylinder("steelDark", 1.25, 0.7, x, roof + 3.6, z, 16, 0.08);
+  }
+  for (const [x, roof, z, height] of [[-20, 16, -33, 4.5], [10, 16, -34, 3.2], [-15, 15, 33, 3.8], [21, 15, 34, 5], [-24, 12, 18, 3]]) {
+    statics.box("steelDark", 0.08, height, 0.08, x, roof, z);
+    statics.box("steelDark", 1.2, 0.04, 0.04, x, roof + height * 0.8, z);
+  }
+
+  // ---------- string lights, lanterns and cables ----------
   const bulbSpots: Vector3[] = [], wires: number[] = [];
-  for (const strand of strands) {
-    const count = Math.max(4, Math.round(Math.hypot(strand.x1 - strand.x0, strand.z1 - strand.z0) / 0.45));
+  const hang = (x0: number, z0: number, x1: number, z1: number, y: number, sag: number, spacing: number, onPoint?: (p: Vector3) => void): void => {
+    const count = Math.max(4, Math.round(Math.hypot(x1 - x0, z1 - z0) / spacing));
     let previous: Vector3 | null = null;
     for (let i = 0; i <= count; i += 1) {
-      const t = i / count, p = new Vector3(strand.x0 + (strand.x1 - strand.x0) * t, strand.y - strand.sag * 4 * t * (1 - t), strand.z0 + (strand.z1 - strand.z0) * t);
-      bulbSpots.push(p);
+      const t = i / count, p = new Vector3(x0 + (x1 - x0) * t, y - sag * 4 * t * (1 - t), z0 + (z1 - z0) * t);
+      onPoint?.(p);
       if (previous) wires.push(previous.x, previous.y, previous.z, p.x, p.y, p.z);
       previous = p;
     }
-  }
-  const bulbs = new InstancedMesh(new SphereGeometry(0.05, 8, 6), glow(0xffc070, 2.2), bulbSpots.length);
+  };
+  for (const strand of strands) hang(strand.x0, strand.z0, strand.x1, strand.z1, strand.y, strand.sag, 0.45, (p) => bulbSpots.push(p));
+  for (const [x0, z0, x1, z1, y, sag] of cables) hang(x0, z0, x1, z1, y, sag, 1.2);
+  const bulbs = new InstancedMesh(new SphereGeometry(0.05, 8, 6), glow(0xffc070, 4.5), bulbSpots.length);
   bulbSpots.forEach((p, i) => bulbs.setMatrixAt(i, matrix.makeTranslation(p.x, p.y - 0.08, p.z)));
   root.add(bulbs);
   const wireGeometry = new BufferGeometry();
   wireGeometry.setAttribute("position", new Float32BufferAttribute(wires, 3));
-  root.add(new LineSegments(wireGeometry, new LineBasicMaterial({ color: 0x1a1a1a })));
-  const lanternSpots: [Vector3, number][] = [];
-  for (const z of lanternRows) for (let k = 0; k < 6; k += 1) lanternSpots.push([new Vector3(-7.6 + k * 1.45, 4.6 - Math.sin(k / 5 * Math.PI) * 0.5, z), k % 2]);
-  for (const color of [0, 1]) {
-    const spots = lanternSpots.filter(([, c]) => c === color);
-    const lanterns = new InstancedMesh(new SphereGeometry(0.22, 12, 10), glow(color ? 0xff5a3a : 0xffa040, 1.6), spots.length);
-    spots.forEach(([p], i) => lanterns.setMatrixAt(i, matrix.compose(p, new Quaternion(), new Vector3(1, 1.25, 1))));
-    root.add(lanterns);
-  }
-  // Soft warm pools on the ground under the strings and stalls stand in for the light those
-  // bulbs would cast; only six real lights are used, to keep shaders quick to build.
-  const pools: [number, number, number, number][] = [
-    ...[23, 15, 8, 1, -6, -13, -20].map((z) => [-4, z + 0.75, 4.2, 0xffa858] as [number, number, number, number]),
-    ...stalls.map((stall) => [stall.x + stall.side * 0.6, stall.z, 2.4, 0xffb870] as [number, number, number, number]),
-    ...[17, 7, -3, -13, -23].map((z) => [12.75, z + 1.25, 3.6, 0xff9a50] as [number, number, number, number]),
-    [-10.3, 4, 4.5, 0xffc080], [20.4, 4, 4.2, 0xff8aa8], [-4, -24, 3.2, 0xffd0a0],
-  ];
-  const poolMesh = new InstancedMesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ map: own(glowSpot()), transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.2 }), pools.length);
-  const flat = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.PI / 2);
-  pools.forEach(([x, z, size, color], i) => {
-    poolMesh.setMatrixAt(i, matrix.compose(new Vector3(x, 0.03, z), flat, new Vector3(size * 2, size * 2, 1)));
-    poolMesh.setColorAt(i, new Color(color));
+  root.add(new LineSegments(wireGeometry, new LineBasicMaterial({ color: 0x15161a })));
+  const lanternSpots: { at: Vector3; color: number; phase: number }[] = [];
+  for (const z of lanternRows) for (let k = 0; k < 6; k += 1) lanternSpots.push({ at: new Vector3(-7.6 + k * 1.45, 4.6 - Math.sin(k / 5 * Math.PI) * 0.5, z), color: k % 2, phase: k * 1.7 + z });
+  const lanternMeshes = [0, 1].map((color) => {
+    const spots = lanternSpots.filter((spot) => spot.color === color);
+    const mesh = new InstancedMesh(new SphereGeometry(0.22, 14, 10), glow(color ? 0xff4a2a : 0xffa040, 2.6), spots.length);
+    root.add(mesh);
+    return { mesh, spots };
   });
-  poolMesh.renderOrder = 2;
-  root.add(poolMesh);
-  for (const [x, y, z, color, intensity] of pointLights) {
-    const light = new PointLight(color, intensity, 16, 2);
-    light.position.set(x, y, z);
-    root.add(light);
-  }
+  const swing = (seconds: number): void => {
+    for (const { mesh, spots } of lanternMeshes) {
+      spots.forEach((spot, i) => {
+        const angle = Math.sin(seconds * 1.15 + spot.phase) * 0.07;
+        q.setFromAxisAngle(new Vector3(1, 0, 0), angle);
+        mesh.setMatrixAt(i, matrix.compose(new Vector3(spot.at.x, spot.at.y - Math.abs(angle) * 0.05, spot.at.z + angle * 0.35), q, new Vector3(1, 1.25, 1)));
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  };
+  swing(0);
 
-  // Ladders and the bar stair use the same steel drawing as the San Jose rooftops.
-  addRoofAccess(scene, { roofs: [], ladders, stairs: [stair], boxes: [], reachable: [] });
+  // ---------- steam ----------
+  const steamMaterial = new SpriteMaterial({ map: own(softSpot()), color: 0xd8d2cc, transparent: true, opacity: 0.11, depthWrite: false });
+  const vents = [new Vector3(-5.4, 3.4, -26.4), new Vector3(-7.4, 1.25, 19.4), new Vector3(12.75, 0.1, -6)];
+  const puffs = Array.from({ length: 27 }, (_, i) => {
+    const sprite = new Sprite(steamMaterial);
+    sprite.renderOrder = 3;
+    root.add(sprite);
+    return { sprite, vent: vents[i % vents.length], age: (i / 27) * 4, life: 3.4 + (i % 5) * 0.3, drift: ((i * 37) % 11 - 5) * 0.02 };
+  });
+  const steam = (dt: number): void => {
+    for (const puff of puffs) {
+      puff.age += dt;
+      if (puff.age > puff.life) puff.age -= puff.life;
+      const t = puff.age / puff.life;
+      puff.sprite.position.set(puff.vent.x + puff.drift * puff.age * 3, puff.vent.y + puff.age * 0.42, puff.vent.z + Math.sin(puff.age * 1.3 + puff.drift * 40) * 0.15);
+      puff.sprite.scale.setScalar(0.35 + t * 1.6);
+    }
+  };
+
+  // ---------- lights ----------
+  // The dense set, on renderers that cluster lights.
+  const many: [number, number, number, number, number, number][] = [];
+  for (const strand of strands) for (const t of [0.2, 0.5, 0.8]) {
+    many.push([strand.x0 + (strand.x1 - strand.x0) * t, strand.y - strand.sag * 4 * t * (1 - t) - 0.25, strand.z0 + (strand.z1 - strand.z0) * t, 0xffb46a, 9, 8.5]);
+  }
+  for (const stall of stalls) many.push([stall.x + stall.side * 0.3, 2.05, stall.z, 0xffc27a, 8, 6]);
+  for (const z of lanternRows) for (const x of [-6.3, -1.9]) many.push([x, 4.3, z, 0xff6a3a, 7, 7]);
+  for (const z of [20, 10, 0, -10, -20]) { many.push([9.0, 3.3, z, 0xffa860, 11, 8.5]); many.push([16.5, 3.3, z + 5, 0xffa860, 11, 8.5]); }
+  for (const shop of shopfronts) { const [nx, nz] = FACE_NORMAL[shop.face]; many.push([nx ? shop.at + nx * 0.5 : shop.along, 2.7, nz ? shop.at + nz * 0.5 : shop.along, 0xffd7a0, 6, 6.5]); }
+  for (const [at, along, y, face, , color] of blades) { const [nx] = FACE_NORMAL[face]; many.push([at + nx * 0.9, y, along, Number.parseInt(color.slice(1), 16), 6, 6.5]); }
+  many.push([15.0, 3.3, 6.2, 0xff6fae, 4, 5], [-4, 5.0, 28.6, 0xffcf5a, 4, 6], [-4, 5.6, -22.8, 0xffd0a8, 3, 5]);
+  for (const z of [-2, 2.4, 6.8]) many.push([-10.3, 2.6, z, 0xffc887, 4.5, 6]);
+  many.push([-13.4, 3.1, -2, 0xfff0dd, 4, 6], [-13.4, 3.1, 9, 0xfff0dd, 4, 6], [20.1, 3.4, 8.5, 0xff9ab0, 5, 7], [21.5, 3.4, 1.5, 0xffb070, 4, 6], [20.5, 6.9, 4, 0xffc887, 4, 7], [-3.6, 1.9, -24.0, 0xffdca8, 4, 5]);
+  const poolMesh = (() => {
+    const pools: [number, number, number, number][] = [
+      ...[23, 15, 8, 1, -6, -13, -20].map((z) => [-4, z + 0.75, 4.2, 0xffa858] as [number, number, number, number]),
+      ...stalls.map((stall) => [stall.x + stall.side * 0.6, stall.z, 2.4, 0xffb870] as [number, number, number, number]),
+      ...[17, 7, -3, -13, -23].map((z) => [12.75, z + 1.25, 3.6, 0xff9a50] as [number, number, number, number]),
+      [-10.3, 4, 4.5, 0xffc080], [20.4, 4, 4.2, 0xff8aa8], [-4, -24, 3.2, 0xffd0a0],
+    ];
+    const mesh = new InstancedMesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ map: own(softSpot()), transparent: true, blending: AdditiveBlending, depthWrite: false, opacity: 0.2 }), pools.length);
+    const flat = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.PI / 2);
+    pools.forEach(([x, z, size, color], i) => {
+      mesh.setMatrixAt(i, matrix.compose(new Vector3(x, 0.03, z), flat, new Vector3(size * 2, size * 2, 1)));
+      mesh.setColorAt(i, new Color(color));
+    });
+    mesh.renderOrder = 2;
+    mesh.visible = false;
+    root.add(mesh);
+    return mesh;
+  })();
+
+  addClimbing(scene, ladders, [stair]);
   statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "menuGlow", "lampGlow", "bottle"].includes(look));
 
   // Movable props, numbered in a fixed order so ids match on every client.
@@ -628,8 +894,27 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     if (model) props.push(propEntity(`prop:${props.length}`, model, x, z, base, yaw));
   }
 
+  let last = 0;
   return {
     refs, groups, entities, props, ladders,
-    dispose() { for (const texture of owned) texture.dispose(); for (const mesh of signs) (mesh.material as MeshStandardMaterial).map?.dispose(); },
+    light(manyLights) {
+      const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
+      for (const [x, y, z, color, intensity, distance] of list) {
+        const light = new PointLight(color, intensity, distance, 2);
+        light.position.set(x, y, z);
+        root.add(light);
+      }
+      poolMesh.visible = !manyLights;
+    },
+    update(seconds) {
+      const dt = last ? Math.min(0.1, seconds - last) : 0;
+      last = seconds;
+      swing(seconds);
+      steam(dt);
+      // The OPEN sign's tube is failing: it stutters off now and then.
+      const tick = Math.floor(seconds * 14), roll = Math.abs(Math.sin(tick * 12.9898) * 43758.5453) % 1;
+      openSign.emissiveIntensity = roll < 0.07 ? 0.2 : roll < 0.1 ? 1.2 : 3.0;
+    },
+    dispose() { for (const texture of owned) texture.dispose(); },
   };
 }

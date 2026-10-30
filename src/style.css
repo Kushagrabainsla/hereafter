@@ -96,20 +96,6 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .room-button:hover, .room-button:focus-visible { background: #25515b; }
 .room-button-primary { border-color: #76c9c6; background: #2c7775; color: #fff; }
 .room-button-primary:hover, .room-button-primary:focus-visible { background: #368d8a; }
-.map-dialog { width: min(640px, calc(100vw - 32px)); }
-.map-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 16px; }
-.map-card { display: flex; flex-direction: column; gap: 0; padding: 0; overflow: hidden; border: 1px solid #3d5a63; border-radius: 12px; background: #11262f; color: #edf5f7; text-align: left; cursor: pointer; }
-.map-card:hover, .map-card:focus-visible { border-color: #8de0e3; background: #163340; }
-.map-card[aria-current="true"] { border-color: #76c9c6; cursor: default; }
-.map-card img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #0b1820; }
-.map-card-body { display: grid; gap: 5px; padding: 12px 14px 14px; }
-.map-card-title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.map-card-title strong { font-size: 15px; }
-.map-card-title span { color: #8de0e3; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.map-card-place { color: #9fb7bf; font-size: 11px; }
-.map-card p { margin: 2px 0 0; color: #c3d4d9; font-size: 12px; line-height: 1.45; }
-.map-card-size { color: #8da7b1; font-size: 11px; }
-.map-note { margin: 14px 0 0; color: #8da7b1; font-size: 11px; line-height: 1.45; }
 .room-divider { margin: 18px 0 13px; color: #8da7b1; font-size: 11px; text-align: center; text-transform: uppercase; letter-spacing: .1em; }
 .room-label { display: block; margin: 10px 0 7px; color: #c5d7dc; font-size: 12px; }
 .room-label strong { margin-left: 6px; color: #8de0e3; letter-spacing: .08em; }
@@ -167,7 +153,6 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
   .brand small { display: none; }
   .top-actions { top: 60px; right: 14px; left: 14px; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   .help-trigger { padding: 7px 9px; font-size: 11px; white-space: nowrap; }
-  .trigger-prefix { display: none; }
   .controls-dialog { padding: 20px; }
   .control-list dt { flex-basis: 78px; }
   .attribution { right: 6px; bottom: 6px; gap: 5px; font-size: 8px; }
@@ -180,4 +165,3 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .damage-readout.visible { opacity: 1; }
 
 
-.attribution [hidden] { display: none; }

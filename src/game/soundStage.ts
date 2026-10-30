@@ -1,5 +1,4 @@
 import { Vector3, type PerspectiveCamera } from "three/webgpu";
-import { type ArenaData } from "../world/arena";
 import { gameAudio, type Gait, type Surface, type Vec3 } from "./gameAudio";
 import { type CombatEvent } from "./matchState";
 import { type PlayerGait, type PlayerMotion, type PlayerPose } from "./playerController";
@@ -15,9 +14,6 @@ const UP = new Vector3(0, 1, 0);
 // footsteps from the local stride and from other players' movement, picks the ground
 // surface under each step, and places combat sounds where they happen.
 export class SoundStage {
-  private roads: { ax: number; az: number; bx: number; bz: number; reach: number }[];
-  // Hand-built maps are paved or floored everywhere.
-  private paved: boolean;
   private stepIndex = 0;
   private jumps = 0;
   private landings = 0;
@@ -28,27 +24,17 @@ export class SoundStage {
   private forward = new Vector3();
   private up = new Vector3();
 
-  constructor(data: ArenaData, private positionOf: (peerId: string) => Vec3 | null) {
-    this.paved = Boolean(data.layout);
-    this.roads = data.roads.map(({ points: [a, b], width }) => ({ ax: a[0], az: a[1], bx: b[0], bz: b[1], reach: width / 2 + 0.15 }));
+  constructor(private positionOf: (peerId: string) => Vec3 | null) {
   }
 
-  // Roads and pavements are hard; open ground and parks are grass. Standing on cover is hard.
-  surfaceAt(east: number, north: number, aboveGround: number): Surface {
-    if (aboveGround > 0.25 || this.paved) return "hard";
-    for (const road of this.roads) {
-      const dx = road.bx - road.ax, dz = road.bz - road.az;
-      const t = Math.max(0, Math.min(1, ((east - road.ax) * dx + (north - road.az) * dz) / Math.max(1e-6, dx * dx + dz * dz)));
-      if (Math.hypot(east - road.ax - dx * t, north - road.az - dz * t) <= road.reach) return "hard";
-    }
-    return "soft";
-  }
+  // The market is paved or floored everywhere.
+  surfaceAt(): Surface { return "hard"; }
 
   update(camera: PerspectiveCamera, gait: PlayerGait, motion: PlayerMotion, remotes: RemoteSource): void {
     camera.getWorldDirection(this.forward);
     this.up.copy(UP).applyQuaternion(camera.quaternion);
     gameAudio.listen(camera.position, this.forward, this.up);
-    const surface = (): Surface => this.surfaceAt(camera.position.x, camera.position.z, gait.aboveGround);
+    const surface = (): Surface => this.surfaceAt();
     // The head bob is lowest when stride sits at 3/4 pi past a multiple of pi: one footfall.
     const index = Math.floor((gait.stride - 0.75 * Math.PI) / Math.PI);
     if (index !== this.stepIndex) {
@@ -73,9 +59,9 @@ export class SoundStage {
       state.x = feet.x; state.z = feet.z;
       const chest = { x: feet.x, y: feet.y + 1.1, z: feet.z };
       const at = { x: feet.x, y: feet.y + 0.05, z: feet.z };
-      if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) gameAudio.remoteLand(at, this.surfaceAt(feet.x, feet.z, 0));
+      if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) gameAudio.remoteLand(at, this.surfaceAt());
       state.height = pose.jumpHeight;
-      if (pose.sliding && !state.sliding && !dead) gameAudio.remoteSlide(at, this.surfaceAt(feet.x, feet.z, 0));
+      if (pose.sliding && !state.sliding && !dead) gameAudio.remoteSlide(at, this.surfaceAt());
       state.sliding = pose.sliding === true;
       // Respawns and corrections jump several metres in a frame; they are not footsteps.
       if (dead || moved > 2.5 || !pose.moving || pose.sliding || pose.jumpHeight > 0.15) { if (moved > 2.5) state.stride = 0; return; }
@@ -84,7 +70,7 @@ export class SoundStage {
       if (state.stride < 1) return;
       state.stride %= 1;
       if (gameAudio.distanceTo(at) > 40) return;
-      gameAudio.remoteStep(at, this.surfaceAt(feet.x, feet.z, pose.jumpHeight), gaitName, gameAudio.occlusion(camera.position, chest));
+      gameAudio.remoteStep(at, this.surfaceAt(), gaitName, gameAudio.occlusion(camera.position, chest));
     });
     for (const peerId of this.remote.keys()) if (!seen.has(peerId)) this.remote.delete(peerId);
   }

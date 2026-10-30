@@ -1,23 +1,14 @@
-# San Jose pilot data
+# Asset sources
 
-The full source asset at `public/arena/san-jose.json` is derived from:
-
-- [OpenStreetMap API bounding-box extract](https://wiki.openstreetmap.org/wiki/API_v0.6#Retrieving_map_data_by_bounding_box), centered at 37.3378, −121.8897 and covering approximately 700 × 700 m. Building outlines and tagged heights or levels, roads, parks, and tagged trees are converted into local meter coordinates. Missing building heights use an explicitly approximate fallback.
-- [USGS Elevation Point Query Service](https://www.usgs.gov/the-national-map-data-delivery/gis-data-download) on a 5 × 5 grid. The service interpolates ground elevations from [3DEP](https://www.usgs.gov/3d-elevation-program). These heights are sampled at build time, then bundled.
-
-OpenStreetMap data and derived geometry are licensed under [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Credit: © OpenStreetMap contributors. The bundled JSON preserves source IDs and the source URL. It can be downloaded directly from the public site or repository as the adapted database. USGS 3DEP data is public domain.
-
-The generation script uses the raw OpenStreetMap data API once per rebuild. It does not bulk-download OpenStreetMap's community-hosted rendered map tiles. The runtime uses only the bundled derived asset. The source geographic data can be updated independently of the rendering and game code.
-
-`scripts/build-block.mjs` filters the source extract to the default 140 m playable square plus a 65 m visual buffer. It produces `public/arena/san-jose-block.json` without another network request. The default game loads this compact file; supported custom arena URLs use the full source extract.
+Everything the game uses is bundled with the site; nothing is fetched from a third party while playing.
 
 ## Visual materials
 
-Most files in `public/textures/` are 1K diffuse and selected normal or alpha maps from [Poly Haven](https://polyhaven.com/), released under [CC0](https://polyhaven.com/license). They are served from this repository, with no runtime API calls. Source assets: [Asphalt 02](https://polyhaven.com/a/asphalt_02), [Concrete Pavement 02](https://polyhaven.com/a/concrete_pavement_02), [Grass Ground](https://polyhaven.com/a/grass_ground), [Plastered Wall 04](https://polyhaven.com/a/plastered_wall_04), [Concrete Wall 003](https://polyhaven.com/a/concrete_wall_003), [Brick Wall 001](https://polyhaven.com/a/brick_wall_001), [Grey Roof Tiles](https://polyhaven.com/a/grey_roof_tiles), [Bark Platanus](https://polyhaven.com/a/bark_platanus), [Tree Small 02](https://polyhaven.com/a/tree_small_02) leaf maps, and the 1K [Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) HDRI used for the sky and reflections.
+The files in `public/textures/` are 1K diffuse and normal maps from [Poly Haven](https://polyhaven.com/), released under [CC0](https://polyhaven.com/license): [Asphalt 02](https://polyhaven.com/a/asphalt_02), [Concrete Pavement 02](https://polyhaven.com/a/concrete_pavement_02), [Plastered Wall 04](https://polyhaven.com/a/plastered_wall_04), [Concrete Wall 003](https://polyhaven.com/a/concrete_wall_003) and [Brick Wall 001](https://polyhaven.com/a/brick_wall_001).
 
-The optimized `public/models/concrete_road_barrier_02/barrier-optimized.glb` contains the CC0 [Concrete Road Barrier 02](https://polyhaven.com/a/concrete_road_barrier_02) from Poly Haven and its three 1K material maps. Its mesh was welded and simplified to roughly 30% of the source triangles with glTF Transform 4.5.1 (`weld`, then `simplify --ratio 0.3 --error 0.005`). It is bundled with the site and does not use Poly Haven's live API during play.
+`storefront-stone.jpg` and `storefront-cafe.jpg` were generated with the built-in imagegen tool for this project. Their prompts requested flat, front-facing, photo-real downtown California storefront textures: one with a stone base and recessed glass entry, the other a dark green cafe with a warm interior. Both prompts excluded people, text, logos, signs, and perspective distortion. They are the shop interiors seen behind the market's shopfront glass.
 
-`storefront-stone.jpg` and `storefront-cafe.jpg` were generated with the built-in imagegen tool for this project. Their prompts requested flat, front-facing, photo-real downtown California storefront textures: one with a stone base and recessed glass entry, the other a dark green cafe with a warm interior. Both prompts excluded people, text, logos, signs, and perspective distortion. The two images are used only on selected street-facing ground floors.
+The dusk sky, the sign faces, the window interiors, the posters, the mural, the awning stripes, the wood grain and the kitchen tiles are drawn in code when the map loads.
 
 ## First-person view models
 
@@ -48,7 +39,7 @@ The 69 MP3 files in `public/audio/` (420 KB in total) are cut, peak-normalised a
 
 The gunshot takes start 3 ms before each detected onset and keep a short tail; the mid-distance takes keep their street echo and, for the AK-47, the supersonic crack that arrives ahead of the report. The pistol reload loses two silent gaps to fit the 1.2 s reload, and the rifle reload gains 0.12 s to fit 1.7 s. The hit tick, headshot ring, elimination confirmation, knife swing, near-miss crack and the low thump under shots are synthesised in the browser.
 
-## Street props
+## Props
 
 `public/models/props/*.glb` and `props.json` are built by `scripts/props/build.sh` (run by `npm run build:props`) from Poly Haven models downloaded by `scripts/props/fetch.sh`, which pins every source file by MD5. The build keeps the clean variant where a source has two, seats the trash can lid, removes the air-conditioner's hanging pipe, simplifies each mesh, resizes textures to 512 px WebP and centres each model with its base at y = 0. All are CC0 1.0 under the [Poly Haven license](https://polyhaven.com/license).
 

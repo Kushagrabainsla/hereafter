@@ -10,9 +10,9 @@ The camera drops to 0.98 m, tilts about 3°, and widens to an 82° field of view
 
 ## Mantle
 
-Press Space facing a ledge between 0.45 m and 1.6 m high to climb onto it. This covers the 1.12 m concrete barriers, which the 0.97 m jump cannot reach, and the planters. Holding forward while jumping into a ledge catches it in mid-air too. `PhysicsWorld.findLedge` probes forward at knee and waist height for a face within reach, then casts down just past it to find the top. It accepts the ledge only if the standing capsule fits both on top and above where you stand, and nothing blocks the way over the edge. Buildings are too tall, and thin poles have no top within reach.
+Press Space facing a ledge between 0.45 m and 1.6 m high to climb onto it. This covers the dumpsters (1.3 m) and the restaurant and bar counters (1.05 and 1.1 m), which the 0.97 m jump cannot reach. Holding forward while jumping into a ledge catches it in mid-air too. `PhysicsWorld.findLedge` probes forward at knee and waist height for a face within reach, then casts down just past it to find the top. It accepts the ledge only if the standing capsule fits both on top and above where you stand, and nothing blocks the way over the edge. Walls and stalls are too tall to climb.
 
-The climb rises beside the ledge first, then moves over its top, taking 0.3 s plus 0.18 s per metre of height, or about 0.5 s for a barrier. The weapon tucks away and you cannot attack until you are on top.
+The climb rises beside the ledge first, then moves over its top, taking 0.3 s plus 0.18 s per metre of height, or about 0.5 s for a counter. The weapon tucks away and you cannot attack until you are on top.
 
 ## Firing out of a sprint
 
@@ -52,8 +52,8 @@ Headless Chrome checks drove the running game and stepped the controller directl
 | Slide | 5.06 m in 0.78 s of game time, peak 9.86 m/s, eye 0.98 m, 3.4° tilt |
 | Slide during and after cooldown | no slide, then a slide |
 | Slide jump | 7.9 m/s carried into the air |
-| Mantle onto a 1.12 m barrier with Space | on top in 0.48 s |
-| Jump and hold forward into the barrier | caught and climbed in 0.35 s |
+| Mantle onto a 1.12 m ledge with Space | on top in 0.48 s |
+| Jump and hold forward into the ledge | caught and climbed in 0.35 s |
 | Pistol and carbine shot after firing from a sprint | 161 ms and 244 ms, sprint back about 0.35 s later |
 | 200 leader-resolved carbine shots per movement state | widest deviation equal to the table, mean two thirds of it |
 | Carbine bloom over 11 shots at 140 ms | mean deviation 0.27° rising to 1.26° |
@@ -62,7 +62,7 @@ Headless Chrome checks drove the running game and stepped the controller directl
 
 ## Limits
 
-- Slides ignore slopes; the arena's terrain is nearly flat.
+- Slides ignore slopes; the market is flat.
 - There is no aim-down-sights, so the standing spread is the tightest available.
 - Spread depends on movement flags each client reports about itself, so a modified client can fire as if standing still, as it can already misreport its position.
 - Other players' slides show as a crouch gliding along, since the third-person character has no slide clip.

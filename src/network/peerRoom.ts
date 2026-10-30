@@ -1,5 +1,5 @@
 import { joinRoom, selfId } from "trystero";
-import { toLocal, type Arena } from "../world/arena";
+import { type Arena } from "../world/arena";
 import { type PlayerPose } from "../game/playerController";
 import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
 
@@ -41,11 +41,8 @@ export interface PeerRoomEvents {
   onProps?: (states: PropState[]) => void;
 }
 
-// Peers only exchange packets for the same map; San Jose keys also carry its centre and size.
-function mapKey(arena: Arena, mapId: string): string {
-  if (mapId !== "san-jose") return `${mapId}-v1`;
-  return `san-jose-v1:${arena.latitude.toFixed(6)}:${arena.longitude.toFixed(6)}:${arena.sizeMeters}`;
-}
+// Peers only exchange packets for the same map and protocol.
+const MAP_KEY = "night-market-v1";
 
 function validPose(value: unknown, expectedMap: string): value is PosePacket {
   if (typeof value !== "object" || value === null) return false;
@@ -118,12 +115,12 @@ export class PeerRoom {
     this.events.onPeers(members.length, members.indexOf(selfId));
   }
 
-  constructor(code: string, private arena: Arena, private match: MatchState, private events: PeerRoomEvents, mapId = "san-jose") {
+  constructor(code: string, private arena: Arena, private match: MatchState, private events: PeerRoomEvents) {
     this.code = normalizeRoomCode(code);
     if (this.code.length < 6 || this.code.length > 24) throw new Error("Room code must be 6–24 letters or numbers.");
-    this.expectedMap = mapKey(arena, mapId);
-    // The same code on another map is a different room, so players never meet across maps.
-    this.room = joinRoom({ appId: APP_ID, password: this.code }, mapId === "san-jose" ? this.code : `${this.code}@${mapId}`, {
+    this.expectedMap = MAP_KEY;
+    // The room name keeps the map id the night market's rooms have always used.
+    this.room = joinRoom({ appId: APP_ID, password: this.code }, `${this.code}@night-market`, {
       onJoinError: () => this.events.onStatus("A peer could not connect. Try another network or leave and rejoin."),
     });
     this.poseAction = this.room.makeAction<PosePacket>("pose-v1");
@@ -138,9 +135,8 @@ export class PeerRoom {
     };
     this.poseAction.onMessage = (value, { peerId }) => {
       if (!this.peers.has(peerId) || !validPose(value, this.expectedMap)) return;
-      const [centerEast, centerNorth] = toLocal(this.arena.latitude, this.arena.longitude);
       const half = this.arena.sizeMeters / 2 + 0.5;
-      if (Math.abs(value.east - centerEast) > half || Math.abs(value.north - centerNorth) > half) return;
+      if (Math.abs(value.east) > half || Math.abs(value.north) > half) return;
       const previous = this.lastSequence.get(peerId) ?? -1;
       if (value.sequence <= previous) return;
       const now = performance.now();

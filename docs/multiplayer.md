@@ -18,4 +18,4 @@ Every accepted attack emits a replicated event, including misses, with its ray a
 
 Shots remain hitscan: the trail is feedback, not a simulated bullet with travel time or drop. Players use approximate anatomical volumes rather than per-bone collision; remote interpolation, network latency and leader trust still limit competitive accuracy. There is no lag compensation or penetration. The existing infinite reserve ammunition remains. The authored view-model loader is ready, but realistic arms, weapons and characters still need suitable licensed art.
 
-Rooms are per map. On any map other than San Jose, the Trystero room name adds the map id, so the same code on another map is a different room, and every packet's map key names the map. A link copied from the room dialog keeps the `map` parameter.
+The Trystero room name is the room code with `@night-market` appended, and every packet carries the key `night-market-v1`, which peers check before accepting it.

@@ -1,5 +1,4 @@
-import { type Arena, type ArenaData, terrainHeight, toLocal } from "../world/arena";
-import { CollisionWorld } from "../world/collision";
+import { type ArenaData, terrainHeight } from "../world/arena";
 import { type PlayerPose } from "./playerController";
 import { type ShotRay } from "../world/physics";
 
@@ -66,44 +65,10 @@ export interface WeaponPickup {
   north: number;
 }
 
-export function makeWeaponPickups(data: ArenaData, arena: Arena): WeaponPickup[] {
-  if (data.layout) return data.layout.pickups.map((pickup) => ({ ...pickup }));
-  const collision = new CollisionWorld(data);
-  const origin = collision.findSpawn(arena);
-  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
-  const roads = data.roads.filter((road) => road.width >= 8).map((road) => ({
-    east: (road.points[0][0] + road.points[1][0]) / 2,
-    north: (road.points[0][1] + road.points[1][1]) / 2,
-  })).filter(({ east, north }) => collision.insideArena(east, north, arena, 3) && !collision.blocked(east, north, 1));
-  const pickups: WeaponPickup[] = [{ id: "pistol-near", weapon: "pistol", ...collision.findSpawn(arena, 4) }];
-  const targets = [
-    { id: "rifle-east", weapon: "rifle" as const, radius: 46 },
-    { id: "pistol-far", weapon: "pistol" as const, radius: 72 },
-    { id: "rifle-far", weapon: "rifle" as const, radius: 96 },
-  ];
-  for (const target of targets) {
-    const best = roads.filter((point) => pickups.every((pickup) => Math.hypot(point.east - pickup.east, point.north - pickup.north) >= 18))
-      .sort((a, b) => Math.abs(Math.hypot(a.east - centerEast, a.north - centerNorth) - target.radius)
-        - Math.abs(Math.hypot(b.east - centerEast, b.north - centerNorth) - target.radius))[0];
-    if (best) pickups.push({ id: target.id, weapon: target.weapon, ...best });
-  }
-  // Keep the first pickup within a short walk of either spawn side.
-  if (Math.hypot(pickups[0].east - origin.east, pickups[0].north - origin.north) < 3) {
-    pickups[0] = { id: "pistol-near", weapon: "pistol", ...collision.findSpawn(arena, 6) };
-  }
-  return pickups;
+export function makeWeaponPickups(data: ArenaData): WeaponPickup[] {
+  return data.layout.pickups.map((pickup) => ({ ...pickup }));
 }
 
-function visibleBetween(collision: CollisionWorld, from: PlayerPose, target: PlayerPose, distance: number, fromY: number, targetY: number): boolean {
-  for (let step = 0.9; step < distance - 0.6; step += 0.65) {
-    const t = step / distance;
-    const east = from.east + (target.east - from.east) * t;
-    const north = from.north + (target.north - from.north) * t;
-    const height = fromY + (targetY - fromY) * t;
-    if (collision.blocksShot(east, north, height, 0.08)) return false;
-  }
-  return true;
-}
 
 export type HitZone = "head" | "torso" | "legs";
 export interface TargetHit { distance: number; zone: HitZone; }
@@ -156,10 +121,3 @@ export function damageAt(weapon: WeaponKind, hit: TargetHit): number {
   return Math.round(WEAPONS[weapon].damage * falloff * (hit.zone === "head" ? 2.5 : hit.zone === "legs" ? 0.7 : 1));
 }
 
-export function hitDistance(data: ArenaData, collision: CollisionWorld, attacker: PlayerPose, target: PlayerPose, weapon: WeaponKind, shotClear?: ShotClear): number | null {
-  const hit = targetHit(data, attacker, target, weapon);
-  if (!hit) return null;
-  const ray = shotRay(data, attacker, weapon);
-  if (shotClear ? !shotClear({ ...ray, distance: hit.distance }) : !visibleBetween(collision, attacker, target, hit.distance, ray.origin.y, terrainHeight(data,target.east,target.north)+1)) return null;
-  return hit.distance;
-}

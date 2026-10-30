@@ -1,5 +1,5 @@
 import RAPIER from "@dimforge/rapier3d";
-import { terrainHeight, toLocal, type Arena, type ArenaData } from "./arena";
+import { terrainHeight, type Arena, type ArenaData } from "./arena";
 import { type WorldEntity } from "./entities";
 import { type Material } from "./materials";
 
@@ -73,7 +73,6 @@ export class PhysicsWorld {
     this.world = new RAPIER.World({ x: 0, y: -14, z: 0 });
     this.world.integrationParameters.dt = STEP_SECONDS;
     this.addTerrain();
-    this.addBuildings();
     this.setArena(arena);
     this.body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
     // The player belongs to group 2 only, so ragdolls (which collide only with group 1) pass it by.
@@ -113,31 +112,8 @@ export class PhysicsWorld {
     this.tags.set(this.terrainCollider.handle, { material: "ground" });
   }
 
-  private addBuildings(): void {
-    for (const building of this.data.buildings) {
-      const outline = building.outline;
-      if (outline.length < 3) continue;
-      const east = outline.reduce((sum, point) => sum + point[0], 0) / outline.length;
-      const north = outline.reduce((sum, point) => sum + point[1], 0) / outline.length;
-      const ground = terrainHeight(this.data, east, north);
-      for (let index = 0; index < outline.length; index += 1) {
-        const a = outline[index];
-        const b = outline[(index + 1) % outline.length];
-        const dx = b[0] - a[0];
-        const dz = b[1] - a[1];
-        const length = Math.hypot(dx, dz);
-        if (length < 0.1) continue;
-        const yaw = Math.atan2(-dz, dx);
-        const wall = this.world.createCollider(RAPIER.ColliderDesc.cuboid(length / 2, building.height / 2, 0.12)
-          .setTranslation((a[0] + b[0]) / 2, ground + building.height / 2, (a[1] + b[1]) / 2)
-          .setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }));
-        this.tags.set(wall.handle, { material: "brick" });
-      }
-    }
-  }
-
-  // Trees, furniture, cover, poles and lamps are world entities with their own colliders,
-  // so a destroyed one can be removed and every bullet knows what it struck.
+  // Stalls, glass and props are world entities with their own colliders, so a destroyed one
+  // can be removed and every bullet knows what it struck.
   addEntity(entity: WorldEntity): void {
     if (!entity.shape || this.entityColliders.has(entity.id)) return;
     const shape = entity.shape;
@@ -234,8 +210,7 @@ export class PhysicsWorld {
   setArena(arena: Arena): void {
     for (const collider of this.boundary) this.world.removeCollider(collider, true);
     this.boundary = [];
-    const [east, north] = toLocal(arena.latitude, arena.longitude);
-    const half = arena.sizeMeters / 2;
+    const east = 0, north = 0, half = arena.sizeMeters / 2;
     for (const side of [-1, 1]) {
       const northEdge = north + side * (half + 0.2);
       const eastEdge = east + side * (half + 0.2);
@@ -379,12 +354,8 @@ export class PhysicsWorld {
     return { points, bounces, step };
   }
 
-  // Roofs, stair ramps and landings are fixed solids; railings stop players but let rounds through.
-  addRoof(vertices: Float32Array, indices: Uint32Array): void {
-    const collider = this.world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices));
-    this.tags.set(collider.handle, { material: "concrete" });
-  }
-
+  // The map's fixed solids: walls, floors, counters and stair ramps. Railings use the boundary
+  // material, so they stop players but let rounds through.
   addBox(half: [number, number, number], position: Vec3, rotation: Quat, material: Material): void {
     const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half).setTranslation(position.x, position.y, position.z).setRotation(rotation));
     this.tags.set(collider.handle, { material });

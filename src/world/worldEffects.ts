@@ -3,10 +3,9 @@ import {
   MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "./arena";
-import { type WorldEntity, type Vec3 } from "./entities";
+import { type InstanceRef, type WorldEntity, type Vec3 } from "./entities";
 import { MATERIALS, type Material } from "./materials";
 import { type GrenadePath } from "./physics";
-import { type InstanceRef } from "./scenery";
 import { gameAudio } from "../game/gameAudio";
 
 type Style = "dust" | "sparks" | "splinters" | "shards" | "puff" | "blood" | "chunks" | "soil" | "leaves" | "embers";
@@ -221,8 +220,7 @@ export class WorldEffects {
       const matrix = new Matrix4();
       ref.mesh.getMatrixAt(ref.index, matrix);
       saved.push({ ref, matrix });
-      if (entity.kind === "lamp") ref.mesh.setColorAt(ref.index, new Color(0x2b2c2c));
-      else ref.mesh.setMatrixAt(ref.index, new Matrix4().makeScale(0, 0, 0));
+      ref.mesh.setMatrixAt(ref.index, new Matrix4().makeScale(0, 0, 0));
       ref.mesh.instanceMatrix.needsUpdate = true;
       if (ref.mesh.instanceColor) ref.mesh.instanceColor.needsUpdate = true;
     }
@@ -233,16 +231,6 @@ export class WorldEffects {
       const out = { x: Math.sin(entity.yaw), y: -0.2, z: Math.cos(entity.yaw) };
       for (let i = 0; i < 4; i += 1) this.solid.spawn({ x: at.x + Math.cos(entity.yaw) * (Math.random() - 0.5) * 1.2, y: at.y + (Math.random() - 0.5) * 1.5, z: at.z - Math.sin(entity.yaw) * (Math.random() - 0.5) * 1.2 }, out, 8, "shards", floor, 0.8);
       gameAudio.shatter(at);
-    } else if (entity.kind === "lamp") {
-      this.solid.spawn(at, { x: 0, y: -1, z: 0 }, 16, "shards", floor, 1);
-      this.glow.spawn(at, { x: 0, y: -1, z: 0 }, 10, "sparks", floor, 1.2);
-      gameAudio.shatter(at);
-    } else if (entity.kind === "cover" || entity.kind === "planter") {
-      this.solid.spawn(at, up, 34, "chunks", floor, 1.1);
-      this.solid.spawn(at, up, 26, "dust", floor, 1.3);
-      if (entity.kind === "planter") { this.solid.spawn(at, up, 20, "soil", floor, 1.2); this.solid.spawn({ ...at, y: at.y + 0.4 }, up, 18, "leaves", floor, 1.4); }
-      for (let i = 0; i < 3; i += 1) this.puff({ ...at, y: at.y - 0.2 }, 1.4, 2.2, 0.5, 0x9b968c, 0.5);
-      gameAudio.crumble(at);
     } else if (entity.kind === "stall") {
       this.solid.spawn({ ...at, y: at.y + 0.4 }, up, 40, "splinters", floor, 1.3);
       this.solid.spawn(at, up, 22, "chunks", floor, 1.2);
@@ -261,7 +249,6 @@ export class WorldEffects {
   restore(entity: WorldEntity): void {
     for (const { ref, matrix } of this.hidden.get(entity.id) ?? []) {
       ref.mesh.setMatrixAt(ref.index, matrix);
-      if (entity.kind === "lamp") ref.mesh.setColorAt(ref.index, new Color(0xffe3aa));
       ref.mesh.instanceMatrix.needsUpdate = true;
       if (ref.mesh.instanceColor) ref.mesh.instanceColor.needsUpdate = true;
     }

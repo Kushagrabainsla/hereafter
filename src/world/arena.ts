@@ -1,35 +1,20 @@
 import { type Material } from "./materials";
 
+// The playable square, centred on the map's origin.
 export interface Arena {
-  latitude: number;
-  longitude: number;
   sizeMeters: number;
 }
 
 export type Point = [east: number, north: number];
 
+// The map: a ground height grid (flat for the night market) and its layout.
 export interface ArenaData {
-  version: number;
-  center: { latitude: number; longitude: number };
   extentMeters: number;
-  source: {
-    osm: string;
-    osmLicense: string;
-    osmLicenseUrl: string;
-    osmAttribution: string;
-    elevation: string;
-    elevationLicense: string;
-  };
   elevation: { gridSize: number; meters: number[]; baseMeters: number };
-  buildings: { id: number; outline: Point[]; height: number }[];
-  roads: { id: number; kind: string; width: number; points: Point[] }[];
-  parks: { id: number; outline: Point[] }[];
-  trees: Point[];
-  // A hand-built map's own layout; absent for the San Jose open-data arena.
-  layout?: MapLayout;
+  layout: MapLayout;
 }
 
-// A solid box in a hand-built map: walls, floors, counters, stairs and railings. Railings use
+// A solid box in the map: walls, floors, counters, stairs and railings. Railings use
 // the "boundary" material, which blocks players but not bullets. `look` names how it is drawn.
 export interface LayoutBox {
   half: [number, number, number];
@@ -39,74 +24,14 @@ export interface LayoutBox {
   look: string;
 }
 
-// What every client must agree on for a hand-built map: where players start, where weapons
+// What every client must agree on for a map: where players start, where weapons
 // lie and what is solid. How it looks is built from the same definition (see nightMarket.ts).
 export interface MapLayout {
   id: string;
   name: string;
-  sky: "day" | "dusk";
   spawns: { east: number; north: number; heading: number }[];
   pickups: { id: string; weapon: "pistol" | "rifle"; east: number; north: number }[];
   solids: LayoutBox[];
-}
-
-export const DEFAULT_ARENA: Arena = {
-  latitude: 37.337261,
-  longitude: -121.890152,
-  sizeMeters: 140,
-};
-
-// The bundled geometry is projected around this fixed origin, independent of the playable area.
-const DATA_ORIGIN = { latitude: 37.3378, longitude: -121.8897 };
-const DATA_EXTENT_METERS = 350;
-const METERS_PER_LATITUDE = 111_320;
-const METERS_PER_LONGITUDE = METERS_PER_LATITUDE * Math.cos(DATA_ORIGIN.latitude * Math.PI / 180);
-
-export function toLocal(latitude: number, longitude: number): Point {
-  return [
-    (longitude - DATA_ORIGIN.longitude) * METERS_PER_LONGITUDE,
-    (latitude - DATA_ORIGIN.latitude) * METERS_PER_LATITUDE,
-  ];
-}
-
-export function toCoordinates(east: number, north: number): { latitude: number; longitude: number } {
-  return {
-    latitude: DATA_ORIGIN.latitude + north / METERS_PER_LATITUDE,
-    longitude: DATA_ORIGIN.longitude + east / METERS_PER_LONGITUDE,
-  };
-}
-
-export function validateArena(arena: Arena): string | null {
-  if (!Number.isFinite(arena.latitude) || !Number.isFinite(arena.longitude)) {
-    return "Enter valid latitude and longitude values.";
-  }
-  if (!Number.isFinite(arena.sizeMeters) || arena.sizeMeters < 120 || arena.sizeMeters > 500) {
-    return "Arena side length must be between 120 and 500 meters.";
-  }
-  const [east, north] = toLocal(arena.latitude, arena.longitude);
-  const half = arena.sizeMeters / 2;
-  if (Math.abs(east) + half > DATA_EXTENT_METERS || Math.abs(north) + half > DATA_EXTENT_METERS) {
-    return "This center is outside the bundled San Jose data.";
-  }
-  return null;
-}
-
-export function arenaFromUrl(search: string): Arena {
-  const params = new URLSearchParams(search);
-  const arena = {
-    latitude: Number(params.get("lat") ?? DEFAULT_ARENA.latitude),
-    longitude: Number(params.get("lon") ?? DEFAULT_ARENA.longitude),
-    sizeMeters: Number(params.get("size") ?? DEFAULT_ARENA.sizeMeters),
-  };
-  return validateArena(arena) ? DEFAULT_ARENA : arena;
-}
-
-export function arenaUrl(arena: Arena): string {
-  const url = new URL(window.location.href);
-  url.searchParams.set("lat", String(arena.latitude));
-  url.searchParams.set("lon", String(arena.longitude));
-  url.searchParams.set("size", String(arena.sizeMeters));
-  return url.toString();
 }
 
 export function terrainHeight(data: ArenaData, east: number, north: number): number {
@@ -124,17 +49,4 @@ export function terrainHeight(data: ArenaData, east: number, north: number): num
   const south = sample(x0, z0) * (1 - tx) + sample(x1, z0) * tx;
   const northValue = sample(x0, z1) * (1 - tx) + sample(x1, z1) * tx;
   return south * (1 - tz) + northValue * tz - elevation.baseMeters;
-}
-
-export async function loadArenaData(arena: Arena = DEFAULT_ARENA): Promise<ArenaData> {
-  const isDefault = arena.latitude === DEFAULT_ARENA.latitude && arena.longitude === DEFAULT_ARENA.longitude
-    && arena.sizeMeters === DEFAULT_ARENA.sizeMeters;
-  const file = isDefault ? "san-jose-block.json" : "san-jose.json";
-  const response = await fetch(`${import.meta.env.BASE_URL}arena/${file}`);
-  if (!response.ok) throw new Error(`Arena asset returned HTTP ${response.status}`);
-  const data = await response.json() as ArenaData;
-  if (data.version !== 1 || !Array.isArray(data.buildings) || !Array.isArray(data.roads) || data.elevation?.meters.length !== 25) {
-    throw new Error("Arena asset is invalid");
-  }
-  return data;
 }

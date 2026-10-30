@@ -1,5 +1,4 @@
-import { terrainHeight, type ArenaData } from "./arena";
-import { CollisionWorld } from "./collision";
+import { type InstancedMesh } from "three/webgpu";
 import { type Material } from "./materials";
 
 export interface Vec3 { x: number; y: number; z: number }
@@ -9,10 +8,10 @@ export type EntityShape =
   | { type: "cylinder"; halfHeight: number; radius: number };
 
 // A world object that bullets and blasts can hit. Every client builds the same list in the
-// same order from the bundled arena data, so ids agree without being sent.
+// same order from the map definition, so ids agree without being sent.
 export interface WorldEntity {
   id: string;
-  kind: "cover" | "planter" | "hydrant" | "tree" | "pole" | "lamp" | "window" | "prop" | "stall" | "pane";
+  kind: "window" | "prop" | "stall" | "pane";
   material: Material;
   maxHealth: number;
   center: Vec3;
@@ -23,8 +22,8 @@ export interface WorldEntity {
   prop?: string;
 }
 
-export interface WindowPlacement { east: number; north: number; height: number; yaw: number }
-export interface LightPlacement { east: number; north: number; towardEast: number; towardNorth: number }
+// One instance of an instanced mesh, which draws part of an entity.
+export interface InstanceRef { mesh: InstancedMesh; index: number }
 
 const WINDOW_HALF = [0.69, 0.88] as const;
 const GRID = 6;
@@ -96,40 +95,3 @@ export class EntityRegistry {
     return found;
   }
 }
-
-export function buildEntities(data: ArenaData, windows: WindowPlacement[], lights: LightPlacement[]): WorldEntity[] {
-  const collision = new CollisionWorld(data);
-  const entities: WorldEntity[] = [];
-  const ground = (east: number, north: number): number => terrainHeight(data, east, north);
-  // Each cover piece is two barrier segments side by side; each can break on its own.
-  collision.cover.forEach((item, index) => {
-    for (const [segment, side] of [-1, 1].entries()) {
-      const east = item.east + side * 0.78 * Math.cos(item.yaw), north = item.north - side * 0.78 * Math.sin(item.yaw);
-      entities.push({ id: `cover:${index}:${segment}`, kind: "cover", material: "concrete", maxHealth: 420, yaw: item.yaw,
-        center: { x: east, y: ground(item.east, item.north) + 0.56, z: north }, shape: { type: "box", half: [0.78, 0.56, 0.35] } });
-    }
-  });
-  collision.furniture.forEach((item, index) => {
-    const planter = item.kind === "planter";
-    const halfHeight = planter ? 0.55 : 0.48;
-    entities.push({ id: `furniture:${index}`, kind: planter ? "planter" : "hydrant", material: planter ? "concrete" : "metal-solid", maxHealth: planter ? 240 : Infinity, yaw: 0,
-      center: { x: item.east, y: ground(item.east, item.north) + halfHeight, z: item.north }, shape: { type: "cylinder", halfHeight, radius: item.radius } });
-  });
-  data.trees.forEach(([east, north], index) => {
-    entities.push({ id: `tree:${index}`, kind: "tree", material: "timber", maxHealth: Infinity, yaw: 0,
-      center: { x: east, y: ground(east, north) + 2.85, z: north }, shape: { type: "cylinder", halfHeight: 2.85, radius: 0.35 } });
-  });
-  lights.forEach((light, index) => {
-    const base = ground(light.east, light.north);
-    entities.push({ id: `pole:${index}`, kind: "pole", material: "metal-solid", maxHealth: Infinity, yaw: 0,
-      center: { x: light.east, y: base + 3.15, z: light.north }, shape: { type: "cylinder", halfHeight: 3.15, radius: 0.1 } });
-    entities.push({ id: `lamp:${index}`, kind: "lamp", material: "glass", maxHealth: 1, yaw: -Math.atan2(light.towardNorth, light.towardEast),
-      center: { x: light.east + light.towardEast * 1.05, y: base + 6.18, z: light.north + light.towardNorth * 1.05 }, shape: { type: "box", half: [0.21, 0.05, 0.125] } });
-  });
-  windows.forEach((window, index) => {
-    entities.push({ id: `window:${index}`, kind: "window", material: "glass", maxHealth: 1, yaw: window.yaw,
-      center: { x: window.east, y: window.height, z: window.north } });
-  });
-  return entities;
-}
-

@@ -1,10 +1,7 @@
 import { InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { terrainHeight, toLocal, type Arena, type ArenaData } from "./arena";
-import { CollisionWorld } from "./collision";
 import { type WorldEntity } from "./entities";
 import { type Material } from "./materials";
-import { makeWeaponPickups } from "../game/combatRules";
 
 export interface PropModel { name: string; file: string; size: [number, number, number]; material: Material; mass: number }
 
@@ -22,16 +19,6 @@ export async function loadPropModels(): Promise<PropModel[]> {
   }
 }
 
-// Seeded so every client places the same props in the same order.
-function random(seed: number): () => number {
-  return () => {
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 export function propEntity(id: string, model: PropModel, east: number, north: number, base: number, yaw: number): WorldEntity {
   const [x, y, z] = model.size;
   return {
@@ -41,62 +28,6 @@ export function propEntity(id: string, model: PropModel, east: number, north: nu
   };
 }
 
-// Street props on the pavements inside the playable block: stacked crates, drum pairs,
-// bins, boxes and plastic crates, clear of spawns, pickups, cover and each other.
-export function placeStreetProps(data: ArenaData, arena: Arena, models: PropModel[]): WorldEntity[] {
-  const byName = new Map(models.map((model) => [model.name, model]));
-  const collision = new CollisionWorld(data);
-  const [centerEast, centerNorth] = toLocal(arena.latitude, arena.longitude);
-  const spawns = Array.from({ length: 8 }, (_, slot) => collision.findSpawn(arena, slot));
-  const pickups = makeWeaponPickups(data, arena);
-  const next = random(20261029);
-  const spots: { east: number; north: number; yaw: number }[] = [];
-  for (const road of data.roads) {
-    if (road.width < 8) continue;
-    const [a, b] = road.points;
-    const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
-    if (length < 6) continue;
-    for (const side of [-1, 1]) for (let along = 3; along < length - 3; along += 9) {
-      const offset = road.width / 2 + 2.2;
-      spots.push({ east: a[0] + dx / length * along - side * dz / length * offset, north: a[1] + dz / length * along + side * dx / length * offset, yaw: Math.atan2(dx, dz) });
-    }
-  }
-  for (let i = spots.length - 1; i > 0; i -= 1) { const j = Math.floor(next() * (i + 1)); [spots[i], spots[j]] = [spots[j], spots[i]]; }
-  const used: { east: number; north: number }[] = [];
-  const clear = (east: number, north: number): boolean => Math.abs(east - centerEast) < arena.sizeMeters / 2 - 4 && Math.abs(north - centerNorth) < arena.sizeMeters / 2 - 4
-    && !collision.blocked(east, north, 1.3) && spawns.every((spawn) => Math.hypot(spawn.east - east, spawn.north - north) > 5)
-    && pickups.every((pickup) => Math.hypot(pickup.east - east, pickup.north - north) > 3.5) && used.every((spot) => Math.hypot(spot.east - east, spot.north - north) > 6);
-  const groups: { count: number; layout: [string, number, number, number][] }[] = [
-    // [model, offset across, offset along, stacked on height]
-    { count: 4, layout: [["crate_wood_large", 0, 0, 0], ["crate_wood", 0, 0.05, 0.465], ["crate_wood", 0, 1.1, 0]] },
-    { count: 3, layout: [["oil_drum", 0, -0.36, 0], ["oil_drum", 0, 0.36, 0]] },
-    { count: 6, layout: [["trash_can", 0, 0, 0]] },
-    { count: 4, layout: [["cardboard_box", 0, 0, 0], ["cardboard_box", 0, 0.02, 0.342], ["cardboard_box", 0.1, 0.62, 0]] },
-    { count: 3, layout: [["plastic_crate", 0, 0, 0], ["plastic_crate", 0, 0, 0.254]] },
-  ];
-  const entities: WorldEntity[] = [];
-  let spot = 0;
-  for (const group of groups) {
-    for (let placed = 0; placed < group.count && spot < spots.length; spot += 1) {
-      const { east, north, yaw } = spots[spot];
-      if (!clear(east, north)) continue;
-      used.push({ east, north });
-      placed += 1;
-      for (const [name, across, along, stacked] of group.layout) {
-        const model = byName.get(name);
-        if (!model) continue;
-        const x = east + Math.sin(yaw) * along + Math.cos(yaw) * across, z = north + Math.cos(yaw) * along - Math.sin(yaw) * across;
-        const twist = (next() - 0.5) * 0.5;
-        entities.push(propEntity(`prop:${entities.length}`, model, x, z, terrainHeight(data, east, north) + stacked, yaw + twist));
-      }
-    }
-  }
-  return entities;
-}
-
-// The drawn props: every part of each model is one instanced mesh holding all props of
-// that model, so 52 props cost a draw call per model part rather than per prop.
-// Instances follow their physics bodies every frame and shrink to nothing when broken.
 export class PropViews {
   private parts = new Map<string, { geometry: BufferGeometry; material: SurfaceMaterial | SurfaceMaterial[]; matrix: Matrix4 }[]>();
   private meshes = new Map<string, InstancedMesh[]>();

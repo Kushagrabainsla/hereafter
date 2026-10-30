@@ -1,4 +1,4 @@
-import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
+import { type ArenaData, terrainHeight } from "../world/arena";
 import { targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, WEAPONS, type HitZone, type WeaponKind, type WeaponPickup } from "./combatRules";
 import { type ShotRay } from "../world/physics";
 import { type PlayerPose } from "./playerController";
@@ -154,8 +154,8 @@ export class MatchState {
   private bloom = new Map<string, number>();
   private now = 0;
 
-  constructor(private data: ArenaData, arena: Arena, private onChange: (snapshot: CombatSnapshot) => void, private world?: CombatWorld) {
-    this.pickups = makeWeaponPickups(data, arena);
+  constructor(private data: ArenaData, private onChange: (snapshot: CombatSnapshot) => void, private world?: CombatWorld) {
+    this.pickups = makeWeaponPickups(data);
   }
 
   reset(selfId: string): void {
