@@ -422,6 +422,22 @@ export class GameAudio {
     this.hiss(at, seconds, 1700, 0.55, true);
   }
 
+  // A steam pipe bursting: a bang, then a roar of steam that eases off as the cloud thins.
+  steamBurst(at: Vec3): void {
+    const context = this.live();
+    if (!context || !this.noise) return;
+    this.spatial("impact-metal", at, { gain: 0.8, ref: 3, rolloff: 1.2, rate: 0.6, priority: "high" });
+    this.hiss(at, 11, 2600, 0.5);
+    this.hiss(at, 13, 700, 0.3);
+  }
+
+  // A door kicked open: a boot against wood and the leaf slamming back.
+  kick(at: Vec3): void {
+    const now = this.time();
+    this.spatial("land", at, { gain: 0.8, ref: 3, rolloff: 1.2, rate: 0.7, priority: "high" });
+    this.spatial("impact-soft", at, { gain: 0.6, ref: 3, rolloff: 1.2, rate: 0.55, when: now + 0.25 });
+  }
+
   // Doors and the serving hatch: a latch and the swing; shutting ends with a knock.
   hinge(at: Vec3, open: boolean, hatch: boolean): void {
     const now = this.time();

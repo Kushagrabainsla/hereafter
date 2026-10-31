@@ -14,7 +14,8 @@
     "build:audio": "sh scripts/audio/fetch.sh && sh scripts/audio/build.sh",
     "build:props": "sh scripts/props/build.sh",
     "build:lightmaps": "sh scripts/lightmaps/build.sh",
-    "build:truck": "sh scripts/truck/build.sh"
+    "build:truck": "sh scripts/truck/build.sh",
+    "build:kit": "sh scripts/kit/build.sh"
   },
   "dependencies": {
     "@dimforge/rapier3d": "^0.21.0",

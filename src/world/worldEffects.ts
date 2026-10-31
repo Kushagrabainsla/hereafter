@@ -246,6 +246,22 @@ export class WorldEffects {
       this.solid.spawn(at, { x: 0, y: -0.5, z: 0 }, entity.material === "glass" ? 10 : 2, "shards", floor, 1.2);
       this.glow.spawn(at, { x: 0, y: -0.3, z: 0 }, entity.material === "glass" ? 10 : 22, "sparks", floor, 1.1);
       if (entity.material === "glass") gameAudio.bulbPop(at); else gameAudio.shortCircuit(at);
+    } else if (entity.kind === "door" || entity.kind === "boards") {
+      // A leaf blown off its hinges, or planks torn from a window.
+      if (entity.material === "wood") {
+        this.solid.spawn(at, up, 44, "splinters", floor, 1.4);
+        this.solid.spawn(at, up, 18, "chunks", floor, 1.2);
+        this.puff(at, 1.1, 1.4, 0.3, 0x8a7a64, 0.35);
+        gameAudio.splinter(at);
+      } else {
+        this.glow.spawn(at, up, 18, "sparks", floor, 1.0);
+        this.solid.spawn(at, up, 12, "chunks", floor, 1.0);
+        gameAudio.impact(entity.material, at);
+      }
+    } else if (entity.kind === "pipe") {
+      // Shreds of lagging; the steam itself is drawn by the pipe.
+      this.solid.spawn(at, up, 16, "puff", floor, 1.2);
+      this.glow.spawn(at, up, 8, "sparks", floor, 0.8);
     } else if (entity.kind === "tank") {
       this.glow.spawn({ ...at, y: at.y + 0.35 }, up, 14, "sparks", floor, 0.4);
     } else if (entity.kind === "prop") {

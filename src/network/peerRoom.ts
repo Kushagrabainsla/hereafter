@@ -5,7 +5,7 @@ import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matc
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 5;
+const PROTOCOL_VERSION = 6;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {

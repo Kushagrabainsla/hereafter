@@ -255,11 +255,25 @@ export class PhysicsWorld {
     if (body && body.isDynamic()) body.applyImpulseAtPoint(impulse, point, true);
   }
 
-  // A door or hatch: a thin box of a material, placed and turned with setMover.
-  addMover(id: string, half: [number, number, number], material: Material): void {
+  // A door or hatch: a thin box of a material, placed and turned with setMover. A door leaf
+  // that can be shot off its hinges names its entity, so rounds that strike it wear it down.
+  addMover(id: string, half: [number, number, number], material: Material, entity?: string): void {
     const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half));
-    this.tags.set(collider.handle, { material });
+    this.tags.set(collider.handle, entity ? { material, entity } : { material });
     this.movers.set(id, collider);
+  }
+
+  // Where a door or hatch is now.
+  moverCenter(id: string): Vec3 | null {
+    const collider = this.movers.get(id);
+    if (!collider) return null;
+    const t = collider.translation();
+    return { x: t.x, y: t.y, z: t.z };
+  }
+
+  // A leaf blown off its hinges stops blocking anything until the room resets.
+  setMoverEnabled(id: string, enabled: boolean): void {
+    this.movers.get(id)?.setEnabled(enabled);
   }
 
   setMover(id: string, center: Vec3, rotation: Quat): void {

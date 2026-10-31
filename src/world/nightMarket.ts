@@ -14,6 +14,10 @@ import { propEntity, type PropModel } from "./props";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
+import { KitPlacer, type KitPiece } from "./kit";
+import { DOOR_ENTITIES, DOOR_TOGGLES, Doors } from "./doors";
+import { dressFacades, wallMatrix } from "./facades";
+import { PIPE_ENTITIES, placeSteamPipes, SteamPipes } from "./steamPipes";
 
 // The SoFA night market: a 60 m square back-alley block at dusk with three lanes. The market
 // alley (x -8.5..0.5) is lined with wooden stalls; the service alley (x 8.5..17) runs behind
@@ -26,7 +30,7 @@ import { Lamps, type LampPart } from "./lamps";
 
 type Face = "px" | "nx" | "pz" | "nz";
 interface Facade { face: Face; at: number; from: number; to: number; y0: number; y1: number; lit: number }
-interface Shopfront { face: Face; at: number; along: number; width: number; photo: "cafe" | "stone"; sign: [text: string, background: string, ink: string] }
+interface Shopfront { face: Face; at: number; along: number; width: number; photo: "cafe" | "stone"; sign: [text: string, background: string, ink: string]; open?: boolean }
 interface Stall { x: number; z: number; side: 1 | -1 }
 interface Pane { x: number; z0: number; z1: number; y0: number; y1: number }
 interface Strand { x0: number; z0: number; x1: number; z1: number; y: number; sag: number }
@@ -70,7 +74,23 @@ box(-8.5, -7.1, 4.6, 5.65, -14.5, -14.44, "boundary", "rail");
 
 // ---------- middle block, with a cut-through and passages at both ends ----------
 box(0.5, 8.5, 0, 12, 4, 26, "brick", "brickRed");
-box(0.5, 8.5, 0, 10, -26, -2, "brick", "plasterTeal");
+box(0.5, 8.5, 0, 10, -26, -14.4, "brick", "plasterTeal");
+box(0.5, 8.5, 0, 10, -6.6, -2, "brick", "plasterTeal");
+box(0.5, 8.5, 3.6, 10, -14.4, -6.6, "brick", "plasterTeal");
+// The record shop runs through the block: a glass front and double doors on the market alley,
+// a steel back door and a boarded-up window on the service alley.
+const recordsFront = (z0: number, z1: number, y0 = 0, y1 = 3.6): void => box(0.5, 0.8, y0, y1, z0, z1, "brick", "recordsFront");
+recordsFront(-14.4, -13.9); recordsFront(-13.9, -11.1, 0, 0.55); recordsFront(-13.9, -11.1, 2.9);
+recordsFront(-11.1, -10.7); recordsFront(-10.7, -9.1, 2.6); recordsFront(-9.1, -6.6);
+const recordsBack = (z0: number, z1: number, y0 = 0, y1 = 3.6): void => box(8.2, 8.5, y0, y1, z0, z1, "brick", "plasterTeal");
+recordsBack(-14.4, -11.8); recordsBack(-11.8, -9.8, 0, 0.6); recordsBack(-11.8, -9.8, 2.5);
+recordsBack(-9.8, -8.6); recordsBack(-8.6, -7.6, 2.2); recordsBack(-7.6, -6.6);
+// Inside: record bins down the middle, shelves along both side walls and a counter at the back.
+const RECORD_BINS: [number, number][] = [[2.8, -12.6], [4.6, -12.6], [3.6, -9.3]];
+for (const [x, z] of RECORD_BINS) box(x - 0.7, x + 0.7, 0, 0.78, z - 0.38, z + 0.38, "wood", "none");
+box(1.1, 4.75, 0, 2.2, -14.4, -14.0, "wood", "none");
+box(1.1, 6.6, 0, 2.2, -7.0, -6.6, "wood", "none");
+box(6.6, 7.3, 0, 1.0, -14.3, -12.0, "wood", "woodBar");
 
 // ---------- service alley ----------
 for (const [x0, x1, z0, z1] of [[8.65, 9.75, 14, 15.9], [8.65, 9.75, 10.6, 12.5], [15.85, 16.95, -10.2, -8.3], [8.65, 9.75, -18, -16.1]]) box(x0, x1, 0, 1.3, z0, z1, "metal-solid", "dumpster");
@@ -147,7 +167,7 @@ const shopfronts: Shopfront[] = [
   { face: "px", at: -8.5, along: -27, width: 4.6, photo: "stone", sign: ["TEA HOUSE", "#2f1830", "#ffd2ef"] },
   { face: "nx", at: 0.5, along: 21.7, width: 5.2, photo: "stone", sign: ["DUMPLINGS", "#401818", "#ffe0a0"] },
   { face: "nx", at: 0.5, along: 11.9, width: 3.6, photo: "cafe", sign: ["BOBA", "#173a52", "#bfe9ff"] },
-  { face: "nx", at: 0.5, along: -11.5, width: 4.4, photo: "cafe", sign: ["RECORDS", "#1b2240", "#c8e4ff"] },
+  { face: "nx", at: 0.5, along: -11.5, width: 4.4, photo: "cafe", sign: ["RECORDS", "#1b2240", "#c8e4ff"], open: true },
   { face: "nx", at: 0.5, along: -21, width: 4.6, photo: "stone", sign: ["PHO HOUSE", "#3a2a12", "#ffe6b0"] },
   { face: "nx", at: 17, along: -20, width: 4.6, photo: "stone", sign: ["LAUNDRY", "#e9e2d2", "#2d5a8a"] },
 ];
@@ -160,6 +180,7 @@ const panes: Pane[] = [
   { x: -8.65, z0: 0.2, z1: 4.6, y0: 0.55, y1: 2.9 },
   { x: -8.65, z0: 5.4, z1: 9.8, y0: 0.55, y1: 2.9 },
   { x: 17.15, z0: 1.2, z1: 5.6, y0: 0.55, y1: 2.9 },
+  { x: 0.65, z0: -13.9, z1: -11.1, y0: 0.55, y1: 2.9 },
 ];
 const strands: Strand[] = [
   ...[23, 15, 8, 1, -6, -13, -20].map((z) => ({ x0: -8.5, z0: z, x1: 0.5, z1: z + 1.5, y: 5.4, sag: 0.7 })),
@@ -208,9 +229,10 @@ export const NIGHT_MARKET: MapLayout = {
     { id: "mags-fire-escape", weapon: "rifle", item: "magazines", east: -7.8, north: -19.4, y: 4.6 },
     { id: "mags-upstairs", weapon: "rifle", item: "magazines", east: 18.4, north: 8.8, y: 4.2 },
     { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 9.2, north: 11.5, y: 1.3 },
+    { id: "mags-records", weapon: "pistol", item: "magazines", east: 6.95, north: -12.5, y: 1.0 },
   ],
   solids,
-  toggles: TRUCK_TOGGLES,
+  toggles: [...TRUCK_TOGGLES, ...DOOR_TOGGLES],
 };
 
 // The low sun just above the rooftops to the west-southwest: where it lies from the market
@@ -493,6 +515,10 @@ const posters: [number, number, number, Face, string[], string, string, string][
   [17, -14.0, 1.7, "nx", ["ART", "WALK", "1ST FRIDAY"], "#1f2a44", "#fff2d0", "#3fd0c9"],
   [8.5, -15.6, 1.6, "px", ["SOFA", "STREET FOOD", "EVERY NIGHT"], "#2b1420", "#ffd8a8", "#ff4f7d"],
   [-8.5, -13.4, 1.7, "px", ["NOODS", "OPEN LATE", "2 FOR $9"], "#ffe36e", "#2a1a14", "#e2453c"],
+  // Inside the record shop.
+  [-6.6, 7.4, 1.7, "nz", ["NEW", "ARRIVALS", "VINYL"], "#151515", "#f4e9d0", "#ff5a3c"],
+  [8.2, -13.2, 1.8, "nx", ["LIVE DJ", "SAT 9PM", "NO COVER"], "#2b1d4a", "#ffe9c2", "#57e6ff"],
+  [-14.4, 5.6, 1.8, "pz", ["CRATE", "DIGGERS", "WELCOME"], "#f2d64b", "#1e1e1e", "#d94f3d"],
 ];
 
 export interface BuiltMap {
@@ -504,6 +530,9 @@ export interface BuiltMap {
   ladders: Ladder[];
   // Static surfaces that can take baked light (see lightmap.ts), one mesh per look.
   surfaces: Mesh[];
+  // The doors players open, kick and shoot off their hinges, and the steam pipes that burst.
+  doors: Doors;
+  pipes: SteamPipes;
   // Every breakable lamp and sign, and the lights they feed.
   lamps: Lamps;
   // Adds the market's lights: every lamp, bulb string, sign and lit shop when the renderer
@@ -519,7 +548,7 @@ export interface BuiltMap {
 
 type NodeOptions = ConstructorParameters<typeof MeshStandardNodeMaterial>[0];
 
-export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[]): BuiltMap {
+export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[], kit = new Map<string, KitPiece>()): BuiltMap {
   const owned: CanvasTexture[] = [];
   const own = <T extends CanvasTexture>(texture: T): T => { owned.push(texture); return texture; };
   const std = (options: ConstructorParameters<typeof MeshStandardMaterial>[0]): MeshStandardMaterial => new MeshStandardMaterial(options);
@@ -564,6 +593,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
     photoStone: std({ map: textures.storefrontStone, emissive: 0xffffff, emissiveMap: textures.storefrontStone, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
     poster: std({ color: 0xffffff, roughness: 0.8 }),
+    recordsFront: wall({ color: 0x1b2a4a, metalness: 0.1, roughness: 0.55 }), recordsWall: plaster(0x8a4a3a),
   };
   const statics = new Batch(materials);
   // ---------- lights ----------
@@ -583,6 +613,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const archLight = light([-4, 5.0, 28.6, 0xffcf5a, 4, 6]);
   const bannerLight = light([-4, 5.6, -22.8, 0xffd0a8, 3, 5]);
   const pendantLights = [-2, 2.4, 6.8].map((z) => light([-10.3, 2.6, z, 0xffc887, 4.5, 6]));
+  const recordsLights = [3.0, 6.0].map((x) => light([x, 3.0, -10.5, 0xffd6a0, 4.5, 6.5]));
   light([-13.4, 3.1, -2, 0xfff0dd, 4, 6]);
   light([-13.4, 3.1, 9, 0xfff0dd, 4, 6]);
   const barLight = light([20.1, 3.4, 8.5, 0xff9ab0, 5, 7]);
@@ -715,7 +746,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   shopfronts.forEach((shop, index) => {
     const [nx, nz] = FACE_NORMAL[shop.face];
     const x = nx ? shop.at + nx * 0.04 : shop.along, z = nz ? shop.at + nz * 0.04 : shop.along;
-    statics.plane(shop.photo === "cafe" ? "photoCafe" : "photoStone", shop.width, 3.1, x, 1.6, z, shop.face);
+    if (!shop.open) statics.plane(shop.photo === "cafe" ? "photoCafe" : "photoStone", shop.width, 3.1, x, 1.6, z, shop.face);
     const neon = index % 2 === 1;
     sign(shop.sign[0], neon ? "#0b0a0f" : shop.sign[1], shop.sign[2], shop.width, 0.7, x + nx * 0.02, 3.55, z + nz * 0.02, shop.face, neon ? 2.6 : 0.95, { neon }, { id: `lamp:shop-sign-${index}` });
   });
@@ -736,13 +767,13 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     statics.box("steelDark", 0.66, height + 0.08, 0.06, out, y - height / 2 - 0.04, along);
     statics.box("steelDark", 0.55, 0.05, 0.05, at + nx * 0.27, y + height / 2 - 0.1, along);
   });
-  // Back doors and ground-floor doors on blank walls.
-  const doors: [number, number, Face][] = [[8.5, 18, "px"], [8.5, -8, "px"], [8.5, -20, "px"], [17, 15.5, "nx"], [17, -10.5, "nx"], [-8.5, 18.6, "px"], [0.5, 25, "nx"]];
-  for (const [at, along, face] of doors) {
-    const [nx, nz] = FACE_NORMAL[face];
-    statics.box("frame", nx ? 0.12 : 1.4, 2.5, nx ? 1.4 : 0.12, nx ? at + nx * 0.03 : along, 0, nz ? at + nz * 0.03 : along);
-    statics.box("door", nx ? 0.1 : 1.2, 2.3, nx ? 1.2 : 0.1, nx ? at + nx * 0.06 : along, 0, nz ? at + nz * 0.06 : along);
-  }
+  // Downpipes, air conditioners, meters, vents, back doors and fire escapes from the kit.
+  const placer = new KitPlacer(kit);
+  dressFacades(placer, windowSpots, blades.map(([at, along, y, face, text]) => {
+    const height = 0.42 * text.replace(/ /g, "").length + 0.36;
+    return { face, at, along, y0: y - height / 2, y1: y + height / 2 };
+  }));
+  placeSteamPipes(placer);
   for (const [x, z, face] of [[-4, 29.95, "nz"], [12.75, 29.95, "nz"], [-4, -29.95, "pz"], [12.75, -29.95, "pz"]] as [number, number, Face][]) {
     statics.plane("shutter", 6, 3.6, x, 1.8, z, face);
     statics.box("trim", 6.6, 0.4, 0.3, x, 3.6, z);
@@ -764,6 +795,28 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   muralMesh.rotation.y = FACE_YAW.nx;
   muralMesh.receiveShadow = true;
   root.add(muralMesh);
+
+  // ---------- the record shop ----------
+  ground("floor", 0.8, 8.2, -14.4, -6.6, 0.012);
+  // Painted walls and a ceiling just in front of the block's own faces.
+  const lining = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, look = "recordsWall"): void => statics.box(look, x1 - x0, y1 - y0, z1 - z0, (x0 + x1) / 2, y0, (z0 + z1) / 2);
+  lining(0.8, 8.2, 0, 3.6, -14.4, -14.39);
+  lining(0.8, 8.2, 0, 3.6, -6.61, -6.6);
+  for (const [z0, z1, y0, y1] of [[-14.4, -13.9, 0, 3.6], [-13.9, -11.1, 0, 0.55], [-13.9, -11.1, 2.9, 3.6], [-11.1, -10.7, 0, 3.6], [-10.7, -9.1, 2.6, 3.6], [-9.1, -6.6, 0, 3.6]]) lining(0.8, 0.81, y0, y1, z0, z1);
+  for (const [z0, z1, y0, y1] of [[-14.4, -11.8, 0, 3.6], [-11.8, -9.8, 0, 0.6], [-11.8, -9.8, 2.5, 3.6], [-9.8, -8.6, 0, 3.6], [-8.6, -7.6, 2.2, 3.6], [-7.6, -6.6, 0, 3.6]]) lining(8.19, 8.2, y0, y1, z0, z1);
+  lining(0.8, 8.2, 3.58, 3.6, -14.4, -6.6, "plasterInside");
+  for (const [x, z] of RECORD_BINS) placer.place("record_bin", new Matrix4().makeTranslation(x, 0, z));
+  for (const x of [1.95, 3.8]) placer.place("record_shelf", wallMatrix("pz", -14.39, x, 0));
+  for (const x of [1.95, 3.8, 5.65]) placer.place("record_shelf", wallMatrix("nz", -6.61, x, 0));
+  placer.place("turntable", new Matrix4().compose(new Vector3(6.95, 1.0, -13.4), new Quaternion().setFromAxisAngle(UP, -Math.PI / 2), new Vector3(1, 1, 1)));
+  placer.place("frame_steel", wallMatrix("px", 8.5, -8.1, 0));
+  [3.0, 6.0].forEach((x, index) => {
+    statics.cylinder("steelDark", 0.006, 0.18, x, 3.4, -10.5, 4);
+    lamps.add(`lamp:records-${index}`, { x, y: 3.3, z: -10.5 }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, [lampMesh(new CylinderGeometry(0.05, 0.16, 0.22, 12), x, 3.3, -10.5)], [recordsLights[index]]);
+  });
+  // The boarded-up back window: planks a few rounds or a grenade will clear.
+  refs.set("boards:records", placer.place("boards", wallMatrix("px", 8.5, -10.8, 1.55)));
+  entities.push({ id: "boards:records", kind: "boards", material: "wood", maxHealth: 120, yaw: 0, center: { x: 8.35, y: 1.55, z: -10.8 }, shape: { type: "box", half: [0.15, 0.95, 1.0] } });
 
   // ---------- restaurant and bar interiors ----------
   for (const z of [-2, 2.4, 6.8]) {
@@ -827,8 +880,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const solid of solids.filter((item) => item.look === "dumpster")) statics.box("dumpsterLid", solid.half[0] * 2 + 0.1, 0.08, solid.half[2] * 2 + 0.1, solid.center.x, solid.center.y + solid.half[1], solid.center.z);
   statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0, 18);
   statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0.15, 18.1);
-  for (const [x, y, z] of [[8.8, 3.2, 20], [8.8, 6.6, -4], [8.8, 3.4, -20], [16.7, 5.5, 18], [16.7, 2.8, -24]]) statics.box("steelDark", 0.6, 0.55, 0.9, x, y, z);
-  for (const [x, z] of [[16.85, 22], [8.65, -24], [-8.35, 10.3], [0.65, -25]]) statics.box("steelDark", 0.12, 9, 0.12, x, 0, z);
   statics.cylinder("steelDark", 0.35, 0.03, 12.75, 0, -6, 20);
   // Wall lamps, lit and dark copies: a broken one moves to the dark set.
   const sconceLit = new InstancedMesh(new BoxGeometry(0.25, 0.3, 0.4), materials.sconce, sconces.length);
@@ -973,6 +1024,12 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     return mesh;
   })();
 
+  // Only the fire escapes stand high enough in the low sun to throw shadows worth drawing.
+  placer.build(root, (name) => name.startsWith("escape"));
+  const doors = new Doors(root, kit);
+  for (const [id, objects] of doors.groups) groups.set(id, objects);
+  const pipes = new SteamPipes(root);
+
   addClimbing(scene, ladders, [stair]);
   const surfaces: Mesh[] = [];
   statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
@@ -987,7 +1044,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   let last = 0;
   return {
-    refs, groups, entities: [...entities, ...lamps.entities], props, ladders, surfaces, lamps, lightSources: many,
+    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes,
     light(manyLights) {
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
       const points = list.map(([x, y, z, color, intensity, distance]) => {
@@ -1006,10 +1063,12 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
       lamps.update(dt);
       swing(seconds);
       steam(dt);
+      doors.update(dt);
+      pipes.update(dt);
       // The OPEN sign's tube is failing: it stutters off now and then, until it is shot out.
       const tick = Math.floor(seconds * 14), roll = Math.abs(Math.sin(tick * 12.9898) * 43758.5453) % 1;
       if (!lamps.broken("lamp:open")) openSign.emissiveIntensity = roll < 0.07 ? 0.2 : roll < 0.1 ? 1.2 : 3.0;
     },
-    dispose() { for (const texture of owned) texture.dispose(); },
+    dispose() { for (const texture of owned) texture.dispose(); pipes.dispose(); },
   };
 }

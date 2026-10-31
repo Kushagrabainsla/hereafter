@@ -34,6 +34,10 @@ So a carbine round passes through a window, a crate, a bin, a stall seen from th
 | Propane cylinder | 16 | vents burning gas for 1.6 s, then bursts with a grenade's blast |
 | Lamp, string-light run, lantern, sign | 1 | glass shards and sparks; it goes dark and the light it fed dims |
 | Breaker box | 30 | sparks; every lamp on the service alley's circuit goes out |
+| Wooden door leaf | 100 | splinters; the leaf and its collider are gone |
+| Steel back door | 60 | sparks |
+| Boarded window | 120 | splinters and planks; the window opens |
+| Steam pipe | 10 | a burst of steam that hides the area around it for about 15 s |
 | Bin, drum, air-conditioner, walls, counters, dumpsters, the truck itself | indestructible | |
 
 A stall takes 8 pistol hits or 12 carbine hits, or one grenade landing close by. The health of anything damaged travels in the combat snapshot, so late joiners see the same broken market. A destroyed object's collider is removed, so it stops blocking movement, bullets and blasts. Bullet holes and impact particles follow the material: dust, sparks, splinters, shards or a puff.
@@ -111,6 +115,11 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 | Two tabs, one opens the rear doors, the other drops the hatch | both see both, with the panels swung the same way |
 | One pistol round each at three lanterns of one row | all three dark; the row's real light fell from full to off |
 | Three pistol rounds at the breaker box | 25 service-alley lamps went out, on WebGPU and WebGL |
+| E at the record shop's shut front door | opened; a ray through the doorway was clear |
+| A knife slash into the bar's shut north door | kicked open |
+| Pistol rounds at the restaurant's shut south door | one leaf off its hinges after 4; a ray through it was clear |
+| Pistol rounds at the record shop's boarded window | gone after 5; a ray through the window was clear |
+| One pistol round at the service alley's steam pipe | burst, and the cloud filled the alley around it |
 
 ## Limits
 

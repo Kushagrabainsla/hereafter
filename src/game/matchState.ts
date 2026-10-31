@@ -492,6 +492,12 @@ export class MatchState {
     const count = stroke === "slash" ? 9 : 3;
     const order = stroke === "slash" ? Array.from({ length: count }, (_, index) => index / (count - 1)) : [0.5, 0, 1];
     let center = shotRay(this.data, pose, "knife", rules.reach);
+    // Straight into a shut door, the blow kicks it open, even if the swing would clip the frame.
+    const ahead = (this.world?.traceBullet(center) ?? []).find((hit) => hit.material !== "boundary");
+    if (ahead?.entity && this.kick(actor, ahead.entity)) {
+      this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...center, distance: ahead.distance }, impact: false });
+      return;
+    }
     for (const t of order) {
       // Screen right is lower heading; the swing runs from right to left and high to low.
       const swept = { ...pose, heading: (pose.heading - rules.arc / 2 + rules.arc * t + 360) % 360, pitch: Math.max(-80, Math.min(80, pose.pitch + rules.drop / 2 - rules.drop * t)) };
@@ -512,6 +518,11 @@ export class MatchState {
         return;
       }
       if (surface) {
+        // A blade driven into a shut door kicks it open instead of cutting it.
+        if (surface.entity && this.kick(actor, surface.entity)) {
+          this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: surface.distance }, impact: false });
+          return;
+        }
         if (surface.entity) {
           const push = rules.impulse, d = ray.direction;
           this.damageEntity(actor, surface.entity, rules.damage.torso * MATERIALS[surface.material].bullet, surface.point, { x: d.x * push, y: d.y * push, z: d.z * push });
@@ -522,6 +533,16 @@ export class MatchState {
       }
     }
     this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: center, impact: false });
+  }
+
+  // Opens the shut door a leaf belongs to; false if the entity is no door leaf or it is open.
+  private kick(actor: string, leaf: string): boolean {
+    const toggle = this.data.layout.toggles.find((item) => leaf.startsWith(`${item.id}:`));
+    if (!toggle || (this.snapshot.open[toggle.id] ?? toggle.open)) return false;
+    this.snapshot.open[toggle.id] = true;
+    this.lastUse.set(toggle.id, this.now);
+    this.emit({ kind: "use", actor, entity: toggle.id, open: true, weapon: "knife" });
+    return true;
   }
 
   // A round travels through surfaces and bodies in order, spending penetration power on

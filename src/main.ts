@@ -103,6 +103,10 @@ const LOADER_TIPS = [
   "Right-click or press V to stab with the knife. A stab in the back is fatal.",
   "Fallen players drop their guns and magazines.",
   "Climb into the food truck by its back doors. Its propane tanks explode when shot.",
+  "Shoot out lamps and signs to darken a lane. The breaker box blacks out the service alley.",
+  "Slash a shut door to kick it open. Enough rounds, or a grenade, blow it off its hinges.",
+  "Shoot a steam pipe to fill the alley around it with cover.",
+  "The record shop runs through the middle block. Its boarded back window can be blown out.",
 ];
 let tipIndex = 0;
 const tipTimer = window.setInterval(() => { tipIndex = (tipIndex + 1) % LOADER_TIPS.length; loaderTip.textContent = LOADER_TIPS[tipIndex]; }, 3500);

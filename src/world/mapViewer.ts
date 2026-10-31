@@ -27,6 +27,8 @@ import { buildNightMarket, nightMarketData, MARKET_SUN } from "./nightMarket";
 import { duskSky } from "./duskSky";
 import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
+import { DOOR_LEAVES } from "./doors";
+import { kitPieces, loadMarketKit } from "./kit";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
@@ -170,9 +172,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Every breakable or solid object is an entity with a stable id; refs record the instances
   // that draw each one, and groups the plain objects, so it can disappear when destroyed.
   const entities = new EntityRegistry();
-  const [propModels, truckModel] = await Promise.all([loadPropModels(), loadFoodTruck()]);
+  const [propModels, truckModel, kitModel] = await Promise.all([loadPropModels(), loadFoodTruck(), loadMarketKit()]);
   const propViews = new PropViews(scene);
-  const built = buildNightMarket(scene, textures, propModels);
+  const built = buildNightMarket(scene, textures, propModels, kitPieces(kitModel));
   // Baked sky occlusion and bounce light on the static surfaces, when the bake matches.
   if (lightmap) applyLightmap(built.surfaces, lightmap);
   const refs = built.refs;
@@ -219,8 +221,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   for (const solid of data.layout.solids) physics.addBox(solid.half, solid.center, solid.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, solid.material);
   for (const entity of entities.all()) physics.addEntity(entity);
   for (const [id, swings] of Object.entries(TRUCK_SWINGS)) for (const swing of swings) physics.addMover(`${id}:${swing.node}`, swing.half, "metal-thin");
+  // Door leaves swing with their colliders, which carry their entity so rounds wear them down.
+  for (const leaf of DOOR_LEAVES) physics.addMover(leaf.id, leaf.half, leaf.model.material, leaf.id);
+  built.doors.setSwing((leaf, pose) => physics.setMover(leaf.id, pose.center, pose.rotation));
   physicsReady = physics;
   truck.setOpen(toggleState, toggleDefaults, true);
+  built.doors.setOpen(toggleState, true);
+  // A pipe that burst before this peer's first health table only leaks.
+  let healthSeen = false;
   entities.locate = (entity) => physics.propPose(entity.id)?.position ?? entity.center;
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
   player.setLadders(ladders);
@@ -494,6 +502,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           effects.restore(entity);
           truck.restore(entity.id);
           if (entity.kind === "lamp") built.lamps.setBroken(entity.id, false);
+          if (entity.kind === "door") physics.setMoverEnabled(entity.id, true);
+          if (entity.kind === "pipe") built.pipes.restore(entity.id);
           // A stall back in place brings its lamp back, unless the lamp itself was shot.
           const stallLamp = entity.kind === "stall" ? `lamp:${entity.id}` : "";
           if (stallLamp && (health[stallLamp] ?? 1) > 0) { built.lamps.setBroken(stallLamp, false); physics.restoreEntity(stallLamp); }
@@ -502,18 +512,24 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       }
       if (!Object.keys(health).length) entities.resetHealth();
       for (const entity of entities.applyHealth(health)) {
-        const at = physics.propPose(entity.id)?.position;
+        const at = physics.propPose(entity.id)?.position ?? physics.moverCenter(entity.id);
         physics.removeEntity(entity.id);
         effects.destroy(at ? { ...entity, center: at } : entity);
         if (entity.kind === "prop") propViews.setVisible(entity.id, false);
         if (entity.kind === "tyre") truck.setFlat(entity.id, true);
         if (entity.kind === "lamp") built.lamps.setBroken(entity.id, true);
+        if (entity.kind === "door") physics.setMoverEnabled(entity.id, false);
+        if (entity.kind === "pipe") {
+          built.pipes.burst(entity.id, healthSeen);
+          if (healthSeen) gameAudio.steamBurst(entity.center);
+        }
         // A stall's lamp goes down with it.
         if (entity.kind === "stall") { built.lamps.setBroken(`lamp:${entity.id}`, true); physics.removeEntity(`lamp:${entity.id}`); }
         // A cylinder bursts when its explosion arrives; this catches one that burst before
         // this peer joined.
         if (entity.kind === "tank") window.setTimeout(() => truck.burst(entity.id), 2200);
       }
+      healthSeen = true;
     },
     playEvent(event, selfId) {
       soundStage.combat(event, selfId);
@@ -568,6 +584,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (event.kind === "use" && event.entity) {
         const toggle = data.layout.toggles.find((item) => item.id === event.entity);
         if (toggle) gameAudio.hinge(toggle.at, event.open === true, event.entity.endsWith("hatch"));
+        // A kicked door bangs open.
+        if (toggle && event.weapon === "knife") gameAudio.kick(toggle.at);
       }
       if (event.kind === "explode" && event.position) {
         const at = event.position, chest = { x: camera.position.x, y: camera.position.y - 0.6, z: camera.position.z };
@@ -614,11 +632,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setOpen(open) {
       toggleState = { ...toggleDefaults, ...open };
       truck.setOpen(toggleState, toggleDefaults);
+      built.doors.setOpen(toggleState);
     },
     nearestUse() {
       const eye = camera.position;
       let best: { id: string; label: string; open: boolean; distance: number } | null = null;
       for (const toggle of data.layout.toggles) {
+        // A doorway whose leaves are all blown off has nothing left to open.
+        const leaves = DOOR_LEAVES.filter((leaf) => leaf.door.id === toggle.id);
+        if (leaves.length && leaves.every((leaf) => entities.destroyed(leaf.id))) continue;
         const distance = Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z);
         if (distance <= 2.2 && (!best || distance < best.distance)) best = { id: toggle.id, label: toggle.label, open: toggleState[toggle.id] ?? toggle.open, distance };
       }

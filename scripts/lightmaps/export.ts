@@ -3,11 +3,12 @@
 // surfaces (with the atlas as their only texture coordinates and a flat colour per look,
 // for Blender to bake), the lamps and the sun, and the atlas coordinates the game reads
 // back at load (public/lightmaps/night-market.json).
-import { Scene, Vector3, type Material, type Mesh, type Object3D, type Texture } from "three/webgpu";
+import { Matrix4, Scene, Vector3, type InstancedMesh, type Material, type Mesh, type Object3D, type Texture } from "three/webgpu";
 import { buildNightMarket, MARKET_ARENA, MARKET_SUN, NIGHT_MARKET } from "../../src/world/nightMarket";
 import { loadSurfaceTextures } from "../../src/world/surfaceTextures";
 import { checksum } from "../../src/world/lightmap";
 import { FoodTruck, loadFoodTruck } from "../../src/world/foodTruck";
+import { kitPieces, loadMarketKit } from "../../src/world/kit";
 
 const SIZE = 2048;
 // Empty texels around each chart, so neighbours do not bleed into each other when filtered.
@@ -197,7 +198,7 @@ function base64(bytes: Uint8Array): string {
 async function exportLightmap(): Promise<object> {
   const scene = new Scene();
   const textures = await loadSurfaceTextures();
-  const built = buildNightMarket(scene, textures, []);
+  const built = buildNightMarket(scene, textures, [], kitPieces(await loadMarketKit()));
   // The food truck shades the paving around it, with its hatch up as it starts.
   const truck = new FoodTruck(scene, await loadFoodTruck(), () => undefined);
   truck.setOpen({}, { "truck:hatch": true }, true);
@@ -230,6 +231,19 @@ async function exportLightmap(): Promise<object> {
   // Stalls and the truck shade the paving, though they are not baked themselves.
   const occluders: [string, Object3D][] = [...built.groups].filter(([id]) => id.startsWith("stall:")).flatMap(([id, objects]) => objects.map((object): [string, Object3D] => [id, object]));
   occluders.push(["truck", truck.root]);
+  // Fire escapes, air conditioners and the record shop's fittings shade the walls and floors
+  // behind them. Doors move, so they are left out, and so is glass.
+  const instance = new Matrix4();
+  scene.traverse((child) => {
+    const mesh = child as InstancedMesh;
+    if (!mesh.isInstancedMesh || !mesh.name.startsWith("kit:") || (mesh.material as Material).transparent) return;
+    for (let i = 0; i < mesh.count; i += 1) {
+      mesh.getMatrixAt(i, instance);
+      const geometry = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(instance).applyMatrix4(mesh.matrixWorld);
+      parts.push({ name: `occluder:${mesh.name}`, position: Float32Array.from(geometry.attributes.position.array), normal: Float32Array.from(geometry.attributes.normal.array),
+        uv: new Float32Array(geometry.attributes.position.count * 2), color: albedo(mesh.material as Material) });
+    }
+  });
   for (const [id, root] of occluders) {
     for (const object of [root]) object.traverse((child) => {
       const mesh = child as Mesh;
