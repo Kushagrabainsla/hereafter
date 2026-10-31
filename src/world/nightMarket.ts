@@ -12,6 +12,7 @@ import { type InstanceRef, type WorldEntity } from "./entities";
 import { type SurfaceTextures } from "./surfaceTextures";
 import { propEntity, type PropModel } from "./props";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
+import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 
 // The SoFA night market: a 60 m square back-alley block at dusk with three lanes. The market
 // alley (x -8.5..0.5) is lined with wooden stalls; the service alley (x 8.5..17) runs behind
@@ -57,8 +58,8 @@ for (const z of [-2, 2.4, 6.8]) box(-10.7, -9.9, 0, 0.76, z - 0.4, z + 0.4, "woo
 
 // ---------- market alley ----------
 for (const [x, z] of [[-4, 12.5], [-3.6, -4.5], [-4.2, -15]]) box(x - 0.55, x + 0.55, 0, 0.76, z - 0.55, z + 0.55, "wood", "woodTable");
-// Food truck across the north end, with gaps either side.
-box(-7.1, -0.9, 0.3, 3.05, -27.2, -24.8, "metal-thin", "none");
+// Food truck across the north end, with gaps either side: a hollow kitchen players can enter.
+solids.push(...TRUCK_SOLIDS);
 // Fire escape on the west building: a grated platform with railings, reached by a ladder.
 box(-8.5, -7.1, 4.42, 4.6, -20.5, -14.5, "metal-thin", "grating");
 box(-7.16, -7.1, 4.6, 5.65, -20.5, -17.7, "boundary", "rail");
@@ -208,6 +209,7 @@ export const NIGHT_MARKET: MapLayout = {
     { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 9.2, north: 11.5, y: 1.3 },
   ],
   solids,
+  toggles: TRUCK_TOGGLES,
 };
 
 // The low sun just above the rooftops to the west-southwest: where it lies from the market
@@ -426,7 +428,7 @@ const FACE_NORMAL: Record<Face, [number, number]> = { px: [1, 0], nx: [-1, 0], p
 const UP = new Vector3(0, 1, 0);
 
 // Looks that make their own light take none from the lightmap.
-const UNBAKED = new Set(["lampGlow", "sconce", "menuGlow", "bottle", "tailLight", "photoCafe", "photoStone"]);
+const UNBAKED = new Set(["lampGlow", "sconce", "bottle", "photoCafe", "photoStone"]);
 
 // Static geometry merged per material, so the whole map draws in a few dozen calls.
 class Batch {
@@ -550,10 +552,10 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     grating: paint(0x3d4447, 0.7, 0.5), rail: paint(0x22262a, 0.5, 0.6), stairRail: paint(0x22262a, 0.5, 0.6),
     frame: paint(0xcfc6b4, 0, 0.7), mullion: paint(0x2a2622, 0.2, 0.6), sill: concrete(0xd8d0c0), recess: paint(0x07090c, 0, 1), door: paint(0x3a2a22, 0.1, 0.7), trim: concrete(0xcfc8ba),
     shutter: std({ map: own(corrugated("#7d8287")), metalness: 0.5, roughness: 0.5 }),
-    truck: paint(0xf1e6cc, 0.2, 0.45), truckStripe: paint(0x1f7a74, 0.2, 0.5), rubber: paint(0x151515, 0, 0.9), stool: paint(0xb8432f, 0.1, 0.6),
+    stool: paint(0xb8432f, 0.1, 0.6),
     awning0: awnings[0], awning1: awnings[1], awning2: awnings[2], awning3: awnings[3],
     goods0: paint(0xe8b04a, 0, 0.8), goods1: paint(0xd3542f, 0, 0.8), goods2: paint(0x7fae4a, 0, 0.8), goods3: paint(0xf2e2c0, 0, 0.8),
-    lampGlow: glow(0xffc27a, 4), sconce: glow(0xffb070, 3.5), menuGlow: glow(0xffcf8a, 0.45), bottle: glow(0x6fd0c0, 0.9), tailLight: glow(0xff2a1a, 2.4),
+    lampGlow: glow(0xffc27a, 4), sconce: glow(0xffb070, 3.5), bottle: glow(0x6fd0c0, 0.9),
     pavement: street({ map: textures.pavement, normalMap: textures.pavementNormal, color: 0xa29d97, roughness: 0.85 }),
     asphalt: street({ map: textures.asphalt, normalMap: textures.asphaltNormal, color: 0x7d7d7d, roughness: 0.92 }),
     photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
@@ -685,9 +687,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   sign("NIGHT MARKET", "#0b0a0f", "#ffcf5a", 7.2, 1.0, -4, 5.6, 29.5, "nz", 2.6, { neon: true });
   const openSign = sign("OPEN", "#05070a", "#ff3d5a", 1.2, 0.5, 17.24, 2.1, 3.4, "nx", 3.0, { neon: true });
   sign("MENU", "#1a1a1a", "#ffe9b0", 1.8, 0.9, -11.5, 2.4, 13.96, "nz", 0.8, { neon: false });
-  sign("BAO & BUNS", "#1f7a74", "#fff4dc", 3.0, 0.5, -4, 3.42, -26, "pz", 1.2, { neon: false });
-  statics.box("steelDark", 0.06, 0.2, 0.06, -5.2, 3.05, -26); statics.box("steelDark", 0.06, 0.2, 0.06, -2.8, 3.05, -26);
-  sign("ORDER HERE", "#0b0a0f", "#7dff9a", 1.4, 0.32, -6.1, 2.2, -24.76, "pz", 2.2, { neon: true });
   // Blade signs: a bracket from the wall and a double-sided neon panel.
   for (const [at, along, y, face, text, color] of blades) {
     const [nx] = FACE_NORMAL[face];
@@ -780,23 +779,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const [x, z] of [[-4, 12.5], [-3.6, -4.5], [-4.2, -15]]) {
     for (let k = 0; k < 3; k += 1) { const a = k / 3 * Math.PI * 2 + 0.4; statics.cylinder("stool", 0.18, 0.45, x + Math.cos(a) * 0.95, 0, z + Math.sin(a) * 0.95, 12); }
   }
-  // Food truck.
-  statics.box("truck", 6.2, 2.5, 2.4, -4, 0.55, -26);
-  statics.box("truckStripe", 6.22, 0.35, 2.42, -4, 1.25, -26);
-  statics.box("menuGlow", 2.8, 1.0, 0.05, -3.6, 1.75, -24.78);
-  statics.box("steelDark", 0.5, 0.3, 0.5, -5.4, 3.05, -26.4);
-  // The back of the truck: doors, a handle and tail lights.
-  statics.box("door", 2.6, 2.1, 0.04, -4, 0.75, -27.22);
-  statics.box("mullion", 0.04, 2.1, 0.06, -4, 0.75, -27.24);
-  for (const x of [-6.7, -1.3]) statics.box("tailLight", 0.32, 0.22, 0.05, x, 1.0, -27.23);
-  for (const wx of [-2.1, 2.1]) for (const wz of [1.05, -1.05]) {
-    const wheel = new CylinderGeometry(0.42, 0.42, 0.3, 16);
-    wheel.applyMatrix4(new Matrix4().makeRotationX(Math.PI / 2));
-    statics.add("rubber", wheel, new Matrix4().makeTranslation(-4 + wx, 0.42, -26 + wz));
-  }
-  const truckAwning = meterBox(3.2, 0.05, 1.2);
-  truckAwning.applyMatrix4(new Matrix4().makeRotationX(0.35));
-  statics.add("awning1", truckAwning, new Matrix4().makeTranslation(-3.6, 2.9, -24.2));
+  // The food truck is a model of its own (foodTruck.ts).
 
   // ---------- service alley dressing ----------
   for (const solid of solids.filter((item) => item.look === "dumpster")) statics.box("dumpsterLid", solid.half[0] * 2 + 0.1, 0.08, solid.half[2] * 2 + 0.1, solid.center.x, solid.center.y + solid.half[1], solid.center.z);
@@ -863,7 +846,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // ---------- steam ----------
   const steamMaterial = new SpriteMaterial({ map: own(softSpot()), color: 0xd8d2cc, transparent: true, opacity: 0.11, depthWrite: false });
-  const vents = [new Vector3(-5.4, 3.4, -26.4), new Vector3(-7.4, 1.25, 19.4), new Vector3(12.75, 0.1, -6)];
+  const vents = [new Vector3(-5.3, 3.4, -26.6), new Vector3(-7.4, 1.25, 19.4), new Vector3(12.75, 0.1, -6)];
   const puffs = Array.from({ length: 27 }, (_, i) => {
     const sprite = new Sprite(steamMaterial);
     sprite.renderOrder = 3;
@@ -893,7 +876,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const [at, along, y, face, , color] of blades) { const [nx] = FACE_NORMAL[face]; many.push([at + nx * 0.9, y, along, Number.parseInt(color.slice(1), 16), 6, 6.5]); }
   many.push([15.0, 3.3, 6.2, 0xff6fae, 4, 5], [-4, 5.0, 28.6, 0xffcf5a, 4, 6], [-4, 5.6, -22.8, 0xffd0a8, 3, 5]);
   for (const z of [-2, 2.4, 6.8]) many.push([-10.3, 2.6, z, 0xffc887, 4.5, 6]);
-  many.push([-13.4, 3.1, -2, 0xfff0dd, 4, 6], [-13.4, 3.1, 9, 0xfff0dd, 4, 6], [20.1, 3.4, 8.5, 0xff9ab0, 5, 7], [21.5, 3.4, 1.5, 0xffb070, 4, 6], [20.5, 6.9, 4, 0xffc887, 4, 7], [-3.6, 1.9, -24.0, 0xffdca8, 4, 5]);
+  many.push([-13.4, 3.1, -2, 0xfff0dd, 4, 6], [-13.4, 3.1, 9, 0xfff0dd, 4, 6], [20.1, 3.4, 8.5, 0xff9ab0, 5, 7], [21.5, 3.4, 1.5, 0xffb070, 4, 6], [20.5, 6.9, 4, 0xffc887, 4, 7], [-3.6, 1.9, -24.0, 0xffdca8, 4, 5], [-4.6, 2.7, -26.0, 0xfff1dc, 1.6, 2.4]);
   const poolMesh = (() => {
     const pools: [number, number, number, number][] = [
       ...[23, 15, 8, 1, -6, -13, -20].map((z) => [-4, z + 0.75, 4.2, 0xffa858] as [number, number, number, number]),
@@ -915,7 +898,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   addClimbing(scene, ladders, [stair]);
   const surfaces: Mesh[] = [];
-  statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "menuGlow", "lampGlow", "bottle"].includes(look), surfaces);
+  statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
 
   // Movable props, numbered in a fixed order so ids match on every client.
   const models = new Map(propModels.map((model) => [model.name, model]));

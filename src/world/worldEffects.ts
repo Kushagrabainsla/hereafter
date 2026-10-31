@@ -209,7 +209,7 @@ export class WorldEffects {
     pool.spawn(point, normal, style === "sparks" ? 9 : 7, style, this.floor(point), 0.7);
     if (style === "dust") this.solid.spawn(point, normal, 3, "dust", this.floor(point), 1.2);
     if (material === "flesh" || material === "glass") return;
-    const size = { wood: 0.05, timber: 0.06, "metal-thin": 0.035, "metal-solid": 0.03, plastic: 0.04, cardboard: 0.045, concrete: 0.07, brick: 0.065, ground: 0.09 }[material as Exclude<Material, "flesh" | "glass" | "boundary">] ?? 0.05;
+    const size = { wood: 0.05, timber: 0.06, "metal-thin": 0.035, "metal-solid": 0.03, plastic: 0.04, cardboard: 0.045, concrete: 0.07, brick: 0.065, ground: 0.09, rubber: 0.03 }[material as Exclude<Material, "flesh" | "glass" | "boundary">] ?? 0.05;
     this.decal(point, normal, exit ? size * 1.3 : size, material.startsWith("metal") ? 0x9aa0a0 : material === "wood" || material === "timber" ? 0xc8a070 : 0xffffff);
   }
 
@@ -236,6 +236,13 @@ export class WorldEffects {
       this.solid.spawn(at, up, 22, "chunks", floor, 1.2);
       this.puff(at, 1.2, 1.6, 0.4, 0x8a7a64, 0.4);
       gameAudio.splinter(at);
+    } else if (entity.kind === "tyre") {
+      // Shredded rubber and a puff of dust as the tyre lets go.
+      this.solid.spawn({ ...at, y: at.y + 0.1 }, up, 18, "soil", floor, 1.4);
+      this.puff({ ...at, y: at.y + 0.2 }, 0.6, 0.9, 0.3, 0x5a5650, 0.35);
+      gameAudio.tyreBurst(at);
+    } else if (entity.kind === "tank") {
+      this.glow.spawn({ ...at, y: at.y + 0.35 }, up, 14, "sparks", floor, 0.4);
     } else if (entity.kind === "prop") {
       const material = entity.material;
       const style: Style = material === "wood" ? "splinters" : material === "cardboard" ? "puff" : material === "glass" ? "shards" : "dust";

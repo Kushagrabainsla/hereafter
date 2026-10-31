@@ -11,6 +11,7 @@ The game plays recorded CC0 sound for guns, reloads, handling, footsteps and imp
 - **Bullets striking things.** Concrete and ground crack and chip, metal rings, wood thunks, glass ticks and cardboard or plastic thump, each positioned where the round struck. Glass shatters, crates splinter and concrete crumbles when they break.
 - **Grenades.** A pin click and swing when thrown, clinks as it bounces, and a synthesised explosion: a sharp crack, a roaring low-passed body and a sub-bass drop with a long street echo. Distant blasts lose the crack and keep the rumble.
 - **Movement extras.** Boots on steel rungs when climbing a ladder.
+- **The food truck.** Its doors and hatch latch and swing, and knock when they shut. A tyre bursts with a bang and the hiss of escaping air. A shot propane cylinder roars louder until it bursts.
 - **Brass.** Spent cases ring as they land: a bright ring for 9 mm brass, a duller one for the carbine's lacquered steel, made of four inharmonic partials with a short decay. An empty magazine dropped in a reload clatters. Both are positioned where they land and dulled behind cover.
 - **Being hit.** A body blow and low thump with a brief muffling of the whole mix; elimination keeps the mix muffled until you respawn.
 - **Confirmation.** A short high tick for a hit, a metallic ring added for a headshot, and a heavier thunk with a bright ring for an elimination.

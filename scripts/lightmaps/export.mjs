@@ -56,7 +56,10 @@ try {
   console.log(`exported ${data.looks.length} surfaces in ${scene.charts} charts at ${scene.density.toFixed(1)} texels per metre`);
   ws.close();
 } finally {
+  const exited = new Promise((resolveExit) => browser.once("exit", resolveExit));
   browser.kill();
+  await Promise.race([exited, sleep(5000)]);
   await server.close();
-  await rm(profile, { recursive: true, force: true });
+  // Chrome may still be writing its profile as it quits; a leftover temp folder is harmless.
+  await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 }).catch(() => undefined);
 }

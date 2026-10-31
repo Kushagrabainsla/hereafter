@@ -79,6 +79,8 @@ export class PhysicsWorld {
   // Other players as kinematic capsules, so they shove props on the coordinating peer.
   private pushers = new Map<string, { body: RAPIER.RigidBody; collider: RAPIER.Collider; crouched: boolean }>();
   private pusherController: RAPIER.KinematicCharacterController;
+  // Doors and hatches: fixed colliders moved whenever they open or close.
+  private movers = new Map<string, RAPIER.Collider>();
   // Shoves the player gave props this peer does not simulate, waiting to be sent.
   private shoves = new Map<string, Vec3>();
 
@@ -91,7 +93,8 @@ export class PhysicsWorld {
     // The player belongs to group 2 only, so ragdolls (which collide only with group 1) pass it by.
     this.collider = this.world.createCollider(RAPIER.ColliderDesc.capsule(STANDING_HALF_HEIGHT, RADIUS).setCollisionGroups(PLAYER_GROUPS), this.body);
     this.controller = this.world.createCharacterController(0.015);
-    this.controller.enableAutostep(0.22, 0.2, false);
+    // Steps up to 26 cm are walked up: kerbs, the bar stair and the food truck's bumper step.
+    this.controller.enableAutostep(0.26, 0.15, false);
     this.controller.enableSnapToGround(0.28);
     this.controller.setMaxSlopeClimbAngle(45 * Math.PI / 180);
     // Walking into a loose prop shoves it with the force a body of the player's mass can
@@ -250,6 +253,20 @@ export class PhysicsWorld {
   push(id: string, point: Vec3, impulse: Vec3): void {
     const body = this.props.get(id);
     if (body && body.isDynamic()) body.applyImpulseAtPoint(impulse, point, true);
+  }
+
+  // A door or hatch: a thin box of a material, placed and turned with setMover.
+  addMover(id: string, half: [number, number, number], material: Material): void {
+    const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half));
+    this.tags.set(collider.handle, { material });
+    this.movers.set(id, collider);
+  }
+
+  setMover(id: string, center: Vec3, rotation: Quat): void {
+    const collider = this.movers.get(id);
+    if (!collider) return;
+    collider.setTranslation(center);
+    collider.setRotation(rotation);
   }
 
   // Back to the starting layout, for a new room.

@@ -24,7 +24,7 @@ const BANK = {
 
 const IMPACT_SOUND: Record<Material, SoundName | null> = {
   glass: "impact-glass", wood: "impact-wood", timber: "impact-wood", "metal-thin": "impact-metal", "metal-solid": "impact-metal",
-  plastic: "impact-soft", cardboard: "impact-soft", concrete: "bullet-impact", brick: "bullet-impact", ground: "bullet-impact", flesh: null, boundary: null,
+  plastic: "impact-soft", cardboard: "impact-soft", concrete: "bullet-impact", brick: "bullet-impact", ground: "bullet-impact", flesh: null, boundary: null, rubber: "impact-soft",
 };
 type SoundName = keyof typeof BANK;
 
@@ -367,6 +367,44 @@ export class GameAudio {
       oscillator.start(now);
       oscillator.stop(now + decay + 0.02);
     }
+  }
+
+  // A tyre bursting: a sharp bang, then the air rushing out.
+  tyreBurst(at: Vec3): void {
+    const context = this.live();
+    if (!context || !this.noise) return;
+    this.spatial("bullet-impact", at, { gain: 0.9, ref: 3, rolloff: 1.2, rate: 0.5, priority: "high" });
+    this.spatial("impact-soft", at, { gain: 0.6, ref: 3, rolloff: 1.2, rate: 0.6 });
+    this.hiss(at, 1.6, 3600, 0.35);
+  }
+
+  // A shot gas cylinder venting: a roaring hiss that rises until it bursts.
+  vent(at: Vec3, seconds: number): void {
+    this.hiss(at, seconds, 1700, 0.55, true);
+  }
+
+  // Doors and the serving hatch: a latch and the swing; shutting ends with a knock.
+  hinge(at: Vec3, open: boolean, hatch: boolean): void {
+    const now = this.time();
+    this.spatial("latch", at, { gain: 0.35, ref: 2, rolloff: 1.4, rate: hatch ? 0.8 : 1 });
+    this.spatial(hatch ? "cloth" : "grab", at, { gain: 0.3, ref: 2, rolloff: 1.4, rate: 0.7, when: now + 0.08 });
+    if (!open) this.spatial("impact-metal", at, { gain: 0.45, ref: 2.5, rolloff: 1.3, rate: hatch ? 0.55 : 0.7, when: now + 0.42 });
+  }
+
+  // Positioned band-passed noise: escaping air or gas.
+  private hiss(at: Vec3, seconds: number, frequency: number, level: number, rising = false): void {
+    const context = this.live();
+    if (!context || !this.noise || this.distanceTo(at) > 40) return;
+    const now = context.currentTime;
+    const source = new AudioBufferSourceNode(context, { buffer: this.noise, loop: true });
+    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency, Q: 0.7 });
+    const gain = new GainNode(context, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(level * (rising ? 0.5 : 1), now + 0.05);
+    if (rising) gain.gain.exponentialRampToValueAtTime(level, now + seconds);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds + (rising ? 0.05 : 0.6));
+    source.connect(filter).connect(gain).connect(this.panner(at, 2, 1.3)).connect(this.mix);
+    source.start(now, Math.random() * 0.5);
+    source.stop(now + seconds + 0.7);
   }
 
   grenadeBounce(at: Vec3, speed: number): void {

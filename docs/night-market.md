@@ -41,7 +41,20 @@ Pickups have a height, so the fire escape's magazines can only be taken from the
 - **The upper-floor windows** break when shot. There are 247 on alley-facing walls.
 - **Props** are 25 crates, boxes, plastic crates, bins and drums. They break or get thrown about.
 
-Walls are brick to bullets, dumpsters stop rounds, and the food truck is thin metal. See [physics notes](physics.md).
+Walls are brick to bullets, dumpsters stop rounds, and the food truck's skin is thin metal. See [physics notes](physics.md).
+
+## The food truck
+
+The truck closing the north end is a step van turned kitchen, modelled at real size in Blender by `scripts/truck/build.py` (`npm run build:truck`) and placed by `src/world/foodTruck.ts`. It has a cab with seats and a dashboard behind its glass, a grille, headlights and mirrors, a teal livery and lettering, a lit roof sign, a menu board, a roof fan and air conditioner, and two propane cylinders in a cage on its north side.
+
+- **Get in.** Walk up the bumper step at the back, open the rear doors with E and walk in. Inside are a serving counter under the window, a cooking line with a griddle, fryer and bamboo steamers, a fridge, a hood and a stock rack, lit by the ceiling panels.
+- **The serving hatch** starts propped up as an awning. Anyone near it, inside or out, can drop it shut with E, closing the window, or prop it open again.
+- **Cover.** The skin is thin steel, so rounds go through it. The engine, the cooking line and the fridge stop them.
+- **Glass.** The serving window, the windscreen and the two cab windows break with one round. The serving window's left half is slid open.
+- **Tyres** go flat after about 40 damage: the tyre squashes and the truck sinks toward that corner.
+- **Propane.** A cylinder takes about two rounds. It then vents a roaring jet of burning gas for 1.6 s and bursts like a grenade, credited to whoever shot it. The blast blows out glass, flattens tyres, damages stalls and sets off the other cylinder.
+
+The doors and hatch are shared state, so every player sees them in the same place, and their colliders swing with them.
 
 ## Look
 
@@ -54,6 +67,7 @@ The market is lit at dusk by a painted sky, a low orange sun on the upper floors
 - **`solids`** are boxes with a material. Walls, floors, counters, the stair ramp and railings are all solids. Railings use the `boundary` material, so they block players but not bullets.
 - **`spawns`** are the starting points.
 - **`pickups`** are the gun and magazine spots, each with the height of the surface it rests on.
+- **`toggles`** are things players open and close, such as the food truck's doors and hatch, with where a player reaches for each and how it starts.
 
 The physics world adds every solid as a box collider. Spawns and pickups come straight from the layout, and footsteps are always on a hard surface.
 

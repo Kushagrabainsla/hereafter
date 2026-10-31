@@ -26,6 +26,7 @@ import { type Arena, type ArenaData } from "./arena";
 import { buildNightMarket, nightMarketData, MARKET_SUN } from "./nightMarket";
 import { duskSky } from "./duskSky";
 import { applyLightmap, loadLightmap } from "./lightmap";
+import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
@@ -87,6 +88,10 @@ export interface MapViewer {
   setRemoteMass: (peerId: string, kilograms: number) => void;
   // Dropped guns and magazines; ones named in fresh just fell and tumble into place.
   setDrops: (drops: Drop[], fresh: Set<string>) => void;
+  // Which doors and hatches are open, from the shared state.
+  setOpen: (open: Record<string, boolean>) => void;
+  // The closest thing within reach that the player can open or close.
+  nearestUse: () => { id: string; label: string; open: boolean } | null;
   // Props this player walked into since the last call, for the coordinating peer to shove.
   takeShoves: () => PropPush[];
   applyShoves: (shoves: PropPush[]) => void;
@@ -165,7 +170,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Every breakable or solid object is an entity with a stable id; refs record the instances
   // that draw each one, and groups the plain objects, so it can disappear when destroyed.
   const entities = new EntityRegistry();
-  const propModels = await loadPropModels();
+  const [propModels, truckModel] = await Promise.all([loadPropModels(), loadFoodTruck()]);
   const propViews = new PropViews(scene);
   const built = buildNightMarket(scene, textures, propModels);
   // Baked sky occlusion and bounce light on the static surfaces, when the bake matches.
@@ -175,6 +180,16 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const ladders = built.ladders;
   const props = built.props;
   for (const entity of built.entities) entities.add(entity);
+  // The food truck: its glass, tyres and gas cylinders are entities; its doors and hatch swing.
+  const toggleDefaults = Object.fromEntries(data.layout.toggles.map((toggle) => [toggle.id, toggle.open]));
+  let toggleState: Record<string, boolean> = { ...toggleDefaults };
+  let physicsReady: PhysicsWorld | null = null;
+  const truck = new FoodTruck(scene, truckModel, (id, swing, angle) => {
+    const pose = swingPose(swing, angle);
+    physicsReady?.setMover(`${id}:${swing.node}`, pose.center, pose.rotation);
+  });
+  for (const entity of TRUCK_ENTITIES) entities.add(entity);
+  for (const [id, objects] of truck.groups) groups.set(id, objects);
   await step(0.55, 0.7, "Placing stalls, props and lights");
   await propViews.load(propModels);
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
@@ -203,6 +218,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const physics = new PhysicsWorld(data, arena);
   for (const solid of data.layout.solids) physics.addBox(solid.half, solid.center, solid.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, solid.material);
   for (const entity of entities.all()) physics.addEntity(entity);
+  for (const [id, swings] of Object.entries(TRUCK_SWINGS)) for (const swing of swings) physics.addMover(`${id}:${swing.node}`, swing.half, "metal-thin");
+  physicsReady = physics;
+  truck.setOpen(toggleState, toggleDefaults, true);
   entities.locate = (entity) => physics.propPose(entity.id)?.position ?? entity.center;
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
   player.setLadders(ladders);
@@ -298,7 +316,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     traceBullet: (ray) => physics.traceBullet(ray, (point) => entities.windowAt(point)?.id ?? null),
     entity: (id) => {
       const entity = entities.get(id);
-      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth } : null;
+      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth, center: entity.center, explosive: entity.explosive } : null;
     },
     entitiesNear: (center, radius) => entities.near(center, radius),
     grenadeRest: (origin, velocity, seconds) => physics.grenadePath(origin, velocity, seconds).points.at(-1)!,
@@ -392,6 +410,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       events.onAim?.(spreadPixels, active === "knife");
     }
     built.update(time / 1000);
+    truck.update(Math.min(delta, 0.1));
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x + sunOffset.x, sunOffset.y, camera.position.z + sunOffset.z);
     sun.target.updateMatrixWorld();
@@ -473,6 +492,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         if (entities.destroyed(entity.id) && !((health[entity.id] ?? entity.maxHealth) <= 0)) {
           physics.restoreEntity(entity.id);
           effects.restore(entity);
+          truck.restore(entity.id);
           if (entity.kind === "prop") propViews.setVisible(entity.id, true);
         }
       }
@@ -482,6 +502,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         physics.removeEntity(entity.id);
         effects.destroy(at ? { ...entity, center: at } : entity);
         if (entity.kind === "prop") propViews.setVisible(entity.id, false);
+        if (entity.kind === "tyre") truck.setFlat(entity.id, true);
+        // A cylinder bursts when its explosion arrives; this catches one that burst before
+        // this peer joined.
+        if (entity.kind === "tank") window.setTimeout(() => truck.burst(entity.id), 2200);
       }
     },
     playEvent(event, selfId) {
@@ -529,6 +553,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         player.shove(dx / length * strength, dz / length * strength);
       }
       // A blast in the open throws the player away from it; cover shelters them.
+      if (event.kind === "vent" && event.entity && event.position) {
+        truck.vent(event.entity, (event.fuseMs ?? 1600) / 1000);
+        gameAudio.vent(event.position, (event.fuseMs ?? 1600) / 1000);
+      }
+      if (event.kind === "explode" && event.entity) truck.burst(event.entity);
+      if (event.kind === "use" && event.entity) {
+        const toggle = data.layout.toggles.find((item) => item.id === event.entity);
+        if (toggle) gameAudio.hinge(toggle.at, event.open === true, event.entity.endsWith("hatch"));
+      }
       if (event.kind === "explode" && event.position) {
         const at = event.position, chest = { x: camera.position.x, y: camera.position.y - 0.6, z: camera.position.z };
         const dx = chest.x - at.x, dy = chest.y - at.y, dz = chest.z - at.z, distance = Math.hypot(dx, dy, dz);
@@ -571,6 +604,19 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     applyPropStates(states) { physics.applyPropStates(states); },
     setAuthority(authority) { physics.setAuthority(authority); },
     resetWorld() { physics.resetProps(); ejecta.clear(); loot.clear(); },
+    setOpen(open) {
+      toggleState = { ...toggleDefaults, ...open };
+      truck.setOpen(toggleState, toggleDefaults);
+    },
+    nearestUse() {
+      const eye = camera.position;
+      let best: { id: string; label: string; open: boolean; distance: number } | null = null;
+      for (const toggle of data.layout.toggles) {
+        const distance = Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z);
+        if (distance <= 2.2 && (!best || distance < best.distance)) best = { id: toggle.id, label: toggle.label, open: toggleState[toggle.id] ?? toggle.open, distance };
+      }
+      return best;
+    },
     setLocalDead(dead) {
       if (dead && !deathView) deathView = { position: camera.position.clone(), quaternion: camera.quaternion.clone(), time: 0 };
       if (!dead) deathView = null;
@@ -650,6 +696,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       disposeScene(viewScene);
       textures.dispose();
       built.dispose();
+      truck.dispose();
       sky.dispose();
       pipeline.dispose();
       renderer.dispose();

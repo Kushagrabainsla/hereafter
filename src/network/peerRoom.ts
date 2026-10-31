@@ -4,8 +4,8 @@ import { type PlayerPose } from "../game/playerController";
 import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
-// Version 4 carries spare magazines, dropped guns and knife strokes, so it does not mix with 3.
-const PROTOCOL_VERSION = 4;
+// Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
+const PROTOCOL_VERSION = 5;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -80,6 +80,7 @@ function validIntent(value: unknown): value is CombatIntent {
       && Object.values(intent.seen).every((time) => typeof time === "number" && Number.isFinite(time)));
   }
   if (intent.kind === "select") return ["knife", "pistol", "rifle"].includes(intent.weapon ?? "");
+  if (intent.kind === "use") return typeof intent.target === "string" && intent.target.length < 40;
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
   if (intent.kind === "throw") return validAim(intent.aim);
   if (intent.kind === "fall") return typeof intent.speed === "number" && Number.isFinite(intent.speed);

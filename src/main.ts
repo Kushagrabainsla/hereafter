@@ -102,6 +102,7 @@ const LOADER_TIPS = [
   "Everything you carry has weight: a carbine and its magazines slow you down.",
   "Right-click or press V to stab with the knife. A stab in the back is fatal.",
   "Fallen players drop their guns and magazines.",
+  "Climb into the food truck by its back doors. Its propane tanks explode when shot.",
 ];
 let tipIndex = 0;
 const tipTimer = window.setInterval(() => { tipIndex = (tipIndex + 1) % LOADER_TIPS.length; loaderTip.textContent = LOADER_TIPS[tipIndex]; }, 3500);
@@ -240,6 +241,7 @@ function onMatchChange(state: CombatSnapshot): void {
   scoreLabel.textContent = `${player.kills} KILL${player.kills === 1 ? "" : "S"} · ${player.deaths} DEATH${player.deaths === 1 ? "" : "S"}`;
   viewer?.setWeapon(player.active);
   viewer?.setTakenPickups(state.taken);
+  viewer?.setOpen(state.open);
   for (const [peerId, remote] of Object.entries(state.players)) if (peerId !== selfId) {
     viewer?.setRemoteHealth(peerId, remote.health);
     viewer?.setRemoteWeapon(peerId, remote.active);
@@ -379,10 +381,15 @@ function attack(stroke: KnifeStroke = "slash"): void {
   viewer.playAttack(weapon);
 }
 
+// E takes the nearest pickup, or else opens or closes the nearest door or hatch.
 function interact(): void {
   const pickup = nearestPickup();
   if (pickup?.full) toast("Your magazine pouches are full");
   else if (pickup) submit({ kind: "pickup", pickupId: pickup.id });
+  else {
+    const usable = viewer?.nearestUse();
+    if (usable) submit({ kind: "use", target: usable.id });
+  }
 }
 
 function reload(): void {
@@ -546,8 +553,10 @@ window.setInterval(() => {
   if (peerRoom) peerRoom.tickCombat();
   else match.tick();
   const pickup = nearestPickup();
-  pickupHint.hidden = !pickup || (match.player(selfId)?.health ?? 0) <= 0;
+  const usable = pickup ? null : viewer.nearestUse();
+  pickupHint.hidden = (!pickup && !usable) || (match.player(selfId)?.health ?? 0) <= 0;
   if (pickup) pickupHint.textContent = pickup.full ? `Your magazine pouches are full` : `Press E to take ${pickup.label}`;
+  else if (usable) pickupHint.textContent = `Press E to ${usable.open ? "close" : "open"} ${usable.label}`;
   const player = match.player(selfId);
   if (player?.health === 0) {
     const seconds = Math.max(0, Math.ceil((player.respawnAfter - Date.now()) / 1000));

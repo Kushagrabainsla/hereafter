@@ -11,7 +11,7 @@ export type EntityShape =
 // same order from the map definition, so ids agree without being sent.
 export interface WorldEntity {
   id: string;
-  kind: "window" | "prop" | "stall" | "pane";
+  kind: "window" | "prop" | "stall" | "pane" | "tyre" | "tank";
   material: Material;
   maxHealth: number;
   center: Vec3;
@@ -20,6 +20,8 @@ export interface WorldEntity {
   // Loose objects are simulated by the coordinating peer and pushed by hits and blasts.
   mass?: number;
   prop?: string;
+  // Bursts some time after it is destroyed, like a grenade, for gas cylinders.
+  explosive?: boolean;
 }
 
 // One instance of an instanced mesh, which draws part of an entity.

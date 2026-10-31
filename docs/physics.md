@@ -12,7 +12,8 @@ A round starts with penetration power: 1 for the pistol, 2 for the carbine. `src
 | Wood (hollow) | 1.2 | all | 1.2× | stalls, crates, tables, counters |
 | Cardboard | 0.25 | 1.5× | 2× | boxes |
 | Plastic | 0.4 | all | 1.5× | plastic crates |
-| Thin metal | 1.4 | half | 0.8× | bins, oil drums, the food truck, the fire escape |
+| Thin metal | 1.4 | half | 0.8× | bins, oil drums, the food truck's skin and propane cylinders, the fire escape |
+| Rubber | 4 | all | 0.7× | the food truck's tyres |
 | Concrete | 14 | 12% | 60% | floor slabs, the balcony |
 | Solid metal | 30 | none | 15% | dumpsters, kitchen counters, air-conditioners |
 | Brick and ground | stops rounds | none | none | every wall, the ground |
@@ -28,7 +29,10 @@ So a carbine round passes through a window, a crate, a bin, a stall seen from th
 | Plastic crate | 45 | fragments |
 | Small and large wooden crate | 70 and 140 | splinters and planks |
 | Market stall | 200 | splinters, planks and dust |
-| Bin, drum, air-conditioner, walls, counters, dumpsters, the truck | indestructible | |
+| Food truck glass | 1 | shards |
+| Food truck tyre | 40 | a burst of rubber; the tyre goes flat and the truck sinks toward it |
+| Propane cylinder | 16 | vents burning gas for 1.6 s, then bursts with a grenade's blast |
+| Bin, drum, air-conditioner, walls, counters, dumpsters, the truck itself | indestructible | |
 
 A stall takes 8 pistol hits or 12 carbine hits, or one grenade landing close by. The health of anything damaged travels in the combat snapshot, so late joiners see the same broken market. A destroyed object's collider is removed, so it stops blocking movement, bullets and blasts. Bullet holes and impact particles follow the material: dust, sparks, splinters, shards or a puff.
 
@@ -53,6 +57,10 @@ The client sends the stroke when the blade reaches its target, 0.13 s into a sla
 Each shot throws a case from the ejection port to the right, up and a little back, on top of the shooter's own velocity: 9 × 19 mm brass for the pistol, lacquered steel 7.62 × 39 mm for the carbine, at real size. A reload that empties a magazine drops it from under the gun. These pieces are small rigid bodies integrated at 120 Hz against the physics world (`src/game/ejecta.ts`): they bounce off what they strike, keeping 36 to 42% of their speed along the surface normal for cases and 18% for a magazine, skid, tumble, ring or clatter as they land and come to rest on their side. They last about 40 s and are drawn only on the peer that sees them.
 
 A fallen player's guns and magazines fall from their hands, pushed away from the killing blow: a gun with the rounds left in it, and the spare magazines for it. The coordinator traces their fall through the physics world to where they come to rest and shares the drop in its snapshot; every peer draws the same path tumbling into place. Taking a drop gives the gun if it is not already carried, or its magazine as a spare, plus the spares. Drops last a minute.
+
+## Doors and hatches
+
+The food truck's rear doors and serving hatch are colliders that swing on their hinges (`PhysicsWorld.addMover`), so a shut hatch stops players and catches rounds, and open doors stick out into the gap behind the truck. Pressing E within 2.3 m asks the coordinating peer to open or close the nearest one. Its state travels in the snapshot, every peer swings the panel over about half a second, and the collider follows. The character controller now walks up steps of up to 26 cm, which takes it up the truck's bumper and in at the doors.
 
 ## Grenades
 
@@ -95,6 +103,10 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 | Slash at shop glass, at a brick wall | glass broken; stopped on brick |
 | Two tabs, stab in the back of a player with a carbine | carbine dropped at the same spot on both, taken by the other player |
 | Two tabs, the non-coordinator walks into the large crate | moved 1.5 m on both screens |
+| Walk into the truck's shut doors, open them, walk in | stopped at the bumper, then up the step and in to the floor at 0.46 m |
+| One pistol round at the serving glass, two at a front tyre | glass broken; tyre flat |
+| Three pistol rounds at a propane cylinder | vented, burst after 1.6 s, broke every truck window, flattened the other tyres, damaged a stall and set off the second cylinder |
+| Two tabs, one opens the rear doors, the other drops the hatch | both see both, with the panels swung the same way |
 
 ## Limits
 

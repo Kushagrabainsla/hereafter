@@ -34,6 +34,8 @@ export type CombatIntent =
   | { kind: "select"; weapon: WeaponKind }
   | { kind: "respawn" }
   | { kind: "throw"; aim: { heading: number; pitch: number } }
+  // Open or close something the map lets players open, such as a door or a hatch.
+  | { kind: "use"; target: string }
   | { kind: "fall"; speed: number };
 
 export type DamageCause = WeaponKind | "grenade" | "fall";
@@ -42,7 +44,7 @@ export interface Impact { x: number; y: number; z: number; nx: number; ny: numbe
 
 export interface CombatEvent {
   id: number;
-  kind: "shot" | "hit" | "pickup" | "death" | "respawn" | "throw" | "explode" | "reload" | "drop";
+  kind: "shot" | "hit" | "pickup" | "death" | "respawn" | "throw" | "explode" | "reload" | "drop" | "use" | "vent";
   actor: string;
   target?: string;
   weapon?: WeaponKind;
@@ -66,16 +68,21 @@ export interface CombatEvent {
   dropped?: boolean;
   // The dropped item a "drop" event made.
   drop?: string;
+  // The door, hatch or gas cylinder a "use", "vent" or "explode" event concerns.
+  entity?: string;
+  // Whether a "use" event opened or closed it.
+  open?: boolean;
 }
 
 // A gun or magazines a fallen player dropped. It falls from their hands along from and
 // velocity to position, where it lies until someone takes it or it expires.
 export interface Drop { id: string; weapon: GunKind; gun: boolean; rounds: number; mags: number[]; from: Vec3; velocity: Vec3; position: Vec3; expires: number }
 
-export interface LiveGrenade { id: number; actor: string; explodeAt: number; position: Vec3 }
+// A grenade in flight or a gas cylinder venting, until it bursts; entity names the cylinder.
+export interface LiveGrenade { id: number; actor: string; explodeAt: number; position: Vec3; entity?: string }
 
 export interface CombatSnapshot {
-  version: 4;
+  version: 5;
   revision: number;
   eventSeq: number;
   players: Record<string, CombatPlayer>;
@@ -85,6 +92,8 @@ export interface CombatSnapshot {
   entities: Record<string, number>;
   grenades: LiveGrenade[];
   drops: Drop[];
+  // Doors and hatches, open or shut; ones not listed are as the map starts them.
+  open: Record<string, boolean>;
   // The most recent events, oldest first; peers play every event newer than the last they saw.
   events: CombatEvent[];
 }
@@ -94,7 +103,7 @@ export interface SurfaceHit { distance: number; thickness: number; point: Vec3; 
 export interface CombatWorld {
   clearShot(ray: ShotRay): boolean;
   traceBullet(ray: ShotRay): SurfaceHit[];
-  entity(id: string): { material: Material; maxHealth: number } | null;
+  entity(id: string): { material: Material; maxHealth: number; center: Vec3; explosive?: boolean } | null;
   entitiesNear(center: Vec3, radius: number): { id: string; distance: number; point: Vec3 }[];
   grenadeRest(origin: Vec3, velocity: Vec3, seconds: number): Vec3;
   push(entity: string, point: Vec3, impulse: Vec3): void;
@@ -118,7 +127,11 @@ const FALL_SAFE_SPEED = 9;
 const FALL_DAMAGE_PER_MS = 9;
 const BULLET_IMPULSE = { pistol: 2.5, rifle: 4.5 } as const;
 const MATERIAL_NAMES = Object.keys(MATERIALS);
-const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop"];
+const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent"];
+// A shot gas cylinder vents burning gas for this long, then bursts like a grenade.
+const VENT_MS = 1600;
+// How far a player can reach to open or close something, from the eyes.
+const USE_REACH = 2.3;
 const GUNS = ["pistol", "rifle"] as const;
 const CAUSES = ["knife", "pistol", "rifle", "grenade", "fall"];
 
@@ -142,7 +155,9 @@ function validEvent(event: CombatEvent): boolean {
     && (event.fuseMs === undefined || (finite(event.fuseMs) && event.fuseMs >= 0 && event.fuseMs <= 10_000))
     && (event.stroke === undefined || event.stroke === "slash" || event.stroke === "stab")
     && (event.item === undefined || ["gun", "magazines", "drop"].includes(event.item))
-    && (event.drop === undefined || (typeof event.drop === "string" && event.drop.length < 40));
+    && (event.drop === undefined || (typeof event.drop === "string" && event.drop.length < 40))
+    && (event.entity === undefined || (typeof event.entity === "string" && event.entity.length < 40))
+    && (event.open === undefined || typeof event.open === "boolean");
 }
 
 const validMagazines = (gun: GunKind, mags: unknown): boolean => Array.isArray(mags) && mags.length <= MAX_SPARE_MAGAZINES
@@ -173,7 +188,7 @@ function validPlayer(player: CombatPlayer): boolean {
 }
 
 function emptySnapshot(): CombatSnapshot {
-  return { version: 4, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], events: [] };
+  return { version: 5, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, events: [] };
 }
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -192,6 +207,7 @@ export class MatchState {
   private lastThrow = new Map<string, number>();
   private bloom = new Map<string, number>();
   private lastStroke = new Map<string, KnifeStroke>();
+  private lastUse = new Map<string, number>();
   private now = 0;
 
   constructor(private data: ArenaData, private onChange: (snapshot: CombatSnapshot) => void, private world?: CombatWorld) {
@@ -259,9 +275,10 @@ export class MatchState {
   }
 
   adopt(incoming: CombatSnapshot): boolean {
-    if (!incoming || incoming.version !== 4 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
+    if (!incoming || incoming.version !== 5 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
       || !incoming.players || !Array.isArray(incoming.taken) || !incoming.pickupReturns || typeof incoming.pickupReturns !== "object"
-      || !incoming.entities || typeof incoming.entities !== "object" || !Array.isArray(incoming.grenades) || !Array.isArray(incoming.drops) || !Array.isArray(incoming.events)) return false;
+      || !incoming.entities || typeof incoming.entities !== "object" || !Array.isArray(incoming.grenades) || !Array.isArray(incoming.drops) || !Array.isArray(incoming.events)
+      || !incoming.open || typeof incoming.open !== "object") return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
     if (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers)) return false;
     const players: Record<string, CombatPlayer> = {};
@@ -276,10 +293,13 @@ export class MatchState {
     }
     const entities: Record<string, number> = {};
     for (const [id, health] of Object.entries(incoming.entities)) if (id.length < 64 && finite(health) && health >= 0 && health <= 100_000) entities[id] = health;
-    const grenades = incoming.grenades.filter((grenade) => grenade && Number.isSafeInteger(grenade.id) && typeof grenade.actor === "string" && finite(grenade.explodeAt) && validVec(grenade.position)).slice(0, 16);
+    const grenades = incoming.grenades.filter((grenade) => grenade && Number.isSafeInteger(grenade.id) && typeof grenade.actor === "string" && finite(grenade.explodeAt) && validVec(grenade.position)
+      && (grenade.entity === undefined || (typeof grenade.entity === "string" && grenade.entity.length < 40))).slice(0, 16);
+    const open: Record<string, boolean> = {};
+    for (const toggle of this.data.layout.toggles) if (typeof incoming.open[toggle.id] === "boolean") open[toggle.id] = incoming.open[toggle.id];
     const drops = incoming.drops.filter(validDrop).slice(-DROPS_KEPT);
     const events = incoming.events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
-    this.snapshot = { version: 4, revision: incoming.revision, eventSeq: incoming.eventSeq, players, taken: incoming.taken.filter((id) => this.pickups.some((pickup) => pickup.id === id)), pickupReturns, entities, grenades: structuredClone(grenades), drops: structuredClone(drops), events };
+    this.snapshot = { version: 5, revision: incoming.revision, eventSeq: incoming.eventSeq, players, taken: incoming.taken.filter((id) => this.pickups.some((pickup) => pickup.id === id)), pickupReturns, entities, grenades: structuredClone(grenades), drops: structuredClone(drops), open, events };
     this.onChange(this.snapshot);
     return true;
   }
@@ -348,6 +368,18 @@ export class MatchState {
       return true;
     }
     if (intent.kind === "fall") return this.fall(actor, intent.speed);
+    if (intent.kind === "use") {
+      const toggle = this.data.layout.toggles.find((item) => item.id === intent.target);
+      if (!toggle || !pose || !fresh || now - (this.lastUse.get(toggle.id) ?? 0) < 500) return false;
+      const eye = shotRay(this.data, pose, "knife").origin;
+      if (Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z) > USE_REACH) return false;
+      const open = !(this.snapshot.open[toggle.id] ?? toggle.open);
+      this.snapshot.open[toggle.id] = open;
+      this.lastUse.set(toggle.id, now);
+      this.emit({ kind: "use", actor, entity: toggle.id, open });
+      this.changed();
+      return true;
+    }
     if (intent.kind === "throw") {
       const aim = intent.aim;
       if (!pose || !fresh || player.grenades <= 0 || now - (this.lastThrow.get(actor) ?? 0) < THROW_COOLDOWN_MS
@@ -482,7 +514,7 @@ export class MatchState {
       if (surface) {
         if (surface.entity) {
           const push = rules.impulse, d = ray.direction;
-          this.damageEntity(surface.entity, rules.damage.torso * MATERIALS[surface.material].bullet, surface.point, { x: d.x * push, y: d.y * push, z: d.z * push });
+          this.damageEntity(actor, surface.entity, rules.damage.torso * MATERIALS[surface.material].bullet, surface.point, { x: d.x * push, y: d.y * push, z: d.z * push });
         }
         this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: surface.distance }, impact: true,
           impacts: [{ ...surface.point, nx: surface.normal.x, ny: surface.normal.y, nz: surface.normal.z, material: surface.material }] });
@@ -528,7 +560,7 @@ export class MatchState {
       impacts.push({ ...surface.point, nx: surface.normal.x, ny: surface.normal.y, nz: surface.normal.z, material: surface.material });
       if (surface.entity) {
         const strength = BULLET_IMPULSE[weapon] * Math.max(0.3, share);
-        this.damageEntity(surface.entity, WEAPONS[weapon].damage * share * rule.bullet, surface.point, { x: direction.x * strength, y: direction.y * strength, z: direction.z * strength });
+        this.damageEntity(actor, surface.entity, WEAPONS[weapon].damage * share * rule.bullet, surface.point, { x: direction.x * strength, y: direction.y * strength, z: direction.z * strength });
       }
       const cost = rule.resistance * Math.max(0.02, surface.thickness);
       if (power <= cost) { end = surface.distance; stopped = true; break; }
@@ -540,14 +572,19 @@ export class MatchState {
     for (const hit of hits) this.hurt(hit.target!, hit.damage ?? 0, hit);
   }
 
-  private damageEntity(id: string, amount: number, point: Vec3, impulse: Vec3): void {
+  // A destroyed gas cylinder vents, then bursts where it stood; whoever broke it caused the blast.
+  private damageEntity(actor: string, id: string, amount: number, point: Vec3, impulse: Vec3): void {
     const info = this.world?.entity(id);
     if (!info) return;
     const current = this.snapshot.entities[id] ?? info.maxHealth;
     if (current <= 0) return;
     this.world?.push(id, point, impulse);
     if (!Number.isFinite(info.maxHealth) || amount <= 0) return;
-    this.snapshot.entities[id] = Math.max(0, Math.round((current - amount) * 10) / 10);
+    const health = Math.max(0, Math.round((current - amount) * 10) / 10);
+    this.snapshot.entities[id] = health;
+    if (health > 0 || !info.explosive) return;
+    const vent = this.emit({ kind: "vent", actor, entity: id, position: info.center, fuseMs: VENT_MS });
+    this.snapshot.grenades.push({ id: vent, actor, explodeAt: this.now + VENT_MS, position: info.center, entity: id });
   }
 
   private hurt(targetId: string, amount: number, event: Omit<CombatEvent, "id">): void {
@@ -590,7 +627,7 @@ export class MatchState {
   // by material and loose ones are thrown outward.
   private explode(grenade: LiveGrenade): void {
     const center = grenade.position;
-    this.emit({ kind: "explode", actor: grenade.actor, position: center, grenade: grenade.id });
+    this.emit({ kind: "explode", actor: grenade.actor, position: center, grenade: grenade.id, entity: grenade.entity });
     const lifted = { x: center.x, y: center.y + 0.2, z: center.z };
     const clear = (to: Vec3): boolean => {
       const dx = to.x - lifted.x, dy = to.y - lifted.y, dz = to.z - lifted.z, distance = Math.hypot(dx, dy, dz);
@@ -613,7 +650,7 @@ export class MatchState {
       const strength = 1 - entity.distance / BLAST_RADIUS;
       const dx = entity.point.x - center.x, dy = entity.point.y - center.y + 0.4, dz = entity.point.z - center.z, length = Math.hypot(dx, dy, dz) || 1;
       const push = BLAST_IMPULSE * strength;
-      this.damageEntity(entity.id, BLAST_ENTITY_DAMAGE * strength * MATERIALS[info.material].blast, entity.point, { x: dx / length * push, y: dy / length * push, z: dz / length * push });
+      this.damageEntity(grenade.actor, entity.id, BLAST_ENTITY_DAMAGE * strength * MATERIALS[info.material].blast, entity.point, { x: dx / length * push, y: dy / length * push, z: dz / length * push });
     }
   }
 

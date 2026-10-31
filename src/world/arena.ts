@@ -24,6 +24,9 @@ export interface LayoutBox {
   look: string;
 }
 
+// Something players can open and close: where they reach for it, and whether it starts open.
+export interface MapToggle { id: string; label: string; at: { x: number; y: number; z: number }; open: boolean }
+
 // What every client must agree on for a map: where players start, where weapons and
 // spare magazines lie and what is solid. How it looks is built from the same definition (see nightMarket.ts).
 export interface MapLayout {
@@ -33,6 +36,7 @@ export interface MapLayout {
   // A gun, or spare magazines for one; y is the height of the surface it rests on.
   pickups: { id: string; weapon: "pistol" | "rifle"; item?: "gun" | "magazines"; east: number; north: number; y?: number }[];
   solids: LayoutBox[];
+  toggles: MapToggle[];
 }
 
 export function terrainHeight(data: ArenaData, east: number, north: number): number {
