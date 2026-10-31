@@ -11,7 +11,7 @@ export type EntityShape =
 // same order from the map definition, so ids agree without being sent.
 export interface WorldEntity {
   id: string;
-  kind: "window" | "prop" | "stall" | "pane" | "tyre" | "tank";
+  kind: "window" | "prop" | "stall" | "pane" | "tyre" | "tank" | "lamp";
   material: Material;
   maxHealth: number;
   center: Vec3;

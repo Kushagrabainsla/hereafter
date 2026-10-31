@@ -369,6 +369,45 @@ export class GameAudio {
     }
   }
 
+  // A bulb or neon tube bursting: a glassy pop with a crackle of electricity.
+  bulbPop(at: Vec3): void {
+    this.spatial("impact-glass", at, { gain: 0.55, ref: 2.5, rolloff: 1.3, rate: 1.3 + Math.random() * 0.2 });
+    this.crackle(at, 0.18, 0.25);
+  }
+
+  // A breaker box shot out: a heavy electrical snap and a dying buzz.
+  shortCircuit(at: Vec3): void {
+    this.spatial("impact-metal", at, { gain: 0.6, ref: 3, rolloff: 1.2, rate: 0.8 });
+    this.crackle(at, 0.7, 0.4);
+    const context = this.live();
+    if (!context) return;
+    const now = context.currentTime;
+    const hum = new OscillatorNode(context, { type: "sawtooth", frequency: 120 });
+    hum.frequency.exponentialRampToValueAtTime(40, now + 0.9);
+    const gain = new GainNode(context, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
+    const tone = new BiquadFilterNode(context, { type: "lowpass", frequency: 900 });
+    hum.connect(tone).connect(gain).connect(this.panner(at, 2.5, 1.3)).connect(this.mix);
+    hum.start(now);
+    hum.stop(now + 0.95);
+  }
+
+  // Sputtering clicks of an arc: very short high-passed noise bursts at random moments.
+  private crackle(at: Vec3, seconds: number, level: number): void {
+    const context = this.live();
+    if (!context || !this.noise || this.distanceTo(at) > 35) return;
+    const now = context.currentTime, out = new GainNode(context, { gain: 1 });
+    out.connect(this.panner(at, 2, 1.4)).connect(this.mix);
+    for (let k = 0; k < Math.round(seconds * 40); k += 1) {
+      const when = now + Math.random() * seconds;
+      const burst = this.noiseSource(when, 0.006 + Math.random() * 0.01);
+      const filter = new BiquadFilterNode(context, { type: "highpass", frequency: 3000 });
+      const gain = new GainNode(context, { gain: level * (0.3 + Math.random() * 0.7) });
+      burst.connect(filter).connect(gain).connect(out);
+    }
+  }
+
   // A tyre bursting: a sharp bang, then the air rushing out.
   tyreBurst(at: Vec3): void {
     const context = this.live();

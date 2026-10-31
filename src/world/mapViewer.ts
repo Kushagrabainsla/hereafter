@@ -493,6 +493,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           physics.restoreEntity(entity.id);
           effects.restore(entity);
           truck.restore(entity.id);
+          if (entity.kind === "lamp") built.lamps.setBroken(entity.id, false);
+          // A stall back in place brings its lamp back, unless the lamp itself was shot.
+          const stallLamp = entity.kind === "stall" ? `lamp:${entity.id}` : "";
+          if (stallLamp && (health[stallLamp] ?? 1) > 0) { built.lamps.setBroken(stallLamp, false); physics.restoreEntity(stallLamp); }
           if (entity.kind === "prop") propViews.setVisible(entity.id, true);
         }
       }
@@ -503,6 +507,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         effects.destroy(at ? { ...entity, center: at } : entity);
         if (entity.kind === "prop") propViews.setVisible(entity.id, false);
         if (entity.kind === "tyre") truck.setFlat(entity.id, true);
+        if (entity.kind === "lamp") built.lamps.setBroken(entity.id, true);
+        // A stall's lamp goes down with it.
+        if (entity.kind === "stall") { built.lamps.setBroken(`lamp:${entity.id}`, true); physics.removeEntity(`lamp:${entity.id}`); }
         // A cylinder bursts when its explosion arrives; this catches one that burst before
         // this peer joined.
         if (entity.kind === "tank") window.setTimeout(() => truck.burst(entity.id), 2200);

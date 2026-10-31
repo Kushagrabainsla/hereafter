@@ -241,6 +241,11 @@ export class WorldEffects {
       this.solid.spawn({ ...at, y: at.y + 0.1 }, up, 18, "soil", floor, 1.4);
       this.puff({ ...at, y: at.y + 0.2 }, 0.6, 0.9, 0.3, 0x5a5650, 0.35);
       gameAudio.tyreBurst(at);
+    } else if (entity.kind === "lamp") {
+      // A bulb or tube bursting: a spray of fine glass and a shower of sparks.
+      this.solid.spawn(at, { x: 0, y: -0.5, z: 0 }, entity.material === "glass" ? 10 : 2, "shards", floor, 1.2);
+      this.glow.spawn(at, { x: 0, y: -0.3, z: 0 }, entity.material === "glass" ? 10 : 22, "sparks", floor, 1.1);
+      if (entity.material === "glass") gameAudio.bulbPop(at); else gameAudio.shortCircuit(at);
     } else if (entity.kind === "tank") {
       this.glow.spawn({ ...at, y: at.y + 0.35 }, up, 14, "sparks", floor, 0.4);
     } else if (entity.kind === "prop") {

@@ -1,9 +1,10 @@
 import {
-  AdditiveBlending, CanvasTexture, Color, Group, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, Quaternion, Scene,
+  AdditiveBlending, BufferGeometry, CanvasTexture, Color, Group, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, Quaternion, Scene,
   SRGBColorSpace, Sprite, SpriteMaterial, Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
 import { float, materialColor, mix, mx_fractal_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type LayoutBox, type MapToggle } from "./arena";
 import { type Material } from "./materials";
 import { type Vec3, type WorldEntity } from "./entities";
@@ -177,6 +178,7 @@ export class FoodTruck {
   private venting: Venting[] = [];
   private flatness = new Map<string, number>();
   private owned: CanvasTexture[] = [];
+  private dressed = new Map<string, SurfaceMaterial>();
 
   constructor(scene: Scene, gltf: GLTF | null, private onSwing: (id: string, swing: Swing, angle: number) => void) {
     this.root.position.set(TRUCK_AT.x, 0, TRUCK_AT.z);
@@ -197,6 +199,7 @@ export class FoodTruck {
         object.material = Array.isArray(object.material) ? dressed : dressed[0];
       });
     }
+    this.merge();
     this.groups.set("truck:glass-serving", [this.nodes.get("glass_serving")].filter(Boolean) as Object3D[]);
     this.groups.set("truck:windshield", [this.nodes.get("glass_windshield")].filter(Boolean) as Object3D[]);
     this.groups.set("truck:cab-left", [this.nodes.get("glass_cab_left")].filter(Boolean) as Object3D[]);
@@ -205,9 +208,47 @@ export class FoodTruck {
 
   private own(texture: CanvasTexture): CanvasTexture { this.owned.push(texture); return texture; }
 
+  // Everything that never moves or breaks is merged into one mesh per material, so the
+  // truck draws in a dozen calls rather than seventy.
+  private merge(): void {
+    const moving = /^(hatch|door_|wheel_|propane_[ab]$|glass_)/;
+    const batches = new Map<string, { material: SurfaceMaterial; geometries: BufferGeometry[] }>();
+    const statics = [...this.body.children].filter((node) => !moving.test(node.name));
+    this.body.updateMatrixWorld(true);
+    const toBody = new Matrix4().copy(this.body.matrixWorld).invert();
+    for (const node of statics) {
+      node.traverse((object) => {
+        if (!(object instanceof Mesh) || Array.isArray(object.material)) return;
+        const geometry = (object.geometry as BufferGeometry).clone().applyMatrix4(toBody.clone().multiply(object.matrixWorld));
+        const key = `${object.material.uuid}:${Object.keys(geometry.attributes).sort().join(",")}:${geometry.index ? 1 : 0}`;
+        const batch = batches.get(key) ?? { material: object.material as SurfaceMaterial, geometries: [] };
+        batch.geometries.push(geometry);
+        batches.set(key, batch);
+      });
+      node.removeFromParent();
+    }
+    for (const { material, geometries } of batches.values()) {
+      const merged = mergeGeometries(geometries, false);
+      if (!merged) continue;
+      const mesh = new Mesh(merged, material);
+      mesh.castShadow = material.name !== "ceiling_light";
+      mesh.receiveShadow = true;
+      this.body.add(mesh);
+    }
+  }
+
   private dress(material: MeshStandardMaterial, sign?: CanvasTexture): SurfaceMaterial {
     if (sign) return new MeshStandardMaterial({ map: sign, emissive: 0xffffff, emissiveMap: sign, emissiveIntensity: 0.9, roughness: 0.5 });
-    if (["paint", "teal", "red"].includes(material.name)) return weathered(material);
+    // One material per kind, shared by every part, so parts can be merged.
+    const known = this.dressed.get(material.name);
+    if (known) return known;
+    const result = this.dressOnce(material);
+    this.dressed.set(material.name, result);
+    return result;
+  }
+
+  private dressOnce(material: MeshStandardMaterial): SurfaceMaterial {
+    if (["paint", "teal", "red"].includes(material.name)) { const node = weathered(material); node.name = material.name; return node; }
     if (material.name === "glass") { material.transparent = true; material.depthWrite = false; material.opacity = 0.38; }
     // The truck is parked: headlights and tail lights glow faintly, the kitchen is lit.
     if (material.name === "headlight") material.emissiveIntensity = 0.25;

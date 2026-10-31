@@ -40,6 +40,8 @@ Pickups have a height, so the fire escape's magazines can only be taken from the
 - **The glass storefronts** of the restaurant and the bar block players until shot. One round shatters them, and players can then jump or climb through the empty frame onto the low sill.
 - **The upper-floor windows** break when shot. There are 247 on alley-facing walls.
 - **Props** are 25 crates, boxes, plastic crates, bins and drums. They break or get thrown about.
+- **Lamps and signs.** 101 lamps break with one round: each run of string lights, each paper lantern, the wall lamps, the restaurant's pendants, the stall bulbs, the bar's pool-table lamp, the blade signs and the neon and lightbox signs. A shot lamp sputters for a moment, then goes dark, and the real light it fed dims with it, so a lane can be darkened before pushing through it.
+- **The breaker box** on the service alley's west wall takes three pistol rounds. Breaking it cuts the alley's circuit: its 10 wall lamps and the 15 runs of string lights over it go out together, and the box's green light dies.
 
 Walls are brick to bullets, dumpsters stop rounds, and the food truck's skin is thin metal. See [physics notes](physics.md).
 
@@ -94,4 +96,6 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 - Doors are open doorways. Shopfronts other than the restaurant's and the bar's are pictures behind solid walls.
 - Upper floors other than the bar's upper room cannot be entered, and their windows only break.
 - Bullets do not pass through interior walls, which are brick like the outer ones.
+- A broken lamp's direct light goes, but the bounce light baked from it stays in the lightmap, so a darkened corner keeps a faint warm fill.
+- The food truck's own lights cannot be shot out.
 - The layout is written in code. Adding a map would mean a new module like `nightMarket.ts`, not a level editor.
