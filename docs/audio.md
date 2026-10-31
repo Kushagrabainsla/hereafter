@@ -12,7 +12,7 @@ The game plays recorded CC0 sound for guns, reloads, handling, footsteps and imp
 - **Grenades.** A pin click and swing when thrown, clinks as it bounces, and a synthesised explosion: a sharp crack, a roaring low-passed body and a sub-bass drop with a long street echo. Distant blasts lose the crack and keep the rumble.
 - **Movement extras.** Boots on steel rungs when climbing a ladder.
 - **Lamps.** A shot bulb, lantern or neon tube pops with a bright tinkle; a breaker box or lightbox sign shorts out with a crackle and a buzz.
-- **Doors and steam.** A kicked door takes a heavy boot and slams open. A burst steam pipe bangs and roars for about 11 s, then eases off.
+- **Doors and steam.** A kicked door takes a heavy boot and slams open. A burst steam pipe bangs and roars for about 11 s, then eases off. A shot extinguisher clanks and blasts powder for a few seconds. A stall's awning rips as it is shot to rags, and a fuel drum roars like a propane cylinder before it bursts.
 - **The food truck.** Its doors and hatch latch and swing, and knock when they shut. A tyre bursts with a bang and the hiss of escaping air. A shot propane cylinder roars louder until it bursts.
 - **Brass.** Spent cases ring as they land: a bright ring for 9 mm brass, a duller one for the carbine's lacquered steel, made of four inharmonic partials with a short decay. An empty magazine dropped in a reload clatters. Both are positioned where they land and dulled behind cover.
 - **Being hit.** A body blow and low thump with a brief muffling of the whole mix; elimination keeps the mix muffled until you respawn.

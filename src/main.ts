@@ -107,6 +107,8 @@ const LOADER_TIPS = [
   "Slash a shut door to kick it open. Enough rounds, or a grenade, blow it off its hinges.",
   "Shoot a steam pipe to fill the alley around it with cover.",
   "The record shop runs through the middle block. Its boarded back window can be blown out.",
+  "Shoot a red fuel drum and get clear: it vents fire, then explodes.",
+  "A broken stall leaves a low pile you can still hide behind.",
 ];
 let tipIndex = 0;
 const tipTimer = window.setInterval(() => { tipIndex = (tipIndex + 1) % LOADER_TIPS.length; loaderTip.textContent = LOADER_TIPS[tipIndex]; }, 3500);

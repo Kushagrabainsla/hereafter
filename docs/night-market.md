@@ -6,7 +6,7 @@ The game's map is a back-alley market in San Jose's SoFA district at dusk, 60 ×
 
 It has three lanes running north to south:
 
-- **The market alley** is 9 m wide and runs down the middle. Seven wooden stalls with striped awnings line it, with three table sets down the centre. String lights and paper lanterns hang overhead, and a food truck closes the north end with a 1.4 m gap on either side.
+- **The market alley** is 9 m wide and runs down the middle. Seven wooden stalls line it, selling noodles, fruit, grilled skewers, tea and trinkets under striped awnings, with three table sets down the centre. String lights and paper lanterns hang overhead, and a food truck closes the north end with a 1.4 m gap on either side.
 - **The restaurant** is the indoor lane on the west side. Two pairs of glass doors and two glass storefronts open onto the market alley. Inside, a pass counter splits the dining room from a kitchen walkway, where a carbine lies.
 - **The service alley** is on the east side, behind the middle block. It holds dumpsters, back doors, wall lamps, posters, a mural and the bar.
 
@@ -37,10 +37,12 @@ Pickups have a height, so the fire escape's magazines can only be taken from the
 
 ## What breaks
 
-- **Stalls** are full-height wooden cover with 200 health. Pistol rounds stop in them. Carbine rounds pass through weakened, losing about 70 % of their damage. A stall breaks after 8 pistol hits, 12 carbine hits or a grenade landing close by, and leaves splinters and debris.
+- **Stalls** are full-height wooden cover with 200 health. Pistol rounds stop in them. Carbine rounds pass through weakened, losing about 70 % of their damage. At half health a stall's awning is shot to rags and goods tumble off its counter. It breaks after 8 pistol hits, 12 carbine hits or a grenade landing close by, and collapses into a pile about 0.7 m high: low cover that still stops pistol rounds and that players can climb onto.
 - **The glass storefronts** of the restaurant and the bar block players until shot. One round shatters them, and players can then jump or climb through the empty frame onto the low sill.
 - **The upper-floor windows** break when shot. There are 247 on alley-facing walls.
-- **Props** are 25 crates, boxes, plastic crates, bins and drums. They break or get thrown about.
+- **Props** are 27 crates, boxes, plastic crates, bins and drums. They break or get thrown about.
+- **Fuel drums.** Two red drums stand by the restaurant's north door and the bar's south door. Two pistol rounds open one: it vents a jet of burning fuel for 1.6 s and then bursts like a grenade, credited to whoever shot it. A blast can throw a drum before it goes off.
+- **Fire extinguishers** hang in the restaurant kitchen, the bar, the record shop and on three alley walls. One round bursts one into a pale cloud of powder that hides the spot for about 5 s.
 - **Doors.** Rounds pass through a door and wear it down. A wooden leaf comes off its hinges after 4 pistol rounds, a steel back door after 5, and a grenade close by blows them off.
 - **The record shop's boarded window** takes 5 pistol rounds or a grenade. It then leaves a 1.9 m opening onto a 0.6 m sill that players can climb through.
 - **Steam pipes** on four walls burst with one round (see below).
@@ -76,6 +78,7 @@ All of it is drawn as instanced meshes, and none of it has colliders: it is flat
 
 - **Doors** (`src/world/doors.ts`). The restaurant's two doorways have pairs of glass doors, the bar's have panelled doors with portholes, the balcony has French doors, and the record shop has glass doors at the front and a steel door at the back. Each opens inward. Press E at it, or attack a shut door with the knife to kick it open. Some start open and some shut. Each leaf's collider swings with it and carries its entity, so rounds that strike it wear it down.
 - **Steam pipes** (`src/world/steamPipes.ts`). Lagged pipes with a valve and gauge run along the service alley, the laundry wall, the cut-through and the market alley's east wall. A round anywhere along one bursts it. A thick cloud then fills the space around it for about 11 s, hiding anyone inside, and thins over 4 s to a wisp that leaks until the room resets. The cloud blocks sight only. A player who joins after a pipe burst sees only the wisp.
+- **Stalls** (`src/world/stalls.ts`) come from the same kit: a plank counter, posts, a back rack with two shelves, a chalk price board, a striped awning in the stall's colour and the goods of its trade. Each also has a torn awning and a collapsed pile, shown as it takes damage.
 - **The record shop** cuts a new route through the middle block. Inside are record bins down the middle, shelves along both side walls and a counter with a turntable and a pair of spare pistol magazines. Two pendant lamps light it. The bins are waist-high cover, and the shop window, the doors and the boarded window all break.
 
 ## Look
@@ -102,7 +105,7 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 | Check | Result |
 |---|---|
 | Frame rate at the south spawn | 60 FPS, about 224,000 triangles |
-| Entities | 247 windows, 7 stalls, 4 glass storefronts, 13 door leaves, 4 steam pipes, 1 boarded window, 103 lamps and 25 props |
+| Entities | 247 windows, 7 stalls, 4 glass storefronts, 13 door leaves, 4 steam pipes, 6 extinguishers, 1 boarded window, 103 lamps and 27 props |
 | All 8 spawns | the player stands on the ground at each |
 | Walking into the restaurant glass | stopped at the sill |
 | One pistol round at the glass | shattered, and a running jump carried the player inside |

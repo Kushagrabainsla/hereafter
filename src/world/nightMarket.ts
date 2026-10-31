@@ -10,14 +10,15 @@ import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./ar
 import { type Material } from "./materials";
 import { type InstanceRef, type WorldEntity } from "./entities";
 import { type SurfaceTextures } from "./surfaceTextures";
-import { propEntity, type PropModel } from "./props";
+import { FUEL_DRUM, propEntity, type PropModel } from "./props";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
 import { KitPlacer, type KitPiece } from "./kit";
 import { DOOR_ENTITIES, DOOR_TOGGLES, Doors } from "./doors";
 import { dressFacades, wallMatrix } from "./facades";
-import { PIPE_ENTITIES, placeSteamPipes, SteamPipes } from "./steamPipes";
+import { PIPE_ENTITIES, placeSteamPipes, POWDER, SteamPipes } from "./steamPipes";
+import { Stalls, type Goods } from "./stalls";
 
 // The SoFA night market: a 60 m square back-alley block at dusk with three lanes. The market
 // alley (x -8.5..0.5) is lined with wooden stalls; the service alley (x 8.5..17) runs behind
@@ -31,7 +32,7 @@ import { PIPE_ENTITIES, placeSteamPipes, SteamPipes } from "./steamPipes";
 type Face = "px" | "nx" | "pz" | "nz";
 interface Facade { face: Face; at: number; from: number; to: number; y0: number; y1: number; lit: number }
 interface Shopfront { face: Face; at: number; along: number; width: number; photo: "cafe" | "stone"; sign: [text: string, background: string, ink: string]; open?: boolean }
-interface Stall { x: number; z: number; side: 1 | -1 }
+interface Stall { x: number; z: number; side: 1 | -1; goods: Goods }
 interface Pane { x: number; z0: number; z1: number; y0: number; y1: number }
 interface Strand { x0: number; z0: number; x1: number; z1: number; y: number; sag: number }
 
@@ -172,10 +173,13 @@ const shopfronts: Shopfront[] = [
   { face: "nx", at: 17, along: -20, width: 4.6, photo: "stone", sign: ["LAUNDRY", "#e9e2d2", "#2d5a8a"] },
 ];
 
+// What each stall sells; the noodle stall's pot is where the steam rises.
 const stalls: Stall[] = [
-  { x: -7.7, z: 19, side: 1 }, { x: -7.7, z: -10.5, side: 1 }, { x: -7.7, z: -22.5, side: 1 },
-  { x: -0.3, z: 15.5, side: -1 }, { x: -0.3, z: 8.5, side: -1 }, { x: -0.3, z: -7.5, side: -1 }, { x: -0.3, z: -15.5, side: -1 },
+  { x: -7.7, z: 19, side: 1, goods: "noodles" }, { x: -7.7, z: -10.5, side: 1, goods: "fruit" }, { x: -7.7, z: -22.5, side: 1, goods: "grill" },
+  { x: -0.3, z: 15.5, side: -1, goods: "tea" }, { x: -0.3, z: 8.5, side: -1, goods: "trinkets" }, { x: -0.3, z: -7.5, side: -1, goods: "fruit" }, { x: -0.3, z: -15.5, side: -1, goods: "grill" },
 ];
+const AWNINGS = [0xc63c3c, 0x1f7a74, 0xe0a030, 0x3654a8];
+export const STALL_SPOTS = stalls.map((stall, index) => ({ ...stall, awning: AWNINGS[index % AWNINGS.length] }));
 const panes: Pane[] = [
   { x: -8.65, z0: 0.2, z1: 4.6, y0: 0.55, y1: 2.9 },
   { x: -8.65, z0: 5.4, z1: 9.8, y0: 0.55, y1: 2.9 },
@@ -199,6 +203,12 @@ const propSpots: [string, number, number, number, number][] = [
   ["crate_wood", 9.3, -4.0, 0, 0.6], ["plastic_crate", 16.3, 22.0, 0, 0.3], ["oil_drum", 9.3, -22.5, 0, 0],
   ["crate_wood_large", 19.0, 1.5, 4.2, 0.3], ["cardboard_box", 18.2, -1.0, 4.2, 0.5],
   ["plastic_crate", -13.9, -5.6, 0, 0.2], ["cardboard_box", -14.0, 13.6, 0, 0.4],
+  // Red fuel drums: shot open, they vent fire and burst.
+  ["fuel_drum", -7.6, 13.0, 0, 0], ["fuel_drum", 16.3, -3.0, 0, 0.6],
+];
+// Fire extinguishers on walls: shot, they burst into a cloud of powder. [wall, surface, along, height]
+const EXTINGUISHERS: [Face, number, number, number][] = [
+  ["px", -15, 13.6, 1.05], ["pz", -2, 18.5, 0.9], ["nx", 8.19, -13.95, 0.9], ["px", 8.5, 19.3, 0.9], ["nx", 17, -11.8, 0.9], ["nx", 0.5, 5.2, 0.9],
 ];
 // The key lights used where the renderer cannot cluster many lights (WebGL 2).
 const pointLights: [number, number, number, number, number][] = [
@@ -533,6 +543,9 @@ export interface BuiltMap {
   // The doors players open, kick and shoot off their hinges, and the steam pipes that burst.
   doors: Doors;
   pipes: SteamPipes;
+  // Stalls show their damage: torn awnings, then a low pile with its own collider.
+  stalls: Stalls;
+  wrecks: { id: string; center: { x: number; y: number; z: number }; half: [number, number, number]; rotation: Quaternion }[];
   // Every breakable lamp and sign, and the lights they feed.
   lamps: Lamps;
   // Adds the market's lights: every lamp, bulb string, sign and lit shop when the renderer
@@ -835,20 +848,14 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // ---------- stalls: wooden counters that break apart ----------
   const groups = new Map<string, Object3D[]>();
+  // The stalls themselves come from the kit (stalls.ts); each keeps its lamp in a group of
+  // its own, hidden when the stall comes down.
+  const stallViews = new Stalls(placer, STALL_SPOTS);
+  const wrecks = STALL_SPOTS.map((spot, index) => ({ id: `stall:${index}:wreck`, ...Stalls.wreck(spot) }));
   stalls.forEach((stall, index) => {
     const group = new Group();
     group.position.set(stall.x, 0, stall.z);
     group.rotation.y = stall.side > 0 ? 0 : Math.PI;
-    const parts = new Batch(materials);
-    parts.box("woodStall", 1.2, 1.0, 3.0, 0, 0, 0);
-    parts.box("woodStall", 0.08, 1.6, 3.0, -0.6, 1.0, 0);
-    for (const [px, pz] of [[-0.55, 1.45], [-0.55, -1.45], [0.55, 1.45], [0.55, -1.45]]) parts.box("woodStall", 0.08, px < 0 ? 2.8 : 2.4, 0.08, px, 0, pz);
-    const awning = meterBox(2.1, 0.04, 3.5);
-    awning.applyMatrix4(new Matrix4().makeRotationZ(-0.28));
-    parts.add(`awning${index % 4}`, awning, new Matrix4().makeTranslation(0.35, 2.47, 0));
-    for (let k = 0; k < 5; k += 1) parts.box(`goods${(k + index) % 4}`, 0.34, 0.16 + (k % 2) * 0.1, 0.44, 0.15, 1.0, -1.1 + k * 0.55);
-    for (let k = 0; k < 3; k += 1) parts.box(`goods${(k + index + 1) % 4}`, 0.2, 0.26, 0.2, -0.45, 1.65, -0.9 + k * 0.9);
-    parts.build(group);
     // The stall's lamp hangs under the awning; it goes out with the stall or on its own.
     lamps.add(`lamp:stall-${index}`, { x: stall.x + stall.side * 0.3, y: 2.05, z: stall.z }, { type: "box", half: [0.08, 0.11, 0.08] }, 0, [lampMesh(new BoxGeometry(0.14, 0.2, 0.14), 0.3, 2.05, 0, group)], [stallLights[index]]);
     root.add(group);
@@ -856,6 +863,16 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     groups.set(id, [group]);
     // The whole stall is cover, counter to awning: pistol rounds stop in it, carbine rounds get through weakened.
     entities.push({ id, kind: "stall", material: "wood", maxHealth: 200, yaw: 0, center: { x: stall.x, y: 1.3, z: stall.z }, shape: { type: "box", half: [0.6, 1.3, 1.5] } });
+  });
+
+  // ---------- fire extinguishers that burst into powder ----------
+  const extinguishers = EXTINGUISHERS.map(([face, at, along, y], index) => {
+    const [nx, nz] = FACE_NORMAL[face];
+    const id = `extinguisher:${index}`;
+    const on = (out: number, up: number): { x: number; y: number; z: number } => (nx ? { x: at + nx * out, y: y + up, z: along } : { x: along, y: y + up, z: at + nz * out });
+    refs.set(id, placer.place("extinguisher", wallMatrix(face, at, along, y)));
+    entities.push({ id, kind: "extinguisher", material: "metal-thin", maxHealth: 6, yaw: 0, center: on(0.1, 0.32), shape: { type: "cylinder", halfHeight: 0.32, radius: 0.09 } });
+    return { id, source: on(0.25, 0.4), wall: on(0, 0.4), out: { x: nx, y: 0, z: nz } };
   });
 
   // ---------- glass storefronts that shatter and can be climbed through ----------
@@ -1028,14 +1045,16 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   placer.build(root, (name) => name.startsWith("escape"));
   const doors = new Doors(root, kit);
   for (const [id, objects] of doors.groups) groups.set(id, objects);
+  stallViews.show();
   const pipes = new SteamPipes(root);
+  for (const item of extinguishers) pipes.addSource(item.id, item.source, item.wall, item.out, POWDER);
 
   addClimbing(scene, ladders, [stair]);
   const surfaces: Mesh[] = [];
   statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
 
   // Movable props, numbered in a fixed order so ids match on every client.
-  const models = new Map(propModels.map((model) => [model.name, model]));
+  const models = new Map([...propModels, FUEL_DRUM].map((model) => [model.name, model]));
   const props: WorldEntity[] = [];
   for (const [name, x, z, base, yaw] of propSpots) {
     const model = models.get(name);
@@ -1044,7 +1063,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   let last = 0;
   return {
-    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes,
+    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes, stalls: stallViews, wrecks,
     light(manyLights) {
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
       const points = list.map(([x, y, z, color, intensity, distance]) => {

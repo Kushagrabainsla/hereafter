@@ -28,7 +28,9 @@ So a carbine round passes through a window, a crate, a bin, a stall seen from th
 | Cardboard box | 25 | flying cardboard |
 | Plastic crate | 45 | fragments |
 | Small and large wooden crate | 70 and 140 | splinters and planks |
-| Market stall | 200 | splinters, planks and dust |
+| Market stall | 200 | its awning tears at 100; then splinters, planks and dust, and a low pile that stays as cover |
+| Fuel drum | 16 | vents burning fuel for 1.6 s, then bursts with a grenade's blast |
+| Fire extinguisher | 6 | a cloud of powder that hides the spot for about 5 s |
 | Food truck glass | 1 | shards |
 | Food truck tyre | 40 | a burst of rubber; the tyre goes flat and the truck sinks toward it |
 | Propane cylinder | 16 | vents burning gas for 1.6 s, then bursts with a grenade's blast |
@@ -120,6 +122,9 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 | Pistol rounds at the restaurant's shut south door | one leaf off its hinges after 4; a ray through it was clear |
 | Pistol rounds at the record shop's boarded window | gone after 5; a ray through the window was clear |
 | One pistol round at the service alley's steam pipe | burst, and the cloud filled the alley around it |
+| Pistol rounds at the fruit stall | awning torn after 4; collapsed after 8 into a pile that stopped a ray at 0.35 m and let one through at 1.6 m |
+| Two pistol rounds at the fuel drum by the restaurant | vented, then burst: blew off both restaurant door leaves, broke its window, two crates and five lamps, and damaged the noodle stall |
+| One pistol round at an extinguisher | burst into a cloud of powder |
 
 ## Limits
 

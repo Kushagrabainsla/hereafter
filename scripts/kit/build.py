@@ -26,6 +26,16 @@ piece to face out of its wall. All pieces sit at the origin; their origins are:
                      the next landing and the drop ladder under the lowest: at the landing's
                      deck, centred along the wall
   record_bin, record_shelf, turntable   the record shop's fittings: bottom centre
+  extinguisher       a wall-mounted fire extinguisher: bottom centre at the wall
+  fuel_drum          a red fuel drum: bottom centre
+
+The market stalls are modelled in the stall's own frame instead: the counter faces +X, the
+stall runs 3 m along Y and its origin is on the ground under the middle of the counter:
+
+  stall_body         counter, posts, back rack and shelves, price board
+  stall_awning, stall_awning_torn   the striped awning, whole and shot to rags
+  stall_wreck        the stall collapsed into a low pile
+  goods_noodles, goods_fruit, goods_grill, goods_tea, goods_trinkets   what each kind sells
 
 Materials named paint_* are pale so the game can tint each copy.
 """
@@ -55,13 +65,16 @@ def srgb(hex_value):
 MATERIALS = {}
 
 
-def material(name, color, metal=0.0, rough=0.5, alpha=1.0):
+def material(name, color, metal=0.0, rough=0.5, alpha=1.0, emit=None, strength=0.0):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
     b = m.node_tree.nodes["Principled BSDF"]
     b.inputs["Base Color"].default_value = srgb(color)
     b.inputs["Metallic"].default_value = metal
     b.inputs["Roughness"].default_value = rough
+    if emit is not None:
+        b.inputs["Emission Color"].default_value = srgb(emit)
+        b.inputs["Emission Strength"].default_value = strength
     if alpha < 1:
         b.inputs["Alpha"].default_value = alpha
     MATERIALS[name] = m
@@ -97,6 +110,31 @@ def make_materials():
     material("wood_bin", 0x7a5230, 0.0, 0.7)
     material("wood_shelf", 0x5b3b22, 0.0, 0.7)
     material("card", 0xece6d6, 0.0, 0.8)
+    material("wood_stall", 0x8a5a35, 0.0, 0.8)
+    material("wood_stall2", 0x76492a, 0.0, 0.85)
+    material("wood_top", 0xa8774a, 0.0, 0.55)
+    material("wood_post", 0x5e3b22, 0.0, 0.8)
+    material("chalkboard", 0x1d2420, 0.0, 0.9)
+    material("chalk", 0xe9e4d6, 0.0, 0.9)
+    material("fabric_cream", 0xf1e7cf, 0.0, 0.9)
+    material("paint_awning", 0xf2f2f2, 0.0, 0.9)
+    material("fruit_orange", 0xf08a1c, 0.0, 0.45)
+    material("fruit_red", 0xb8231c, 0.0, 0.4)
+    material("fruit_green", 0x7fb03a, 0.0, 0.45)
+    material("fruit_yellow", 0xf2cf3a, 0.0, 0.5)
+    material("noodle", 0xf0d48a, 0.0, 0.7)
+    material("ceramic", 0xf4f0e6, 0.0, 0.25)
+    material("ceramic_blue", 0x3e6fa8, 0.0, 0.25)
+    material("sauce_red", 0x9a1f15, 0.1, 0.15)
+    material("sauce_dark", 0x2a1408, 0.1, 0.15)
+    material("coals", 0x2a0d05, 0.0, 0.9, emit=0xff5a1a, strength=3.0)
+    material("meat", 0x7a3a1c, 0.0, 0.6)
+    material("paper_red", 0xc8281e, 0.0, 0.7, emit=0xff5a2a, strength=0.6)
+    material("paper_yellow", 0xe8b84a, 0.0, 0.7, emit=0xffb04a, strength=0.6)
+    material("wicker", 0xb08850, 0.0, 0.85)
+    material("extinguisher_red", 0xb3140f, 0.3, 0.35)
+    material("fuel_red", 0x9e1b14, 0.4, 0.45)
+    material("hazard", 0xf2c230, 0.0, 0.5)
     for i, color in enumerate(SLEEVES):
         material(f"sleeve{i}", color, 0.0, 0.5)
 
@@ -688,12 +726,321 @@ def turntable():
     return join(parts, "turntable")
 
 
+
+# ---------------------------------------------------------------------------
+# market stalls, in the stall's own frame: counter facing +X, 3 m along Y
+
+STALL_Y = 1.5
+
+
+def sphere(name, radius, center, mat, segments=10, rings=7):
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=rings, radius=radius)
+    bmesh.ops.translate(bm, vec=Vector(center), verts=bm.verts)
+    return mesh_object(name, bm, mat)
+
+
+def stall_body():
+    parts = []
+    # The counter front: vertical boards, a dark kick strip and an overhanging top.
+    y = -STALL_Y + 0.05
+    k = 0
+    while y < STALL_Y - 0.06:
+        w = 0.118
+        parts.append(box("board", 0.56, 0.6, y, min(y + w, STALL_Y - 0.05), 0.08, 0.95, "wood_stall" if k % 3 else "wood_stall2", bev=0.004))
+        y += w + 0.006
+        k += 1
+    parts.append(box("kick", 0.52, 0.59, -STALL_Y + 0.04, STALL_Y - 0.04, 0.0, 0.08, "wood_post"))
+    parts.append(box("top", -0.62, 0.68, -STALL_Y - 0.03, STALL_Y + 0.03, 0.95, 1.0, "wood_top", bev=0.008))
+    for side in (-1, 1):
+        for z0 in (0.05, 0.36, 0.67):
+            parts.append(box("side", -0.6, 0.56, side * (STALL_Y - 0.05), side * STALL_Y, z0, z0 + 0.28, "wood_stall2", bev=0.003))
+    parts.append(box("back", -0.62, -0.58, -STALL_Y, STALL_Y, 0.0, 0.95, "wood_stall2"))
+    # Posts, the back rack with two shelves, and the beam the awning rests on.
+    for side in (-1, 1):
+        parts.append(box("post", 0.51, 0.59, side * STALL_Y - 0.04, side * STALL_Y + 0.04, 0.0, 2.42, "wood_post", bev=0.006))
+        parts.append(box("post", -0.62, -0.54, side * STALL_Y - 0.04, side * STALL_Y + 0.04, 0.0, 2.82, "wood_post", bev=0.006))
+        parts.append(tube("brace", [(0.55, side * (STALL_Y - 0.02), 1.95), (1.25, side * (STALL_Y - 0.02), 2.22)], 0.02, "wood_post", verts=6))
+    y = -STALL_Y + 0.04
+    while y < STALL_Y - 0.05:
+        parts.append(box("rack", -0.62, -0.59, y, min(y + 0.24, STALL_Y - 0.04), 1.0, 2.62, "wood_stall"))
+        y += 0.245
+    for z in (1.45, 1.95):
+        parts.append(box("shelf", -0.59, -0.28, -STALL_Y + 0.04, STALL_Y - 0.04, z - 0.03, z, "wood_top", bev=0.004))
+        for yy in (-1.0, 0.0, 1.0):
+            parts.append(turned_box("bracket", (0.2, 0.02, 0.02), (-0.48, yy, z - 0.1), (0, RAD(35), 0), "wood_post"))
+    parts.append(box("beam", 0.5, 0.6, -STALL_Y - 0.05, STALL_Y + 0.05, 2.38, 2.46, "wood_post", bev=0.006))
+    # A chalk price board hung from the beam, off to one side of the lamp.
+    parts.append(box("price", 0.555, 0.575, 0.35, 1.15, 2.0, 2.3, "chalkboard", bev=0.004))
+    parts.append(box("price_frame", 0.548, 0.556, 0.33, 1.17, 1.98, 2.32, "wood_post"))
+    for k in range(4):
+        parts.append(box("chalk", 0.547, 0.549, 0.42, 0.42 + 0.3 + (k % 2) * 0.25, 2.24 - k * 0.06, 2.255 - k * 0.06, "chalk"))
+    for yy in (0.45, 1.05):
+        parts.append(cylinder("hook", 0.004, 0.09, (0.565, yy, 2.34), "Z", "dark_steel", verts=6))
+    return join(parts, "stall_body")
+
+
+def awning_strips(torn):
+    """The fabric: eight strips from the back rail down to the front edge, alternating the
+    stall's colour and cream, sagging between the rafters, with a scalloped valance."""
+    random.seed(31 if torn else 5)
+    parts = []
+    back, front = (-0.66, 2.86), (1.42, 2.24)
+    n = 8
+    width = 2 * (STALL_Y + 0.25) / n
+    for i in range(n):
+        y0 = -(STALL_Y + 0.25) + i * width
+        mat = "paint_awning" if i % 2 == 0 else "fabric_cream"
+        reach = 1.0
+        if torn and i in (2, 5):
+            reach = 0.45 + random.uniform(0, 0.15)
+        steps = 6
+        bm = bmesh.new()
+        rows = []
+        for k in range(steps + 1):
+            t = k / steps * reach
+            x = back[0] + (front[0] - back[0]) * t
+            z = back[1] + (front[1] - back[1]) * t - math.sin(math.pi * t) * 0.05
+            rows.append([bm.verts.new((x, y0 + 0.003, z)), bm.verts.new((x, y0 + width - 0.003, z))])
+        for r0, r1 in zip(rows, rows[1:]):
+            bm.faces.new((r0[0], r0[1], r1[1], r1[0]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        strip = mesh_object("strip", bm, mat)
+        mod = strip.modifiers.new("Solid", "SOLIDIFY")
+        mod.thickness = 0.012
+        apply_modifiers(strip)
+        parts.append(strip)
+        if reach < 1.0:
+            # A ripped strip hangs down from where it tore.
+            t = reach
+            x = back[0] + (front[0] - back[0]) * t
+            z = back[1] + (front[1] - back[1]) * t
+            parts.append(turned_box("flap", (0.012, width * 0.8, 0.55), (x + 0.04, y0 + width / 2, z - 0.27), (0, RAD(8), RAD(random.uniform(-10, 10))), mat))
+            continue
+        # Scallops: two hanging tongues per strip.
+        if torn and i in (0, 6):
+            continue
+        for j in range(2):
+            yc = y0 + width * (0.25 + 0.5 * j)
+            profile = [(-width * 0.24, 0.0)] + [(math.cos(RAD(a)) * width * 0.24, -math.sin(RAD(a)) * 0.13) for a in range(180, 361, 30)]
+            tongue = prism("tongue", [(px, pz) for px, pz in profile], -0.006, 0.006, mat)
+            tongue.data.transform(Matrix.Translation((front[0] + 0.01, yc, front[1] - 0.01)) @ Matrix.Rotation(RAD(90), 4, "Z"))
+            parts.append(tongue)
+    # Rafters and the back rail under the fabric.
+    for yy in (-STALL_Y, -0.5, 0.5, STALL_Y):
+        droop = -0.25 if torn and yy == 0.5 else 0.0
+        parts.append(tube("rafter", [(back[0], yy, back[1] - 0.03), (front[0], yy, front[1] - 0.03 + droop)], 0.018, "wood_post", verts=6))
+    parts.append(tube("rail", [(front[0], -STALL_Y - 0.25, front[1] - 0.02), (front[0], STALL_Y + 0.25, front[1] - 0.02)], 0.016, "wood_post", verts=6))
+    return parts
+
+
+def stall_awning():
+    return join(awning_strips(False), "stall_awning")
+
+
+def stall_awning_torn():
+    return join(awning_strips(True), "stall_awning_torn")
+
+
+def stall_wreck():
+    """The stall knocked down into a pile about 0.7 m high, spilling forward."""
+    random.seed(17)
+    parts = []
+    parts.append(turned_box("top", (1.3, 3.0, 0.05), (0.05, 0.0, 0.42), (0, RAD(28), RAD(4)), "wood_top", bev=0.006))
+    parts.append(turned_box("back", (0.05, 2.9, 0.9), (-0.45, 0.1, 0.3), (0, RAD(-62), RAD(-3)), "wood_stall2"))
+    for k in range(16):
+        x, y = random.uniform(-0.3, 1.0), random.uniform(-1.5, 1.5)
+        parts.append(turned_box("board", (0.12, 0.02 + random.uniform(0, 0.01), random.uniform(0.4, 0.9)), (x, y, 0.08 + random.uniform(0, 0.25)),
+                                (RAD(random.uniform(60, 120)), RAD(random.uniform(-30, 30)), RAD(random.uniform(0, 180))), "wood_stall" if k % 2 else "wood_stall2", bev=0.003))
+    for k, (x, y, rz, ry) in enumerate([(0.7, -1.3, 20, 75), (0.3, 1.2, -35, 70), (-0.5, -1.4, 5, 40)]):
+        parts.append(turned_box("post", (0.08, 0.08, 2.3 if k < 2 else 1.4), (x, y, 0.3), (0, RAD(ry), RAD(rz)), "wood_post", bev=0.006))
+    # The awning, fallen across the pile in folds.
+    for i in range(8):
+        y0 = -1.7 + i * 0.425
+        mat = "paint_awning" if i % 2 == 0 else "fabric_cream"
+        parts.append(turned_box("fabric", (1.6, 0.42, 0.012), (0.35, y0 + 0.21, 0.55 - abs(i - 3.5) * 0.04), (RAD(random.uniform(-6, 6)), RAD(-14 + random.uniform(-6, 6)), 0), mat))
+    for k in range(10):
+        x, y = random.uniform(0.6, 1.6), random.uniform(-1.6, 1.6)
+        parts.append(sphere("goods", 0.045, (x, y, 0.045), ["fruit_orange", "fruit_red", "fruit_green"][k % 3], segments=8, rings=6))
+    for k in range(3):
+        parts.append(turned_box("crate", (0.45, 0.35, 0.12), (random.uniform(0.7, 1.3), -1.0 + k, 0.1), (RAD(random.uniform(-25, 25)), RAD(random.uniform(-20, 20)), RAD(random.uniform(0, 90))), "wicker"))
+    return join(parts, "stall_wreck")
+
+
+def crate_of(parts, center, size, fruit, rng):
+    cx, cy, cz = center
+    w, d = size
+    parts.append(box("crate", cx - w / 2, cx + w / 2, cy - d / 2, cy + d / 2, cz, cz + 0.12, "wicker", bev=0.008))
+    r = 0.042
+    nx, ny = int(w / (2 * r)), int(d / (2 * r))
+    for i in range(nx):
+        for j in range(ny):
+            x = cx - w / 2 + r + i * 2 * r + rng.uniform(-0.004, 0.004)
+            y = cy - d / 2 + r + j * 2 * r + rng.uniform(-0.004, 0.004)
+            parts.append(sphere("fruit", r * rng.uniform(0.9, 1.05), (x, y, cz + 0.1 + r * 0.6), rng.choice(fruit), segments=8, rings=6))
+
+
+def goods_fruit():
+    rng = random.Random(3)
+    parts = []
+    crate_of(parts, (0.18, -0.9, 1.0), (0.48, 0.4), ["fruit_orange"], rng)
+    crate_of(parts, (0.18, -0.25, 1.0), (0.48, 0.4), ["fruit_red", "fruit_red", "fruit_green"], rng)
+    crate_of(parts, (0.18, 0.4, 1.0), (0.48, 0.4), ["fruit_yellow"], rng)
+    for z in (1.45, 1.95):
+        for y in (-1.0, -0.2, 0.6):
+            parts.append(cylinder("basket", 0.12, 0.12, (-0.44, y, z + 0.06), "Z", "wicker", verts=14))
+            for k in range(4):
+                parts.append(sphere("fruit", 0.045, (-0.44 + math.cos(k * 1.6) * 0.05, y + math.sin(k * 1.6) * 0.05, z + 0.15), rng.choice(["fruit_orange", "fruit_green", "fruit_red"]), segments=8, rings=6))
+    return join(parts, "goods_fruit")
+
+
+def bowl(name, center, radius, mat):
+    return cylinder(name, radius * 0.6, radius * 0.8, (center[0], center[1], center[2] + radius * 0.4), "Z", mat, verts=14, radius2=radius)
+
+
+def goods_noodles():
+    rng = random.Random(9)
+    parts = []
+    # A stockpot where the steam rises, with its lid propped on the rim.
+    parts.append(cylinder("pot", 0.22, 0.3, (0.3, -0.4, 1.15), "Z", "steel", verts=24))
+    parts.append(cylinder("broth", 0.205, 0.01, (0.3, -0.4, 1.27), "Z", "sauce_dark", verts=24))
+    parts.append(turned_box("lid", (0.44, 0.44, 0.012), (0.12, -0.4, 1.32), (0, RAD(70), 0), "steel"))
+    parts.append(tube("ladle", [(0.35, -0.3, 1.2), (0.42, -0.25, 1.45)], 0.008, "steel", verts=6))
+    for k in range(5):
+        parts.append(bowl("bowl", (0.2, 0.35, 1.0 + k * 0.045), 0.085, "ceramic"))
+    for k in range(4):
+        parts.append(bowl("bowl", (0.2, 0.6, 1.0 + k * 0.045), 0.085, "ceramic_blue"))
+    for k, mat in enumerate(["sauce_red", "sauce_dark", "sauce_red"]):
+        parts.append(cylinder("bottle", 0.03, 0.18, (0.38, 0.95 + k * 0.08, 1.09), "Z", mat, verts=10))
+        parts.append(cylinder("cap", 0.015, 0.04, (0.38, 0.95 + k * 0.08, 1.2), "Z", "chalk", verts=8))
+    for z in (1.45, 1.95):
+        for k in range(9):
+            parts.append(cylinder("nest", 0.06, 0.06, (-0.44, -1.25 + k * 0.3, z + 0.03), "Z", "noodle", verts=10))
+    return join(parts, "goods_noodles")
+
+
+def goods_grill():
+    parts = []
+    parts.append(box("trough", 0.0, 0.46, -0.75, 0.75, 1.0, 1.16, "dark_steel", bev=0.01))
+    parts.append(box("bed", 0.03, 0.43, -0.72, 0.72, 1.12, 1.14, "coals"))
+    rng = random.Random(4)
+    for k in range(40):
+        parts.append(box("coal", *(lambda x, y: (x - 0.025, x + 0.025, y - 0.025, y + 0.025, 1.13, 1.16))(rng.uniform(0.06, 0.4), rng.uniform(-0.7, 0.7)), "coals"))
+    for k in range(9):
+        parts.append(cylinder("bar", 0.004, 1.5, (0.04 + k * 0.047, 0, 1.18), "Y", "steel", verts=6))
+    for k in range(10):
+        y = -0.6 + k * 0.13
+        parts.append(cylinder("skewer", 0.003, 0.62, (0.22, y, 1.2), "X", "wood_top", verts=5))
+        for j in range(4):
+            parts.append(box("meat", 0.06 + j * 0.08, 0.1 + j * 0.08, y - 0.02, y + 0.02, 1.18, 1.22, "meat", bev=0.006))
+    for z in (1.45, 1.95):
+        for k in range(6):
+            parts.append(cylinder("cup", 0.04, 0.11, (-0.42, -1.1 + k * 0.42, z + 0.055), "Z", "ceramic", verts=10))
+    parts.append(box("cooler", -0.55, -0.3, 0.6, 1.2, 1.0, 1.35, "ceramic_blue", bev=0.02))
+    return join(parts, "goods_grill")
+
+
+def teapot(parts, center, mat):
+    x, y, z = center
+    body = sphere("pot", 0.08, (x, y, z + 0.07), mat, segments=12, rings=8)
+    body.data.transform(Matrix.Translation((x, y, z + 0.07)) @ Matrix.Diagonal((1, 1, 0.8, 1)) @ Matrix.Translation((-x, -y, -(z + 0.07))))
+    parts.append(body)
+    parts.append(tube("spout", [(x + 0.06, y, z + 0.05), (x + 0.13, y, z + 0.12)], 0.012, mat, verts=6))
+    parts.append(ring("handle", 0.045, 0.008, (x - 0.08, y, z + 0.08), "Y", mat, verts=12))
+    parts.append(cylinder("lid", 0.035, 0.02, (x, y, z + 0.14), "Z", mat, verts=10))
+
+
+def goods_tea():
+    parts = []
+    parts.append(cylinder("urn", 0.15, 0.4, (0.2, -0.9, 1.2), "Z", "steel", verts=20))
+    parts.append(cylinder("urn_lid", 0.155, 0.03, (0.2, -0.9, 1.415), "Z", "dark_steel", verts=20))
+    parts.append(cylinder("tap", 0.012, 0.08, (0.36, -0.9, 1.08), "X", "brass", verts=6))
+    for k, mat in enumerate(["ceramic", "ceramic_blue", "ceramic"]):
+        teapot(parts, (0.25, -0.3 + k * 0.32, 1.0), mat)
+    for k in range(8):
+        parts.append(cylinder("cup", 0.035, 0.06, (0.4, 0.75 + (k % 4) * 0.09, 1.03 + (k // 4) * 0.062), "Z", "ceramic" if k % 3 else "ceramic_blue", verts=10))
+    tins = ["sauce_red", "fruit_green", "hazard", "ceramic_blue"]
+    for z in (1.45, 1.95):
+        for k in range(10):
+            mat = tins[(k + int(z * 10)) % len(tins)]
+            parts.append(cylinder("tin", 0.055, 0.15, (-0.44, -1.3 + k * 0.29, z + 0.075), "Z", mat, verts=12))
+            parts.append(cylinder("tin_lid", 0.057, 0.02, (-0.44, -1.3 + k * 0.29, z + 0.16), "Z", "brass", verts=12))
+    return join(parts, "goods_tea")
+
+
+def goods_trinkets():
+    rng = random.Random(12)
+    parts = []
+    # Paper lanterns hung along the beam.
+    for k, y in enumerate((-1.1, -0.45, 0.2)):
+        mat = "paper_red" if k % 2 == 0 else "paper_yellow"
+        lantern = sphere("lantern", 0.11, (0.62, y, 2.05), mat, segments=12, rings=8)
+        lantern.data.transform(Matrix.Translation((0.62, y, 2.05)) @ Matrix.Diagonal((1, 1, 1.25, 1)) @ Matrix.Translation((-0.62, -y, -2.05)))
+        parts.append(lantern)
+        parts.append(cylinder("cap", 0.06, 0.03, (0.62, y, 2.2), "Z", "wood_post", verts=10))
+        parts.append(cylinder("string", 0.003, 0.2, (0.62, y, 2.3), "Z", "black", verts=4))
+    for k in range(9):
+        x, y = rng.uniform(0.05, 0.45), -1.3 + k * 0.3
+        h = rng.uniform(0.06, 0.16)
+        parts.append(box("box", x - 0.07, x + 0.07, y - 0.09, y + 0.09, 1.0, 1.0 + h, rng.choice(["sauce_red", "ceramic_blue", "hazard", "fruit_green", "paper_yellow"]), bev=0.004))
+    for z in (1.45, 1.95):
+        for k in range(12):
+            y = -1.35 + k * 0.245
+            mat = rng.choice(["ceramic", "ceramic_blue", "sauce_red", "brass"])
+            if k % 2:
+                parts.append(cylinder("vase", 0.04, 0.14, (-0.44, y, z + 0.07), "Z", mat, verts=10, radius2=0.025))
+            else:
+                parts.append(sphere("cat", 0.05, (-0.44, y, z + 0.05), mat, segments=10, rings=7))
+    return join(parts, "goods_trinkets")
+
+
+# ---------------------------------------------------------------------------
+# things that burst
+
+def extinguisher():
+    parts = [box("plate", -0.07, 0.07, -0.015, 0.0, 0.25, 0.6, "dark_steel")]
+    parts.append(box("strap", -0.09, 0.09, -0.19, -0.015, 0.4, 0.43, "dark_steel"))
+    parts.append(cylinder("body", 0.075, 0.48, (0, -0.1, 0.26), "Z", "extinguisher_red", verts=20, bev=0.0))
+    parts.append(sphere("dome", 0.075, (0, -0.1, 0.5), "extinguisher_red", segments=16, rings=8))
+    parts.append(cylinder("label", 0.077, 0.14, (0, -0.1, 0.25), "Z", "chalk", verts=20))
+    parts.append(cylinder("neck", 0.025, 0.06, (0, -0.1, 0.59), "Z", "dark_steel", verts=10))
+    parts.append(box("head", -0.03, 0.06, -0.13, -0.07, 0.6, 0.66, "dark_steel", bev=0.006))
+    parts.append(turned_box("lever", (0.14, 0.02, 0.012), (0.05, -0.1, 0.68), (0, RAD(-12), 0), "steel"))
+    parts.append(cylinder("gauge", 0.018, 0.01, (-0.035, -0.135, 0.63), "Y", "gauge_face", verts=10))
+    parts.append(tube("hose", [(0.04, -0.1, 0.6), (0.1, -0.12, 0.55), (0.11, -0.13, 0.3), (0.09, -0.14, 0.12), (0.06, -0.14, 0.1)], 0.011, "black", verts=6))
+    parts.append(cylinder("nozzle", 0.014, 0.06, (0.05, -0.14, 0.09), "Z", "black", verts=6))
+    return join(parts, "extinguisher")
+
+
+def fuel_drum():
+    r, h = 0.3, 0.9
+    parts = [cylinder("drum", r, h, (0, 0, h / 2), "Z", "fuel_red", verts=28)]
+    for z in (0.3, 0.6):
+        parts.append(ring("rib", r + 0.004, 0.012, (0, 0, z), "Z", "fuel_red", verts=28))
+    for z in (0.015, h - 0.015):
+        parts.append(ring("chime", r - 0.004, 0.014, (0, 0, z), "Z", "dark_steel", verts=28))
+    parts.append(cylinder("bung", 0.03, 0.015, (0.17, 0.0, h + 0.005), "Z", "steel", verts=10))
+    parts.append(cylinder("vent", 0.02, 0.015, (-0.17, 0.05, h + 0.005), "Z", "steel", verts=10))
+    # A hazard label on two sides: yellow with a black band.
+    for a in (0, 180):
+        bm = bmesh.new()
+        bmesh.ops.create_cone(bm, cap_ends=False, segments=28, radius1=r + 0.002, radius2=r + 0.002, depth=0.24)
+        for v in list(bm.verts):
+            ang = math.degrees(math.atan2(v.co.y, v.co.x))
+            if abs(((ang - a + 180) % 360) - 180) > 40:
+                bm.verts.remove(v)
+        bmesh.ops.translate(bm, vec=Vector((0, 0, 0.45)), verts=bm.verts)
+        parts.append(mesh_object("label", bm, "hazard"))
+    parts.append(ring("band", r + 0.004, 0.02, (0, 0, 0.45), "Z", "black", verts=28))
+    return join(parts, "fuel_drum")
+
 PIECES = [door_glass, door_panel, door_french, door_steel, frame_steel, boards, ac_window, condenser, pipe_seg, pipe_shoe, pipe_head,
           meter_box, vent, steam_run, steam_valve, lambda: steam_end("steam_end_l", 1), lambda: steam_end("steam_end_r", -1),
-          escape_platform, escape_stair, escape_ladder, record_bin, record_shelf, turntable]
+          escape_platform, escape_stair, escape_ladder, record_bin, record_shelf, turntable,
+          stall_body, stall_awning, stall_awning_torn, stall_wreck, goods_noodles, goods_fruit, goods_grill, goods_tea, goods_trinkets, extinguisher, fuel_drum]
 
 
-def preview(outdir, built):
+def preview(outdir, built, only=None):
     os.makedirs(outdir, exist_ok=True)
     scene = bpy.context.scene
     scene.render.engine = "BLENDER_EEVEE"
@@ -722,16 +1069,33 @@ def preview(outdir, built):
         "escape_ladder": (8.5, 0, 2.2), "record_bin": (4.2, -2.2, -2), "record_shelf": (6.4, -0.0, -2), "turntable": (4.2, -2.2, -1.24),
     }
     extra = []
-    run2 = built["steam_run"].copy()
-    run2.data = built["steam_run"].data
-    link(run2)
-    run2.location = (4.84, 0, 0.6)
-    extra.append(run2)
+
+    def copy(name, location, rotation=0.0):
+        obj = built[name].copy()
+        obj.data = built[name].data
+        link(obj)
+        obj.location = location
+        obj.rotation_euler = (0, 0, RAD(rotation))
+        extra.append(obj)
+
+    copy("steam_run", (4.84, 0, 0.6))
     for name, obj in built.items():
         obj.location = spots.get(name, (0, 0, 0))
+    # A row of stalls in front of the wall, counters toward the camera.
+    for x, awning, goods in ((-9.5, "stall_awning", "goods_noodles"), (-5.5, "stall_awning_torn", "goods_fruit"), (-1.5, "stall_awning", "goods_grill"),
+                             (2.5, "stall_awning", "goods_tea"), (6.5, "stall_awning", "goods_trinkets")):
+        for name in ("stall_body", awning, goods):
+            copy(name, (x, -3.2, -2), -90)
+    copy("stall_wreck", (10.2, -3.2, -2), -90)
+    copy("extinguisher", (11.2, 0, -1.1))
+    copy("fuel_drum", (11.4, -0.9, -2))
     shots = {"left": ((-7.5, -5.5, 0.4), (-7.5, 0, -0.6)), "middle": ((0.8, -4.6, 0.2), (0.8, 0, -0.4)), "right": ((6.8, -6.5, 1.6), (7.2, 0, 1.0)),
-             "steam": ((4.6, -1.8, 0.9), (4.6, 0, 0.6)), "records": ((4.8, -4.4, -0.5), (5.0, -1.0, -1.4))}
+             "steam": ((4.6, -1.8, 0.9), (4.6, 0, 0.6)), "records": ((4.8, -4.4, -0.5), (5.0, -1.0, -1.4)),
+             "stalls_a": ((-5.5, -11.5, 0.6), (-5.5, -3, -0.8)), "stalls_b": ((4.5, -11.5, 0.6), (4.5, -3, -0.8)),
+             "stall_close": ((-1.5, -6.4, -0.1), (-1.5, -3, -0.9)), "wreck": ((10.2, -7.0, 0.2), (10.6, -2, -1.6))}
     for name, (location, target) in shots.items():
+        if only and name not in only:
+            continue
         cam.location = location
         cam.rotation_euler = (Vector(target) - cam.location).to_track_quat("-Z", "Y").to_euler()
         scene.render.filepath = os.path.join(outdir, f"kit_{name}.png")
@@ -747,6 +1111,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--out")
     parser.add_argument("--preview")
+    parser.add_argument("--shots", help="comma-separated preview shots to render")
     args = parser.parse_args(argv)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     make_materials()
@@ -762,7 +1127,7 @@ def main():
         log(f"{obj.name}: {len(obj.data.loop_triangles)} triangles")
     log(len(built), "pieces,", tris, "triangles")
     if args.preview:
-        preview(args.preview, built)
+        preview(args.preview, built, args.shots.split(",") if args.shots else None)
     if args.out:
         bpy.ops.object.select_all(action="SELECT")
         bpy.ops.export_scene.gltf(filepath=os.path.abspath(args.out), export_format="GLB", use_selection=False, export_apply=True, export_yup=True,

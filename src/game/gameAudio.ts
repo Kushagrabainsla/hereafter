@@ -431,6 +431,20 @@ export class GameAudio {
     this.hiss(at, 13, 700, 0.3);
   }
 
+  // A shot extinguisher: the clank of the hit and a short, hard blast of powder.
+  extinguisher(at: Vec3): void {
+    const context = this.live();
+    if (!context || !this.noise) return;
+    this.spatial("impact-metal", at, { gain: 0.7, ref: 3, rolloff: 1.2, rate: 1.1, priority: "high" });
+    this.hiss(at, 3.5, 3200, 0.45);
+  }
+
+  // A stall's awning tearing as it is shot to rags.
+  tear(at: Vec3): void {
+    this.spatial("cloth", at, { gain: 0.7, ref: 3, rolloff: 1.2, rate: 0.6 });
+    this.spatial("wood-break", at, { gain: 0.35, ref: 3, rolloff: 1.2, rate: 1.3 });
+  }
+
   // A door kicked open: a boot against wood and the leaf slamming back.
   kick(at: Vec3): void {
     const now = this.time();

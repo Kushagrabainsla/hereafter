@@ -6,8 +6,13 @@ import { type Material } from "./materials";
 export interface PropModel { name: string; file: string; size: [number, number, number]; material: Material; mass: number }
 
 // Durability of breakable props; the rest dent and get thrown around but stay whole.
-const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45 };
-const ROUND = new Set(["trash_can", "oil_drum"]);
+const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16 };
+const ROUND = new Set(["trash_can", "oil_drum", "fuel_drum"]);
+// Shot open, these vent burning fuel and then burst like a grenade.
+const EXPLOSIVE = new Set(["fuel_drum"]);
+
+// A red fuel drum, modelled in the market kit rather than taken from a photo scan.
+export const FUEL_DRUM: PropModel = { name: "fuel_drum", file: "", size: [0.62, 0.92, 0.62], material: "metal-thin", mass: 60 };
 const SHADOWLESS = new Set(["cardboard_box", "plastic_crate"]);
 
 export async function loadPropModels(): Promise<PropModel[]> {
@@ -22,7 +27,7 @@ export async function loadPropModels(): Promise<PropModel[]> {
 export function propEntity(id: string, model: PropModel, east: number, north: number, base: number, yaw: number): WorldEntity {
   const [x, y, z] = model.size;
   return {
-    id, kind: "prop", prop: model.name, material: model.material, maxHealth: HEALTH[model.name] ?? Infinity, mass: model.mass, yaw,
+    id, kind: "prop", prop: model.name, material: model.material, maxHealth: HEALTH[model.name] ?? Infinity, mass: model.mass, yaw, explosive: EXPLOSIVE.has(model.name) || undefined,
     center: { x: east, y: base + y / 2, z: north },
     shape: ROUND.has(model.name) ? { type: "cylinder", halfHeight: y / 2, radius: Math.max(x, z) / 2 * 0.96 } : { type: "box", half: [x / 2, y / 2, z / 2] },
   };
@@ -55,6 +60,11 @@ export class PropViews {
         console.warn(`Could not load prop ${model.name}`, error);
       }
     }));
+  }
+
+  // A model built some other way than from a prop file, such as a kit piece.
+  addModel(name: string, parts: { geometry: BufferGeometry; material: SurfaceMaterial }[]): void {
+    if (parts.length) this.parts.set(name, parts.map((part) => ({ ...part, matrix: new Matrix4() })));
   }
 
   // Creates the instanced meshes once every prop has been registered with add().

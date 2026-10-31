@@ -1,6 +1,6 @@
 import { CanvasTexture, Matrix4, Object3D, SRGBColorSpace, Sprite, SpriteNodeMaterial, Vector3 } from "three/webgpu";
 import { cameraFar, cameraNear, materialOpacity, perspectiveDepthToViewZ, positionView, smoothstep, viewportDepthTexture } from "three/tsl";
-import { type WorldEntity } from "./entities";
+import { type Vec3, type WorldEntity } from "./entities";
 import { ALONG_SIGN, FACE_YAW, wallMatrix, type Face } from "./facades";
 import { type KitPlacer } from "./kit";
 
@@ -71,28 +71,47 @@ function puffTexture(): CanvasTexture {
 }
 
 interface Puff { sprite: Sprite; material: SpriteNodeMaterial; age: number; life: number; velocity: Vector3; size: number; opacity: number }
-interface Leak { pipe: SteamPipe; source: Vector3; wall: Vector3; out: Vector3; age: number; spawn: number; puffs: Puff[] }
+// Where a cloud comes from: the point it blows from, the wall behind it and which way it faces.
+interface Source { source: Vector3; wall: Vector3; out: Vector3; style: CloudStyle }
+interface Leak extends Source { age: number; spawn: number; puffs: Puff[] }
 
-// How long a burst pipe blows a thick cloud, then how long it takes to thin to a wisp.
-const THICK = 11, THIN = 4;
+// How a cloud behaves: seconds thick and thinning, whether it keeps leaking a wisp after,
+// how big its billows grow, how bright they are and how wide the split it blows from.
+export interface CloudStyle { thick: number; thin: number; leaks: boolean; size: number; shade: number; split: number; jet: number }
+// A burst pipe blows a thick cloud for 11 s, thins over 4 s and leaks a wisp until the room resets.
+const STEAM: CloudStyle = { thick: 11, thin: 4, leaks: true, size: 1.5, shade: 0.17, split: 1.2, jet: 2.2 };
+// A shot extinguisher sprays a short, pale burst of powder.
+export const POWDER: CloudStyle = { thick: 3.5, thin: 2.5, leaks: false, size: 1.3, shade: 0.34, split: 0.2, jet: 3.4 };
 const PUFFS = 72;
 // Soft particles: a billow fades over its last 0.9 m in front of whatever is behind it.
 // (three's own softParticles helper names a GLSL reserved word, so WebGL cannot compile it.)
 const SOFT_OPACITY = materialOpacity.mul(smoothstep(0, 0.9, positionView.z.sub(perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar))));
 const scratch = new Vector3();
 
+// Clouds of steam from burst pipes, and of powder from shot extinguishers.
 export class SteamPipes {
+  private sources = new Map<string, Source>();
   private leaks = new Map<string, Leak>();
   private map = puffTexture();
 
-  constructor(private parent: Object3D) {}
+  constructor(private parent: Object3D) {
+    for (const pipe of STEAM_PIPES) {
+      const [nx, nz] = NORMAL[pipe.face];
+      this.sources.set(pipe.id, { source: point(pipe, pipe.valve, STAND_OFF + 0.15), wall: point(pipe, pipe.valve, 0), out: new Vector3(nx, 0, nz), style: STEAM });
+    }
+  }
+
+  // Another thing that bursts into a cloud: where it blows from, the wall behind it, which
+  // way it faces and how it behaves.
+  addSource(id: string, source: Vec3, wall: Vec3, out: Vec3, style: CloudStyle): void {
+    this.sources.set(id, { source: new Vector3(source.x, source.y, source.z), wall: new Vector3(wall.x, wall.y, wall.z), out: new Vector3(out.x, out.y, out.z), style });
+  }
 
   // A burst seen as it happens blows the full cloud; one that burst before this peer joined
-  // only leaks.
+  // only leaks, if it leaks at all.
   burst(id: string, fresh: boolean): void {
-    const pipe = STEAM_PIPES.find((item) => item.id === id);
-    if (!pipe || this.leaks.has(id)) return;
-    const [nx, nz] = NORMAL[pipe.face];
+    const origin = this.sources.get(id);
+    if (!origin || this.leaks.has(id) || (!fresh && !origin.style.leaks)) return;
     const puffs = Array.from({ length: PUFFS }, () => {
       // Grey, so the unlit cloud sits in the dusk instead of glowing.
       // Each billow fades where it nears a wall or the ground rather than being cut off.
@@ -105,7 +124,7 @@ export class SteamPipes {
       this.parent.add(sprite);
       return { sprite, material, age: 1, life: 1, velocity: new Vector3(), size: 1, opacity: 0 };
     });
-    this.leaks.set(id, { pipe, source: point(pipe, pipe.valve, STAND_OFF + 0.15), wall: point(pipe, pipe.valve, 0), out: new Vector3(nx, 0, nz), age: fresh ? 0 : THICK + THIN, spawn: 0, puffs });
+    this.leaks.set(id, { ...origin, age: fresh ? 0 : origin.style.thick + origin.style.thin, spawn: 0, puffs });
   }
 
   restore(id: string): void {
@@ -117,27 +136,28 @@ export class SteamPipes {
 
   update(seconds: number): void {
     for (const leak of this.leaks.values()) {
+      const style = leak.style;
       leak.age += seconds;
-      // Thick: a puff every 0.12 s that billows out to 4 m. Thinning, then a wisp.
-      const thick = leak.age < THICK ? 1 : Math.max(0, 1 - (leak.age - THICK) / THIN);
+      // Thick: a puff every 0.05 s that billows out a few metres. Thinning, then a wisp.
+      const thick = leak.age < style.thick ? 1 : Math.max(0, 1 - (leak.age - style.thick) / style.thin);
       const interval = thick > 0 ? 0.05 : 0.5;
       leak.spawn -= seconds;
-      while (leak.spawn <= 0) {
+      while (leak.spawn <= 0 && (thick > 0 || style.leaks)) {
         leak.spawn += interval;
         const puff = leak.puffs.reduce((oldest, item) => (item.age / item.life > oldest.age / oldest.life ? item : oldest));
         const strength = Math.max(0.12, thick);
         // Some puffs shoot out with the jet, most roll along the wall, so the cloud fills the
         // alley from the pipe outward.
         const spread = new Vector3((Math.random() - 0.5) * 3.2, Math.random() * 0.8, (Math.random() - 0.5) * 3.2);
-        puff.velocity.copy(leak.out).multiplyScalar(0.6 + Math.random() * 2.2 * strength).add(spread.multiplyScalar(strength));
+        puff.velocity.copy(leak.out).multiplyScalar(0.6 + Math.random() * style.jet * strength).add(spread.multiplyScalar(strength));
         // Steam escapes along a split in the pipe, not from a single point.
-        puff.sprite.position.copy(leak.source).add(new Vector3(-leak.out.z, 0, leak.out.x).multiplyScalar((Math.random() - 0.5) * 1.2 * strength));
+        puff.sprite.position.copy(leak.source).add(new Vector3(-leak.out.z, 0, leak.out.x).multiplyScalar((Math.random() - 0.5) * style.split * strength));
         puff.sprite.position.y += (Math.random() - 0.5) * 0.3;
         puff.age = 0;
         puff.life = 1.6 + strength * 3.2 + Math.random();
-        puff.size = 0.5 + strength * (1.5 + Math.random() * 1.3);
+        puff.size = 0.5 + strength * (style.size + Math.random() * 1.3);
         puff.material.rotation = Math.random() * Math.PI * 2;
-        puff.material.color.setScalar(0.17 + Math.random() * 0.09);
+        puff.material.color.setScalar(style.shade + Math.random() * 0.09);
         puff.opacity = 0.16 + strength * 0.42;
         puff.sprite.visible = true;
       }

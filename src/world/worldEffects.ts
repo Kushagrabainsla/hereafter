@@ -1,6 +1,6 @@
 import {
   AdditiveBlending, BoxGeometry, CanvasTexture, Color, CylinderGeometry, Euler, Group, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, SphereGeometry, Sprite, SpriteMaterial, Vector3, type Object3D,
+  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "./arena";
 import { type InstanceRef, type WorldEntity, type Vec3 } from "./entities";
@@ -151,6 +151,9 @@ export class WorldEffects {
   private fireball: Sprite;
   private puffMap = puffTexture();
   private fireAge = 9;
+  // Burning jets from shot fuel drums, following the drum until they run out.
+  private jets: { sprite: Sprite; follow: () => Vec3 | null; until: number }[] = [];
+  private jetMap: CanvasTexture | null = null;
   private grenades = new Map<number, FlyingGrenade>();
   private grenadeGeometry = { body: new SphereGeometry(0.045, 10, 8), lever: new BoxGeometry(0.012, 0.07, 0.022), cap: new CylinderGeometry(0.018, 0.02, 0.03, 8) };
   private grenadeMaterial = new MeshStandardMaterial({ color: 0x3f4a33, roughness: 0.55, metalness: 0.3 });
@@ -258,6 +261,8 @@ export class WorldEffects {
         this.solid.spawn(at, up, 12, "chunks", floor, 1.0);
         gameAudio.impact(entity.material, at);
       }
+    } else if (entity.kind === "extinguisher") {
+      this.glow.spawn(at, up, 6, "sparks", floor, 0.8);
     } else if (entity.kind === "pipe") {
       // Shreds of lagging; the steam itself is drawn by the pipe.
       this.solid.spawn(at, up, 16, "puff", floor, 1.2);
@@ -272,6 +277,30 @@ export class WorldEffects {
       else if (material === "glass") gameAudio.shatter(at);
       else gameAudio.impact(material, at);
     }
+  }
+
+  // A stall shot to its last half: its awning tears and goods tumble off the counter.
+  knock(at: Vec3): void {
+    const floor = this.floor(at);
+    this.solid.spawn({ ...at, y: at.y + 1.0 }, { x: 0, y: 1, z: 0 }, 14, "chunks", floor, 1.1);
+    this.solid.spawn({ ...at, y: at.y + 2.2 }, { x: 0, y: 0.5, z: 0 }, 10, "splinters", floor, 0.9);
+  }
+
+  // A drum shot open vents a roaring jet of burning fuel from its top until it bursts.
+  vent(follow: () => Vec3 | null, seconds: number): void {
+    if (!this.jetMap) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 64; canvas.height = 128;
+      const g = canvas.getContext("2d")!;
+      const flame = g.createRadialGradient(32, 110, 2, 32, 80, 60);
+      flame.addColorStop(0, "rgba(255,250,220,1)"); flame.addColorStop(0.3, "rgba(255,170,60,0.85)"); flame.addColorStop(1, "rgba(255,60,10,0)");
+      g.fillStyle = flame; g.fillRect(0, 0, 64, 128);
+      this.jetMap = new CanvasTexture(canvas);
+      this.jetMap.colorSpace = SRGBColorSpace;
+    }
+    const sprite = new Sprite(new SpriteMaterial({ map: this.jetMap, color: 0xffffff, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.scene.add(sprite);
+    this.jets.push({ sprite, follow, until: performance.now() + seconds * 1000 });
   }
 
   restore(entity: WorldEntity): void {
@@ -324,6 +353,16 @@ export class WorldEffects {
   }
 
   update(seconds: number): void {
+    const clock = performance.now();
+    this.jets = this.jets.filter((jet) => {
+      const at = jet.follow(), left = (jet.until - clock) / 1000;
+      if (!at || left < -0.25) { jet.sprite.removeFromParent(); jet.sprite.material.dispose(); return false; }
+      jet.sprite.position.set(at.x, at.y + 1.15, at.z);
+      jet.sprite.scale.set(0.55 + Math.random() * 0.2, 1.3 + Math.random() * 0.6, 1);
+      jet.sprite.material.opacity = left > 0 ? 1 : Math.max(0, 1 + left * 4);
+      if (Math.random() < seconds * 20) this.glow.spawn({ x: at.x, y: at.y + 0.6, z: at.z }, { x: 0, y: 1, z: 0 }, 1, "embers", this.floor(at), 0.6);
+      return true;
+    });
     this.solid.update(seconds);
     this.glow.update(seconds);
     this.fireAge += seconds;

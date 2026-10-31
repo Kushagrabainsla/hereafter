@@ -33,7 +33,7 @@ import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
 import { WorldEffects } from "./worldEffects";
-import { loadPropModels, PropViews } from "./props";
+import { FUEL_DRUM, loadPropModels, PropViews } from "./props";
 import { type PropPush, type PropState } from "../network/peerRoom";
 
 export type MapState = "loading" | "ready" | "error";
@@ -174,7 +174,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const entities = new EntityRegistry();
   const [propModels, truckModel, kitModel] = await Promise.all([loadPropModels(), loadFoodTruck(), loadMarketKit()]);
   const propViews = new PropViews(scene);
-  const built = buildNightMarket(scene, textures, propModels, kitPieces(kitModel));
+  const pieces = kitPieces(kitModel);
+  const built = buildNightMarket(scene, textures, propModels, pieces);
   // Baked sky occlusion and bounce light on the static surfaces, when the bake matches.
   if (lightmap) applyLightmap(built.surfaces, lightmap);
   const refs = built.refs;
@@ -194,6 +195,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   for (const [id, objects] of truck.groups) groups.set(id, objects);
   await step(0.55, 0.7, "Placing stalls, props and lights");
   await propViews.load(propModels);
+  propViews.addModel(FUEL_DRUM.name, pieces.get(FUEL_DRUM.name)?.parts ?? []);
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
   propViews.build(props);
 
@@ -224,11 +226,23 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Door leaves swing with their colliders, which carry their entity so rounds wear them down.
   for (const leaf of DOOR_LEAVES) physics.addMover(leaf.id, leaf.half, leaf.model.material, leaf.id);
   built.doors.setSwing((leaf, pose) => physics.setMover(leaf.id, pose.center, pose.rotation));
+  // A broken stall leaves a low pile, solid only once the stall is down.
+  for (const wreck of built.wrecks) {
+    physics.addMover(wreck.id, wreck.half, "wood");
+    physics.setMover(wreck.id, wreck.center, wreck.rotation);
+    physics.setMoverEnabled(wreck.id, false);
+  }
   physicsReady = physics;
   truck.setOpen(toggleState, toggleDefaults, true);
   built.doors.setOpen(toggleState, true);
   // A pipe that burst before this peer's first health table only leaks.
   let healthSeen = false;
+  // A fuel drum gone up: its body and collider go; the blast draws the rest.
+  const burstProp = (id: string): void => {
+    if (!entities.destroyed(id)) return;
+    physics.removeEntity(id);
+    propViews.setVisible(id, false);
+  };
   entities.locate = (entity) => physics.propPose(entity.id)?.position ?? entity.center;
   const player = new PlayerController(camera, renderer.domElement, data, arena, physics);
   player.setLadders(ladders);
@@ -324,7 +338,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     traceBullet: (ray) => physics.traceBullet(ray, (point) => entities.windowAt(point)?.id ?? null),
     entity: (id) => {
       const entity = entities.get(id);
-      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth, center: entity.center, explosive: entity.explosive } : null;
+      // Loose props report where they are now, so a moved drum bursts where it lies.
+      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth, center: entities.locate(entity), explosive: entity.explosive } : null;
     },
     entitiesNear: (center, radius) => entities.near(center, radius),
     grenadeRest: (origin, velocity, seconds) => physics.grenadePath(origin, velocity, seconds).points.at(-1)!,
@@ -503,7 +518,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           truck.restore(entity.id);
           if (entity.kind === "lamp") built.lamps.setBroken(entity.id, false);
           if (entity.kind === "door") physics.setMoverEnabled(entity.id, true);
-          if (entity.kind === "pipe") built.pipes.restore(entity.id);
+          if (entity.kind === "pipe" || entity.kind === "extinguisher") built.pipes.restore(entity.id);
+          if (entity.kind === "stall") physics.setMoverEnabled(`${entity.id}:wreck`, false);
           // A stall back in place brings its lamp back, unless the lamp itself was shot.
           const stallLamp = entity.kind === "stall" ? `lamp:${entity.id}` : "";
           if (stallLamp && (health[stallLamp] ?? 1) > 0) { built.lamps.setBroken(stallLamp, false); physics.restoreEntity(stallLamp); }
@@ -512,6 +528,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       }
       if (!Object.keys(health).length) entities.resetHealth();
       for (const entity of entities.applyHealth(health)) {
+        // A shot fuel drum stays put and whole while it vents, until its burst arrives; one
+        // that burst before this peer joined is simply gone.
+        if (entity.kind === "prop" && entity.explosive) {
+          if (healthSeen) { window.setTimeout(() => burstProp(entity.id), 2200); continue; }
+          burstProp(entity.id);
+          continue;
+        }
         const at = physics.propPose(entity.id)?.position ?? physics.moverCenter(entity.id);
         physics.removeEntity(entity.id);
         effects.destroy(at ? { ...entity, center: at } : entity);
@@ -523,11 +546,22 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           built.pipes.burst(entity.id, healthSeen);
           if (healthSeen) gameAudio.steamBurst(entity.center);
         }
+        if (entity.kind === "extinguisher") {
+          built.pipes.burst(entity.id, healthSeen);
+          if (healthSeen) gameAudio.extinguisher(entity.center);
+        }
+        if (entity.kind === "stall") physics.setMoverEnabled(`${entity.id}:wreck`, true);
         // A stall's lamp goes down with it.
         if (entity.kind === "stall") { built.lamps.setBroken(`lamp:${entity.id}`, true); physics.removeEntity(`lamp:${entity.id}`); }
         // A cylinder bursts when its explosion arrives; this catches one that burst before
         // this peer joined.
         if (entity.kind === "tank") window.setTimeout(() => truck.burst(entity.id), 2200);
+      }
+      // Stalls show their damage: an awning shot to rags at half health, then the pile.
+      for (const entity of entities.all()) {
+        if (entity.kind !== "stall") continue;
+        const stage = built.stalls.setHealth(entity.id, entities.healthOf(entity.id) / entity.maxHealth);
+        if (stage === 1 && healthSeen) { effects.knock(entity.center); gameAudio.tear(entity.center); }
       }
       healthSeen = true;
     },
@@ -577,10 +611,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       }
       // A blast in the open throws the player away from it; cover shelters them.
       if (event.kind === "vent" && event.entity && event.position) {
-        truck.vent(event.entity, (event.fuseMs ?? 1600) / 1000);
+        if (event.entity.startsWith("truck:")) truck.vent(event.entity, (event.fuseMs ?? 1600) / 1000);
+        else { const id = event.entity; effects.vent(() => physics.propPose(id)?.position ?? null, (event.fuseMs ?? 1600) / 1000); }
         gameAudio.vent(event.position, (event.fuseMs ?? 1600) / 1000);
       }
-      if (event.kind === "explode" && event.entity) truck.burst(event.entity);
+      if (event.kind === "explode" && event.entity) {
+        if (event.entity.startsWith("truck:")) truck.burst(event.entity);
+        else burstProp(event.entity);
+      }
       if (event.kind === "use" && event.entity) {
         const toggle = data.layout.toggles.find((item) => item.id === event.entity);
         if (toggle) gameAudio.hinge(toggle.at, event.open === true, event.entity.endsWith("hatch"));
