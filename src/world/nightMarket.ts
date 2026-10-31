@@ -210,6 +210,10 @@ export const NIGHT_MARKET: MapLayout = {
   solids,
 };
 
+// The low sun just above the rooftops to the west-southwest: where it lies from the market
+// (any length), its colour and strength. The baked bounce light uses it too.
+export const MARKET_SUN = { offset: [-220, 62, -60] as [number, number, number], color: 0xff9452, intensity: 1.1 };
+
 // The playable square: 60 m across, centred on the origin.
 export const MARKET_ARENA: Arena = { sizeMeters: 60 };
 
@@ -421,6 +425,9 @@ const FACE_YAW: Record<Face, number> = { px: Math.PI / 2, nx: -Math.PI / 2, pz: 
 const FACE_NORMAL: Record<Face, [number, number]> = { px: [1, 0], nx: [-1, 0], pz: [0, 1], nz: [0, -1] };
 const UP = new Vector3(0, 1, 0);
 
+// Looks that make their own light take none from the lightmap.
+const UNBAKED = new Set(["lampGlow", "sconce", "menuGlow", "bottle", "tailLight", "photoCafe", "photoStone"]);
+
 // Static geometry merged per material, so the whole map draws in a few dozen calls.
 class Batch {
   private parts = new Map<string, BufferGeometry[]>();
@@ -441,14 +448,22 @@ class Batch {
   plane(look: string, w: number, h: number, x: number, y: number, z: number, face: Face): void {
     this.add(look, new PlaneGeometry(w, h), new Matrix4().compose(new Vector3(x, y, z), new Quaternion().setFromAxisAngle(UP, FACE_YAW[face]), new Vector3(1, 1, 1)));
   }
-  build(parent: Object3D, shadows: (look: string) => boolean = () => true): void {
+  // Surfaces that take baked light are unindexed, so every triangle owns its corners and
+  // can sit anywhere in the lightmap; they are named static:<look> for the bake to find.
+  build(parent: Object3D, shadows: (look: string) => boolean = () => true, baked: Mesh[] | null = null): void {
     for (const [look, list] of this.parts) {
-      const merged = mergeGeometries(list, false);
+      let merged = mergeGeometries(list, false);
       for (const geometry of list) geometry.dispose();
       if (!merged) continue;
+      if (baked && !UNBAKED.has(look)) {
+        const unindexed = merged.toNonIndexed();
+        merged.dispose();
+        merged = unindexed;
+      }
       const mesh = new Mesh(merged, this.materials[look]);
       mesh.castShadow = shadows(look);
       mesh.receiveShadow = true;
+      if (baked && !UNBAKED.has(look)) { mesh.name = `static:${look}`; baked.push(mesh); }
       parent.add(mesh);
     }
     this.parts.clear();
@@ -484,6 +499,8 @@ export interface BuiltMap {
   entities: WorldEntity[];
   props: WorldEntity[];
   ladders: Ladder[];
+  // Static surfaces that can take baked light (see lightmap.ts), one mesh per look.
+  surfaces: Mesh[];
   // Adds the market's lights: every lamp, bulb string, sign and lit shop when the renderer
   // can afford many lights, otherwise six key lights and painted pools of light.
   light: (many: boolean) => void;
@@ -550,8 +567,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // Ground: paving in the market alley and passages, asphalt in the service alley, wooden
   // floors indoors.
+  // Ground is cut into 4 m tiles so the parts under buildings can be left out of the lightmap.
   const ground = (look: string, x0: number, x1: number, z0: number, z1: number, y: number): void => {
-    const geometry = new PlaneGeometry(x1 - x0, z1 - z0);
+    const geometry = new PlaneGeometry(x1 - x0, z1 - z0, Math.ceil((x1 - x0) / 4), Math.ceil((z1 - z0) / 4));
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setXY(i, uv.getX(i) * (x1 - x0), uv.getY(i) * (z1 - z0));
     statics.add(look, geometry, new Matrix4().compose(new Vector3((x0 + x1) / 2, y, (z0 + z1) / 2), new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), -Math.PI / 2), new Vector3(1, 1, 1)));
@@ -896,7 +914,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   })();
 
   addClimbing(scene, ladders, [stair]);
-  statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "menuGlow", "lampGlow", "bottle"].includes(look));
+  const surfaces: Mesh[] = [];
+  statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "menuGlow", "lampGlow", "bottle"].includes(look), surfaces);
 
   // Movable props, numbered in a fixed order so ids match on every client.
   const models = new Map(propModels.map((model) => [model.name, model]));
@@ -908,7 +927,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   let last = 0;
   return {
-    refs, groups, entities, props, ladders, lightSources: many,
+    refs, groups, entities, props, ladders, surfaces, lightSources: many,
     light(manyLights) {
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
       for (const [x, y, z, color, intensity, distance] of list) {

@@ -1,9 +1,12 @@
 import {
   ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, PCFShadowMap, PerspectiveCamera, PointLight, Quaternion,
-  RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry,
+  RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
-import { float, pass, screenUV, smoothstep, vec4 } from "three/tsl";
+import { float, luminance, mix, pass, renderOutput, screenUV, smoothstep, vec3, vec4 } from "three/tsl";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
+import { ao } from "three/addons/tsl/display/GTAONode.js";
+import { film } from "three/addons/tsl/display/FilmNode.js";
+import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { ClusteredLighting } from "three/addons/lighting/ClusteredLighting.js";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
@@ -20,8 +23,9 @@ import { gameAudio } from "../game/gameAudio";
 import { SoundStage } from "../game/soundStage";
 import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, KNIFE, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
-import { buildNightMarket, nightMarketData } from "./nightMarket";
+import { buildNightMarket, nightMarketData, MARKET_SUN } from "./nightMarket";
 import { duskSky } from "./duskSky";
+import { applyLightmap, loadLightmap } from "./lightmap";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
@@ -133,19 +137,19 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const data = nightMarketData();
   events.onStatus("loading", `Loading the ${data.layout.name} and its materials…`);
   events.onProgress?.(0.04, `Loading the ${data.layout.name}`);
-  const textures = await loadSurfaceTextures();
+  const [textures, lightmap] = await Promise.all([loadSurfaceTextures(), loadLightmap("night-market")]);
   await step(0.45, 0.55, "Building alleys and buildings");
   const scene = new Scene();
   // Dusk: the last low orange light catches the upper floors while the alleys fall into
   // shadow, lit by the market itself. The painted sky is also what surfaces reflect.
-  const sunOffset = new Vector3(-220, 62, -60);
+  const sunOffset = new Vector3(...MARKET_SUN.offset);
   const sky = duskSky(sunOffset.clone().normalize());
   scene.background = sky;
   scene.environment = sky;
   scene.environmentIntensity = 0.55;
   scene.fog = new FogExp2(0x2a2638, 0.0075);
   scene.add(new HemisphereLight(0x7c88b8, 0x2a2026, 0.85));
-  const sun = new DirectionalLight(0xff9452, 1.1);
+  const sun = new DirectionalLight(MARKET_SUN.color, MARKET_SUN.intensity);
   sun.position.copy(sunOffset);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -164,6 +168,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const propModels = await loadPropModels();
   const propViews = new PropViews(scene);
   const built = buildNightMarket(scene, textures, propModels);
+  // Baked sky occlusion and bounce light on the static surfaces, when the bake matches.
+  if (lightmap) applyLightmap(built.surfaces, lightmap);
   const refs = built.refs;
   const groups = built.groups;
   const ladders = built.ladders;
@@ -224,19 +230,37 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // On WebGPU a muzzle flash lights the alley around the shooter for a moment.
   const muzzleLight = clustered ? new PointLight(0xffb45a, 0, 9, 2) : null;
   if (muzzleLight) scene.add(muzzleLight);
-  // The world and the first-person view render as two multisampled passes; the view is laid
-  // over the world by its own coverage (both clear to transparent), then bloom makes lamps,
-  // lanterns, neon, lit windows and muzzle flashes glow and a soft vignette frames the
-  // picture. Tone mapping and colour space conversion come last. Drawing straight to the
+  // The world renders once, writing its colour, depth, normals and how rough and metallic
+  // each pixel is; the first-person view renders in its own multisampled pass. The world's
+  // buffers feed two screen-space effects at half resolution: ambient occlusion darkens contact and creases the lightmap
+  // is too coarse for (and anything that moves, which it cannot hold), and reflections put
+  // the lamps, signs and lit windows in the wet paving and glass. The view is laid over the
+  // world, smoothed by SMAA (the effects need a depth buffer that multisampling would not
+  // give them), by its own coverage (both clear to transparent), then bloom makes lamps, lanterns,
+  // neon, lit windows and muzzle flashes glow, a grade cools the shadows and warms the
+  // highlights, and a soft vignette frames the picture. After tone mapping, fine film grain
+  // breaks up banding and the too-clean look of rendered surfaces. Drawing straight to the
   // canvas after the pipeline would replace its output, so everything goes through it.
   renderer.setClearColor(0x000000, 0);
   const pipeline = new RenderPipeline(renderer);
-  const world = pass(scene, camera, { samples: 4 }).getTextureNode("output");
+  const worldPass = pass(scene, camera);
+  const world = worldPass.getTextureNode("output");
+  // Without a normal buffer GTAO rebuilds normals from depth, which saves writing one.
+  const occlusionPass = ao(worldPass.getTextureNode("depth"), null as unknown as Node, camera);
+  occlusionPass.resolutionScale = 0.5;
+  occlusionPass.radius.value = 0.8;
+  occlusionPass.samples.value = 12;
+  const occlusion = mix(float(1), occlusionPass.getTextureNode().r, 0.85);
+  const lit = smaa(vec4(world.rgb.mul(occlusion), 1)).getTextureNode().rgb;
   const held = pass(viewScene, viewCamera, { samples: 4 }).getTextureNode("output");
-  const picture = world.rgb.mul(float(1).sub(held.a)).add(held.rgb);
-  const glow = bloom(vec4(picture, 1), 0.75, 0.55, 0.9);
+  const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
+  const glow = picture.add(bloom(vec4(picture, 1), 0.75, 0.55, 0.9).rgb);
+  const brightness = luminance(glow);
+  const grade = mix(vec3(0.94, 1.0, 1.07), vec3(1.06, 1.0, 0.93), smoothstep(0.02, 0.5, brightness));
+  const graded = mix(vec3(brightness), glow, 1.08).mul(grade).max(0);
   const vignette = float(1).sub(smoothstep(0.32, 0.95, screenUV.sub(0.5).length()).mul(0.42));
-  pipeline.outputNode = vec4(picture.add(glow.rgb).mul(vignette), 1);
+  pipeline.outputColorTransform = false;
+  pipeline.outputNode = film(renderOutput(vec4(graded.mul(vignette), 1)), float(0.06));
   const pickupData = makeWeaponPickups(data);
   const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, pickupData);
   const authoredViewModel = new AuthoredViewModel(viewCamera);

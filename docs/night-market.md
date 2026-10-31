@@ -45,7 +45,7 @@ Walls are brick to bullets, dumpsters stop rounds, and the food truck is thin me
 
 ## Look
 
-The market is lit at dusk by a painted sky, a low orange sun on the upper floors and 87 real lights from its lamps, strings, lanterns and signs, with bloom on everything bright, wet paving and windows that show rooms. See [rendering notes](rendering.md).
+The market is lit at dusk by a painted sky, a low orange sun on the upper floors and 87 real lights from its lamps, strings, lanterns and signs, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`. See [rendering notes](rendering.md).
 
 ## How it is built
 

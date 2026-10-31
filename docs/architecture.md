@@ -10,7 +10,7 @@ The same module draws the market. Static geometry is merged per material so the 
 
 ## Rendering
 
-`src/world/mapViewer.ts` creates the scene, the renderer and the frame loop. Three.js `WebGPURenderer` uses WebGPU when available and WebGL 2 otherwise. On WebGPU, clustered lighting lets every lamp and sign be a real light, and `src/game/viewLighting.ts` lights the first-person arms from the lamps around the player. The world and the first-person view render as two multisampled passes in a post-processing pipeline that adds bloom and a vignette before tone mapping. Render resolution adapts to sustained frame rates. See [rendering notes](rendering.md).
+`src/world/mapViewer.ts` creates the scene, the renderer and the frame loop. Three.js `WebGPURenderer` uses WebGPU when available and WebGL 2 otherwise. On WebGPU, clustered lighting lets every lamp and sign be a real light, and `src/game/viewLighting.ts` lights the first-person arms from the lamps around the player. Static surfaces also take light baked offline (`src/world/lightmap.ts`, built by `scripts/lightmaps/`). The world renders into a post-processing pipeline that adds ground-truth ambient occlusion and SMAA, then the multisampled first-person view, bloom, a grade, a vignette, tone mapping and film grain. Render resolution adapts to sustained frame rates. See [rendering notes](rendering.md).
 
 ## Movement and physics
 

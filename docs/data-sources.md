@@ -8,7 +8,7 @@ The files in `public/textures/` are 1K diffuse and normal maps from [Poly Haven]
 
 `storefront-stone.jpg` and `storefront-cafe.jpg` were generated with the built-in imagegen tool for this project. Their prompts requested flat, front-facing, photo-real downtown California storefront textures: one with a stone base and recessed glass entry, the other a dark green cafe with a warm interior. Both prompts excluded people, text, logos, signs, and perspective distortion. They are the shop interiors seen behind the market's shopfront glass.
 
-The dusk sky, the sign faces, the window interiors, the posters, the mural, the awning stripes, the wood grain and the kitchen tiles are drawn in code when the map loads. The spare magazines, the spent cases and the pickup markers are modelled in code at real size.
+The dusk sky, the sign faces, the window interiors, the posters, the mural, the awning stripes, the wood grain and the kitchen tiles are drawn in code when the map loads. The spare magazines, the spent cases and the pickup markers are modelled in code at real size. The lightmap in `public/lightmaps/` is baked from the map itself by `npm run build:lightmaps` (see [rendering notes](rendering.md)); its raw bakes stay in the ignored `assets-src/lightmaps/`.
 
 ## First-person view models
 
