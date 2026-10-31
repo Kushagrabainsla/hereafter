@@ -5,7 +5,7 @@ import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matc
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 8;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -82,7 +82,7 @@ function validIntent(value: unknown): value is CombatIntent {
   if (intent.kind === "select") return ["knife", "pistol", "rifle"].includes(intent.weapon ?? "");
   if (intent.kind === "use") return typeof intent.target === "string" && intent.target.length < 40;
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
-  if (intent.kind === "throw") return validAim(intent.aim);
+  if (intent.kind === "throw") return validAim(intent.aim) && (intent.smoke === undefined || typeof intent.smoke === "boolean");
   if (intent.kind === "fall") return typeof intent.speed === "number" && Number.isFinite(intent.speed);
   return intent.kind === "reload" || intent.kind === "respawn";
 }

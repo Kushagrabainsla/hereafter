@@ -45,15 +45,17 @@ export const BACKSTAB_DAMAGE = 100;
 export const MASS = {
   knife: 0.25,
   grenade: 0.4,
+  // A canister smoke grenade, like the M18.
+  smoke: 0.54,
   pistol: { gun: 0.72, magazine: 0.07, round: 0.012 },
   rifle: { gun: 3.1, magazine: 0.33, round: 0.0163 },
 } as const;
 
-export interface Loadout { owned: WeaponKind[]; ammo: Record<GunKind, number>; mags: Record<GunKind, number[]>; grenades: number }
+export interface Loadout { owned: WeaponKind[]; ammo: Record<GunKind, number>; mags: Record<GunKind, number[]>; grenades: number; smokes?: number }
 
 // Everything a player carries: guns with the magazine in them, spare magazines and rounds.
 export function carriedMass(player: Loadout): number {
-  let mass = MASS.knife + player.grenades * MASS.grenade;
+  let mass = MASS.knife + player.grenades * MASS.grenade + (player.smokes ?? 0) * MASS.smoke;
   for (const gun of ["pistol", "rifle"] as const) {
     const m = MASS[gun];
     if (player.owned.includes(gun)) mass += m.gun + m.magazine + player.ammo[gun] * m.round;
@@ -66,7 +68,7 @@ export function carriedMass(player: Loadout): number {
 // basic kit and sprinting 1.8%, to at most a fifth. The same legs launch more mass, so a
 // jump starts slower, and a heavier body takes longer to get going and to stop.
 export const BODY_MASS = 78;
-const BASE_LOAD = MASS.knife + 2 * MASS.grenade;
+const BASE_LOAD = MASS.knife + 2 * MASS.grenade + 2 * MASS.smoke;
 export function loadEffects(mass: number): { walk: number; sprint: number; jump: number; inertia: number } {
   const extra = Math.max(0, mass - BASE_LOAD);
   return {

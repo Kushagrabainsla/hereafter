@@ -136,7 +136,7 @@ function puffTexture(): CanvasTexture {
   }
   return new CanvasTexture(canvas);
 }
-interface FlyingGrenade { mesh: Group; path: GrenadePath; start: number; bounce: number }
+interface FlyingGrenade { mesh: Group; path: GrenadePath; start: number; bounce: number; linger: number }
 
 // Visual effects of combat on the world: impacts, bullet holes, breaking objects,
 // explosions and grenades in flight. Nothing here affects the game state.
@@ -158,6 +158,9 @@ export class WorldEffects {
   private grenadeGeometry = { body: new SphereGeometry(0.045, 10, 8), lever: new BoxGeometry(0.012, 0.07, 0.022), cap: new CylinderGeometry(0.018, 0.02, 0.03, 8) };
   private grenadeMaterial = new MeshStandardMaterial({ color: 0x3f4a33, roughness: 0.55, metalness: 0.3 });
   private leverMaterial = new MeshStandardMaterial({ color: 0x9a9c94, roughness: 0.4, metalness: 0.8 });
+  private smokeGeometry = { can: new CylinderGeometry(0.032, 0.032, 0.13, 14), band: new CylinderGeometry(0.0325, 0.0325, 0.03, 14) };
+  private smokeMaterial = new MeshStandardMaterial({ color: 0x4a5246, roughness: 0.6, metalness: 0.3 });
+  private bandMaterial = new MeshStandardMaterial({ color: 0xe8e6de, roughness: 0.7 });
   private matrix = new Matrix4();
   private quaternion = new Quaternion();
   shake = 0;
@@ -330,19 +333,30 @@ export class WorldEffects {
   }
 
   // A thrown grenade follows the path the physics world computed, spinning, and clinks
-  // when it bounces. The burst replaces it when the explode event arrives.
-  throwGrenade(id: number, path: GrenadePath): void {
+  // when it bounces. The burst replaces it when the explode event arrives. A smoke grenade
+  // is a can with a white band, and lies where it stopped while its smoke pours out.
+  throwGrenade(id: number, path: GrenadePath, smoke = false): void {
     const mesh = new Group();
-    const body = new Mesh(this.grenadeGeometry.body, this.grenadeMaterial);
-    body.scale.set(1, 1.25, 1);
-    const cap = new Mesh(this.grenadeGeometry.cap, this.leverMaterial);
-    cap.position.y = 0.062;
-    const lever = new Mesh(this.grenadeGeometry.lever, this.leverMaterial);
-    lever.position.set(0.035, 0.03, 0);
-    mesh.add(body, cap, lever);
+    if (smoke) {
+      const can = new Mesh(this.smokeGeometry.can, this.smokeMaterial);
+      const band = new Mesh(this.smokeGeometry.band, this.bandMaterial);
+      const cap = new Mesh(this.grenadeGeometry.cap, this.leverMaterial);
+      cap.position.y = 0.07;
+      const lever = new Mesh(this.grenadeGeometry.lever, this.leverMaterial);
+      lever.position.set(0.036, 0.035, 0);
+      mesh.add(can, band, cap, lever);
+    } else {
+      const body = new Mesh(this.grenadeGeometry.body, this.grenadeMaterial);
+      body.scale.set(1, 1.25, 1);
+      const cap = new Mesh(this.grenadeGeometry.cap, this.leverMaterial);
+      cap.position.y = 0.062;
+      const lever = new Mesh(this.grenadeGeometry.lever, this.leverMaterial);
+      lever.position.set(0.035, 0.03, 0);
+      mesh.add(body, cap, lever);
+    }
     mesh.position.set(path.points[0].x, path.points[0].y, path.points[0].z);
     this.scene.add(mesh);
-    this.grenades.set(id, { mesh, path, start: performance.now(), bounce: 0 });
+    this.grenades.set(id, { mesh, path, start: performance.now(), bounce: 0, linger: smoke ? 20 : 1.5 });
   }
 
   removeGrenade(id: number): void {
@@ -399,7 +413,7 @@ export class WorldEffects {
         gameAudio.grenadeBounce(grenade.mesh.position, grenade.path.bounces[grenade.bounce].speed);
         grenade.bounce += 1;
       }
-      if (elapsed > grenade.path.points.length * grenade.path.step + 1.5) this.removeGrenade(id);
+      if (elapsed > grenade.path.points.length * grenade.path.step + grenade.linger) this.removeGrenade(id);
     }
   }
 }

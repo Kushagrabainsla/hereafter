@@ -48,6 +48,7 @@ const damageDirection = element<HTMLElement>("damage-direction");
 const killBanner = element<HTMLElement>("kill-banner");
 const killDetail = element<HTMLElement>("kill-detail");
 const grenadeCount = element<HTMLElement>("grenade-count");
+const smokeCount = element<HTMLElement>("smoke-count");
 const magRow = element<HTMLElement>("mag-row");
 const magPips = element<HTMLElement>("mag-pips");
 const loadCount = element<HTMLElement>("load-count");
@@ -91,6 +92,7 @@ const LOADER_TIPS = [
   "Press H any time to see every control.",
   "Hold Q or E to lean around cover.",
   "Press G to throw a grenade. It bounces, rolls and bursts after 2.6 seconds.",
+  "Press T to throw a smoke grenade: a grey wall about 7 m across for 13 seconds.",
   "Crouch while sprinting to slide.",
   "Press Space facing cover or a ledge to climb onto it.",
   "Walk into a ladder to climb to the fire escape or the balcony. Long falls hurt.",
@@ -213,7 +215,7 @@ function showAmmo(player: CombatPlayer): void {
   }) : [Object.assign(document.createElement("em"), { textContent: "NONE" })]));
   const mass = carriedMass(player);
   loadCount.textContent = `${mass.toFixed(1)} kg`;
-  loadCount.parentElement?.classList.toggle("heavy", mass > 6);
+  loadCount.parentElement?.classList.toggle("heavy", mass > 7);
   viewer?.setLoad(mass);
 }
 
@@ -259,6 +261,7 @@ function onMatchChange(state: CombatSnapshot): void {
   syncPause();
   gameAudio.setDown(player.health <= 0);
   grenadeCount.textContent = player.grenades ? "● ".repeat(player.grenades).trim() : "—";
+  smokeCount.textContent = player.smokes ? "● ".repeat(player.smokes).trim() : "—";
   viewer?.setEntityHealth(state.entities);
   // A peer joining a running room receives a backlog of events; it starts from the newest.
   if (lastEventId === 0 && state.eventSeq > 3) lastEventId = state.eventSeq;
@@ -303,15 +306,15 @@ function playEvent(event: CombatEvent): void {
   if (event.kind === "death" && event.target === selfId) toast(event.cause === "fall" ? "You fell too far" : event.cause === "grenade" && event.actor === selfId ? "Caught in your own blast" : "You were eliminated");
 }
 
-function throwGrenade(): void {
+function throwGrenade(smoke = false): void {
   if (!viewer || !match || dialogOpen()) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
-  if (player.grenades <= 0) { toast("No grenades left"); return; }
+  if ((smoke ? player.smokes : player.grenades) <= 0) { toast(smoke ? "No smoke grenades left" : "No grenades left"); return; }
   viewer.holdSprint(0.5);
   viewer.quickThrow();
   const { heading, pitch } = viewer.playerPose();
-  submit({ kind: "throw", aim: { heading, pitch } });
+  submit({ kind: "throw", aim: { heading, pitch }, ...(smoke ? { smoke } : {}) });
 }
 
 function submit(intent: CombatIntent): void {
@@ -515,7 +518,7 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.repeat || event.altKey || event.metaKey || event.ctrlKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
-  if (!["f", "v", "e", "g", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
+  if (!["f", "v", "e", "g", "t", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
   if (key === "m") {
     gameAudio.setMuted(!gameAudio.isMuted());
@@ -523,6 +526,7 @@ document.addEventListener("keydown", (event) => {
   } else if (key === "f") attack();
   else if (key === "v") attack("stab");
   else if (key === "g") throwGrenade();
+  else if (key === "t") throwGrenade(true);
   else if (key === "e") interact();
   else if (key === "r") reload();
   else if (key === "enter") submit({ kind: "respawn" });

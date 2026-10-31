@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, PCFShadowMap, PerspectiveCamera, PointLight, Quaternion,
+  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, MeshBasicMaterial, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
 import { float, luminance, mix, pass, renderOutput, screenUV, smoothstep, vec3, vec4 } from "three/tsl";
@@ -29,6 +29,7 @@ import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { DOOR_LEAVES } from "./doors";
 import { kitPieces, loadMarketKit } from "./kit";
+import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
@@ -201,6 +202,16 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
 
   await step(0.7, 0.8, "Starting the renderer");
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
+  // Smoke, steam and powder draw in a scene of their own, laid over the world after its
+  // ambient occlusion. Inside a cloud, a grey haze just in front of the eyes covers the world
+  // (the hands and weapon draw in their own pass, over it).
+  const cloudScene = new Scene();
+  const haze = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ color: 0x8e908c, transparent: true, opacity: 0, depthTest: false, depthWrite: false }));
+  haze.renderOrder = 20;
+  haze.frustumCulled = false;
+  haze.visible = false;
+  cloudScene.add(haze);
+  let hazeLevel = 0;
   const renderer = new WebGPURenderer({ antialias: false, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
   const maximumPixelRatio = Math.min(window.devicePixelRatio, 2);
   const minimumPixelRatio = Math.min(maximumPixelRatio, 1.25);
@@ -291,7 +302,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   occlusionPass.radius.value = 0.8;
   occlusionPass.samples.value = 12;
   const occlusion = mix(float(1), occlusionPass.getTextureNode().r, 0.85);
-  const lit = smaa(vec4(world.rgb.mul(occlusion), 1)).getTextureNode().rgb;
+  const sharp = smaa(vec4(world.rgb.mul(occlusion), 1)).getTextureNode().rgb;
+  built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
+  const clouds = pass(cloudScene, camera).getTextureNode("output");
+  const lit = sharp.mul(float(1).sub(clouds.a)).add(clouds.rgb);
   const held = pass(viewScene, viewCamera, { samples: 4 }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
   const glow = picture.add(bloom(vec4(picture, 1), 0.75, 0.55, 0.9).rgb);
@@ -433,6 +447,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       events.onAim?.(spreadPixels, active === "knife");
     }
     built.update(time / 1000);
+    hazeLevel += (built.pipes.fogAt(camera.position) - hazeLevel) * Math.min(1, delta * 6);
+    haze.visible = hazeLevel > 0.01;
+    if (haze.visible) {
+      (haze.material as MeshBasicMaterial).opacity = hazeLevel;
+      haze.quaternion.copy(camera.quaternion);
+      haze.position.copy(camera.position).add(new Vector3(0, 0, -0.2).applyQuaternion(camera.quaternion));
+      haze.scale.set(0.2 * Math.tan(camera.fov * Math.PI / 360) * 2 * camera.aspect * 1.2, 0.2 * Math.tan(camera.fov * Math.PI / 360) * 2 * 1.2, 1);
+    }
     truck.update(Math.min(delta, 0.1));
     sun.target.position.set(camera.position.x, 0, camera.position.z);
     sun.position.set(camera.position.x + sunOffset.x, sunOffset.y, camera.position.z + sunOffset.z);
@@ -637,8 +659,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       }
       for (const impact of event.impacts ?? []) effects.impact(impact, { x: impact.nx, y: impact.ny, z: impact.nz }, impact.material, impact.exit);
       if (event.kind === "throw" && event.position && event.velocity && event.grenade !== undefined) {
-        effects.throwGrenade(event.grenade, physics.grenadePath(event.position, event.velocity, (event.fuseMs ?? 2600) / 1000));
+        effects.throwGrenade(event.grenade, physics.grenadePath(event.position, event.velocity, (event.fuseMs ?? 2600) / 1000), event.smoke === true);
       }
+      // A smoke grenade pops where it came to rest and pours smoke from there.
+      if (event.kind === "smoke" && event.position) built.pipes.pour(`smoke:${event.id}`, event.position, SMOKE);
       if (event.kind === "explode" && event.position) {
         if (event.grenade !== undefined) effects.removeGrenade(event.grenade);
         effects.explosion(event.position);

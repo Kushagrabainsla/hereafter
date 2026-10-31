@@ -69,7 +69,7 @@ Headless Chrome checks drove the running game and stepped the controller directl
 | Carbine bloom over 11 shots at 140 ms | mean deviation 0.27° rising to 1.26° |
 | Crosshair gap, carbine | 3.7 px standing, 9.6 walking, 18.5 in the air, 3.0 crouched |
 | Lean | full lean in about half a second, eyes moved 0.32 m; a shot 0.3 m beside an upright head misses it and hits the leaning head |
-| Sprint loads | 1.1 kg: full speed; 2.4 kg (pistol, two magazines): 97.5%; 11.7 kg: 81% |
+| Sprint loads | 1.1 kg: full speed; 2.4 kg (pistol, two magazines): 97.5%; 11.7 kg: 81% (measured before smoke grenades, which add 1.1 kg to every load) |
 
 ## Limits
 

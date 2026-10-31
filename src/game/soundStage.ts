@@ -104,6 +104,7 @@ export class SoundStage {
     }
     if (event.kind === "throw") gameAudio.throwGrenade(event.actor === selfId ? undefined : event.position);
     if (event.kind === "explode" && event.position) gameAudio.explosion(event.position);
+    if (event.kind === "smoke" && event.position) gameAudio.smokePop(event.position);
   }
 
   // A round that passes within three metres of the listener's head cracks past them.

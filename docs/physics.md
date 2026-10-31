@@ -52,7 +52,7 @@ Players shove props by walking into them, with the mass of their body and everyt
 
 ## Weight
 
-Everything a player carries has its real mass (`MASS` in `src/game/combatRules.ts`): the knife 0.25 kg, a grenade 0.4 kg, the pistol 0.72 kg with a 70 g magazine and 12 g cartridges, and the carbine 3.1 kg with a 330 g steel magazine and 16.3 g cartridges. A loaded pistol and magazine weigh 0.94 kg; a full carbine magazine 0.82 kg. Beyond the basic kit of knife and grenades, each kilogram costs 1.2% of walking speed and 1.8% of sprinting speed, to at most a fifth. The same legs launch more mass, so a jump starts slower in proportion to the square root of the total mass, and the body's inertia grows with it, so starting, stopping and climbing take longer. A carbine with six spare magazines, a pistol with four and two grenades weigh 11.7 kg: walking drops to 87%, sprinting to 81% (6.6 m/s), the jump to 94%. Heavier landings also hurt more, in proportion to the mass coming down. The HUD shows the load and turns amber above 6 kg.
+Everything a player carries has its real mass (`MASS` in `src/game/combatRules.ts`): the knife 0.25 kg, a grenade 0.4 kg, a smoke grenade 0.54 kg, the pistol 0.72 kg with a 70 g magazine and 12 g cartridges, and the carbine 3.1 kg with a 330 g steel magazine and 16.3 g cartridges. A loaded pistol and magazine weigh 0.94 kg; a full carbine magazine 0.82 kg. Beyond the basic kit of knife and four grenades (2.1 kg), each kilogram costs 1.2% of walking speed and 1.8% of sprinting speed, to at most a fifth. The same legs launch more mass, so a jump starts slower in proportion to the square root of the total mass, and the body's inertia grows with it, so starting, stopping and climbing take longer. A carbine with six spare magazines, a pistol with four and the four grenades weigh 12.8 kg: walking drops to 87%, sprinting to 81% (6.6 m/s), the jump to 94%. Heavier landings also hurt more, in proportion to the mass coming down. The HUD shows the load and turns amber above 7 kg.
 
 ## The knife
 
@@ -73,6 +73,8 @@ The food truck's rear doors and serving hatch are colliders that swing on their 
 ## Grenades
 
 Press G to throw a fragmentation grenade where you look: 14 m/s plus a little lift, from the right hand. Each life starts with two. The flight is integrated at 120 Hz with gravity, bounces that keep 38% of the speed along the surface normal and 72% across it, and rolling to rest. The coordinating peer computes where it settles; every peer draws the same path and hears it clink. It bursts 2.6 s after the throw. Within 7 m, players take up to 130 damage, falling off with distance, scaled by how much of their chest and head the blast can reach past cover. Objects take up to 320 by material, and loose ones are thrown outward. A blast in the open also throws nearby players away from it and off their feet, up to 7 m/s close in and less the heavier they are; cover shelters them. The blast has a flash, fireball, embers, smoke, a scorch mark, a camera shake that falls off with distance, on WebGPU a light that floods the alley for a moment, and a synthesised explosion with a long echo.
+
+Press T to throw a smoke grenade, a canister with a white band. Each life starts with two. It flies and bounces like a fragmentation grenade and pops 1.8 s after the throw, once it has about come to rest. It harms nothing. Every peer then draws the same cloud from the pop event: grey soft-particle smoke pours out along the ground and up, a wall about 7 m across and 3 m high, for 13 s, then thins away over 5 s. The smoke hides players but stops no rounds, so a shot fired blind through it still lands. The canister lies where it stopped, hissing, until the smoke has gone.
 
 ## Ragdolls
 
@@ -104,7 +106,7 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 | Pistol with no spare magazines, fired 14 times | 12 rounds fired, then refused; reload refused |
 | Two spare magazines, reload empty, fire 5, reload | 12 rounds, then 13 (one chambered) with a 6-round magazine kept |
 | Fire escape magazines from the alley below | refused |
-| Sprint with 11.7 kg against 1.1 kg | 0.81 of the speed |
+| Sprint with 11.7 kg against 1.1 kg (before smoke grenades added 1.1 kg to both) | 0.81 of the speed |
 | Slash at a player 1.3 m ahead | head for 45; aimed at the chest, torso for 30 |
 | Stab from the front, from behind | 55; fatal (100) |
 | Slash 2.4 m away | miss |

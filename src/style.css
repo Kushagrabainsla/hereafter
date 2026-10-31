@@ -136,6 +136,8 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .hud-grenade-row { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; color: #b9cbcd; font-size: 11px; font-weight: 650; }
 .hud-grenade-row kbd { min-width: 0; padding: 0 4px; font-size: 9px; }
 .hud-grenade-row strong { color: #9fe3dc; font-size: 11px; letter-spacing: .12em; }
+.hud-smoke-row { margin-top: 3px; }
+.hud-smoke-row strong { color: #c9d0cf; }
 .hud-mag-row, .hud-load-row { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; color: #b9cbcd; font-size: 11px; font-weight: 650; }
 .hud-mag-row[hidden] { display: none; }
 .hud-mag-row kbd { min-width: 0; padding: 0 4px; font-size: 9px; }

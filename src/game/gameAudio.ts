@@ -431,6 +431,14 @@ export class GameAudio {
     this.hiss(at, 13, 700, 0.3);
   }
 
+  // A smoke grenade popping: a dull thump, then the long hiss of smoke pouring out.
+  smokePop(at: Vec3): void {
+    const context = this.live();
+    if (!context || !this.noise) return;
+    this.spatial("impact-soft", at, { gain: 0.6, ref: 3, rolloff: 1.2, rate: 0.7 });
+    this.hiss(at, 13, 1500, 0.22);
+  }
+
   // A shot extinguisher: the clank of the hit and a short, hard blast of powder.
   extinguisher(at: Vec3): void {
     const context = this.live();
