@@ -433,8 +433,12 @@ function enterRoom(rawCode: string): void {
     match?.reset(selfId);
     viewer?.resetWorld();
     lastEventId = 0;
+    sharedProps.clear();
+    roomSize = 1;
     peerRoom = new PeerRoom(code, arena, match!, {
       onPeers(count, spawnSlot) {
+        if (count > roomSize) playerJoined = true;
+        roomSize = count;
         openRoomButton.textContent = count === 1 ? "Room · waiting" : `Room · ${count} players`;
         viewer?.setSpawnSlot(spawnSlot);
       },
@@ -538,9 +542,11 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// The coordinating peer simulates loose props and shares moving ones 15 times a second,
-// with every displaced prop every two seconds for peers that just joined.
-let propTick = 0;
+// The coordinating peer simulates loose props and shares moving ones 15 times a second. Every
+// two seconds it also shares the displaced props that have changed since it last did, so each
+// comes to rest in the same place everywhere, and every displaced prop after a player joins.
+let propTick = 0, playerJoined = false, roomSize = 1;
+const sharedProps = new Map<string, string>();
 window.setInterval(() => {
   if (!viewer) return;
   const leading = !peerRoom || peerRoom.leading();
@@ -550,7 +556,19 @@ window.setInterval(() => {
   if (peerRoom && !leading) peerRoom.sendPushes(shoves);
   if (!peerRoom || !leading) return;
   propTick += 1;
-  peerRoom.sendProps(viewer.propStates(propTick % 30 === 0));
+  const refresh = propTick % 30 === 0;
+  let states = viewer.propStates(refresh);
+  if (refresh) {
+    const everything = playerJoined;
+    playerJoined = false;
+    states = states.filter((state) => {
+      const text = state.join();
+      if (!everything && sharedProps.get(state[0]) === text) return false;
+      sharedProps.set(state[0], text);
+      return true;
+    });
+  }
+  peerRoom.sendProps(states);
 }, 66);
 
 window.setInterval(() => {

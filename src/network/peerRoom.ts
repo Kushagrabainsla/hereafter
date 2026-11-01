@@ -58,6 +58,13 @@ const LANE_BACKLOG_BYTES = 8192;
 // As text it was about 238 bytes.
 const POSITION_BYTES = 25;
 const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16 } as const;
+// A player whose position has not changed sends it this often instead of every 50 ms: often
+// enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
+const STILL_INTERVAL_MS = 250;
+const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean"] as const;
+// Standing on the ground, the height above it wavers by a centimetre from one frame to the
+// next, so a change of under 1.5 cm counts as none.
+const samePose = (a: PosePacket, b: PosePacket): boolean => POSE_FIELDS.every((key) => a[key] === b[key]) && Math.abs(a.jumpHeight - b.jumpHeight) < 0.015;
 
 function encodePosition(packet: PosePacket): ArrayBuffer {
   const view = new DataView(new ArrayBuffer(POSITION_BYTES));
@@ -161,6 +168,10 @@ export class PeerRoom {
   // Each peer's position lane: unordered and never resent, so a lost packet holds up nothing
   // behind it, and a late position is simply superseded by the next.
   private lanes = new Map<string, RTCDataChannel>();
+  // The last position sent and when, and the newest one held back since because it was the same.
+  private lastPose: PosePacket | null = null;
+  private lastPoseAt = 0;
+  private heldPose: PosePacket | null = null;
   private lastIntentSequence = new Map<string, number>();
   private sequence = 0;
   private intentSequence = 0;
@@ -446,6 +457,20 @@ export class PeerRoom {
       airborne: pose.airborne === true,
       lean: round(pose.lean ?? 0),
     };
+    // Standing still, a player sends the same position only every quarter second. When they
+    // move again, the position they held goes out first, stamped at the moment before, so
+    // others see them set off then rather than glide from where the last one put them.
+    const now = performance.now(), last = this.lastPose;
+    if (last && samePose(packet, last)) {
+      if (now - this.lastPoseAt < STILL_INTERVAL_MS) { this.heldPose = packet; return; }
+    } else if (this.heldPose) this.transmitPose(this.heldPose);
+    this.heldPose = null;
+    this.lastPose = packet;
+    this.lastPoseAt = now;
+    this.transmitPose(packet);
+  }
+
+  private transmitPose(packet: PosePacket): void {
     // The lane where it is open; a congested lane skips this position rather than queue it.
     const bytes = encodePosition(packet), shared: string[] = [];
     for (const peerId of this.peers) {
