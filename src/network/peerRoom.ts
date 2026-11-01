@@ -116,6 +116,10 @@ export class PeerRoom {
   private expectedMap: string;
   private leaderId = selfId;
   private handoffUntil = 0;
+  // The newest event broadcast so far, and when the last broadcast left; see broadcastSnapshot.
+  private lastSentEvent = 0;
+  private lastBroadcastAt = 0;
+  private broadcastTimer = 0;
 
   private reportPeers(): void {
     const members = [selfId, ...this.peers].sort();
@@ -246,13 +250,30 @@ export class PeerRoom {
     } else void this.syncAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap }, { target: nextLeader }).catch(() => undefined);
   }
 
-  private sendSnapshot(peerId: string): void {
-    void this.snapshotAction.send(JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, state: this.match.getState() }), { target: peerId }).catch(() => undefined);
+  private packet(state: CombatSnapshot): string {
+    return JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, state });
   }
 
+  // The whole state with its recent events, for a peer joining or catching up.
+  private sendSnapshot(peerId: string): void {
+    void this.snapshotAction.send(this.packet(this.match.view()), { target: peerId }).catch(() => undefined);
+  }
+
+  // Changes go out at most 20 times a second, and each carries only the events since the
+  // last: resending the 32 most recent events every time made nine-tenths of each packet, and
+  // a firefight between three players sent over 100 KB a second to each. The channel is
+  // reliable and ordered, so a peer misses none of them.
   private broadcastSnapshot(): void {
     if (this.leaderId !== selfId || !this.peers.size) return;
-    void this.snapshotAction.send(JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, state: this.match.getState() })).catch(() => undefined);
+    const wait = this.lastBroadcastAt + 50 - performance.now();
+    if (wait > 0) {
+      if (!this.broadcastTimer) this.broadcastTimer = window.setTimeout(() => { this.broadcastTimer = 0; this.broadcastSnapshot(); }, wait);
+      return;
+    }
+    this.lastBroadcastAt = performance.now();
+    const state = this.match.view(this.lastSentEvent);
+    this.lastSentEvent = state.eventSeq;
+    void this.snapshotAction.send(this.packet(state)).catch(() => undefined);
   }
 
   sendCombatIntent(intent: CombatIntent): void {
@@ -316,6 +337,7 @@ export class PeerRoom {
     this.propsAction.onMessage = null;
     this.room.onPeerJoin = null;
     this.room.onPeerLeave = null;
+    window.clearTimeout(this.broadcastTimer);
     await this.room.leave();
     this.peers.clear();
     this.lastSequence.clear();

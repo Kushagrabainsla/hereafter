@@ -238,6 +238,9 @@ export class MatchState {
   }
 
   getState(): CombatSnapshot { return structuredClone(this.snapshot); }
+  // The state to send, without copying it: only the events after `since`, as peers already
+  // hold the earlier ones. Serialise it straight away; it shares the live objects.
+  view(since = 0): CombatSnapshot { return { ...this.snapshot, events: this.snapshot.events.filter((event) => event.id > since) }; }
   player(id: string): CombatPlayer | undefined { return this.snapshot.players[id]; }
 
   // time is the moment on the sender's own clock; the local player uses this clock.
