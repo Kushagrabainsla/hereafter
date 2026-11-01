@@ -5,7 +5,7 @@ import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matc
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 8;
+const PROTOCOL_VERSION = 9;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -44,6 +44,12 @@ export interface PeerRoomEvents {
   onProps?: (states: PropState[]) => void;
   onPushes?: (pushes: PropPush[]) => void;
 }
+
+// Positions travel on a data channel of their own beside Trystero's, both peers opening it
+// with this id, so it needs no negotiation of its own.
+const POSITION_LANE_ID = 512;
+// A lane with this much waiting to go is congested; the newest position waits for the next tick.
+const LANE_BACKLOG_BYTES = 8192;
 
 // Peers only exchange packets for the same map and protocol.
 const MAP_KEY = "night-market-v1";
@@ -107,7 +113,10 @@ export class PeerRoom {
   private pushAction;
   private peers = new Set<string>();
   private lastSequence = new Map<string, number>();
-  private lastAcceptedPose = new Map<string, { east: number; north: number; receivedAt: number }>();
+  private lastAcceptedPose = new Map<string, { east: number; north: number; receivedAt: number; sentAt: number }>();
+  // Each peer's position lane: unordered and never resent, so a lost packet holds up nothing
+  // behind it, and a late position is simply superseded by the next.
+  private lanes = new Map<string, RTCDataChannel>();
   private lastIntentSequence = new Map<string, number>();
   private sequence = 0;
   private intentSequence = 0;
@@ -152,36 +161,7 @@ export class PeerRoom {
       const states = value.states.filter((state) => Array.isArray(state) && state.length === 8 && typeof state[0] === "string" && state[0].length < 40 && state.slice(1).every((n) => typeof n === "number" && Number.isFinite(n))).slice(0, 200);
       this.events.onProps?.(states);
     };
-    this.poseAction.onMessage = (value, { peerId }) => {
-      if (!this.peers.has(peerId) || !validPose(value, this.expectedMap)) return;
-      const half = this.arena.sizeMeters / 2 + 0.5;
-      if (Math.abs(value.east) > half || Math.abs(value.north) > half) return;
-      const previous = this.lastSequence.get(peerId) ?? -1;
-      if (value.sequence <= previous) return;
-      const now = performance.now();
-      const last = this.lastAcceptedPose.get(peerId);
-      if (last) {
-        const elapsed = Math.min(0.5, Math.max((now - last.receivedAt) / 1000, Math.min(0.2, (value.sequence - previous) * 0.05)));
-        if (Math.hypot(value.east - last.east, value.north - last.north) > 0.9 + 10 * elapsed) return;
-      }
-      this.lastSequence.set(peerId, value.sequence);
-      this.lastAcceptedPose.set(peerId, { east: value.east, north: value.north, receivedAt: now });
-      const pose = {
-        east: value.east,
-        north: value.north,
-        heading: value.heading,
-        pitch: value.pitch,
-        jumpHeight: value.jumpHeight,
-        moving: value.moving,
-        running: value.running,
-        crouching: value.crouching,
-        sliding: value.sliding === true,
-        airborne: value.airborne === true,
-        lean: value.lean ?? 0,
-      };
-      this.match.setPose(peerId, pose, value.sentAt);
-      this.events.onPose(peerId, pose, value.sentAt);
-    };
+    this.poseAction.onMessage = (value, { peerId }) => this.receivePose(value, peerId);
     this.intentAction.onMessage = (value, { peerId }) => {
       if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap
         || !Number.isSafeInteger(value.sequence) || !validIntent(value.intent)) return;
@@ -213,6 +193,7 @@ export class PeerRoom {
     this.room.onPeerJoin = (peerId) => {
       const wasLeader = this.leaderId === selfId;
       this.peers.add(peerId);
+      this.openLane(peerId);
       if (wasLeader) {
         this.match.ensurePlayer(peerId);
         this.sendSnapshot(peerId);
@@ -223,6 +204,7 @@ export class PeerRoom {
     };
     this.room.onPeerLeave = (peerId) => {
       this.peers.delete(peerId);
+      this.closeLane(peerId);
       this.lastSequence.delete(peerId);
       this.lastAcceptedPose.delete(peerId);
       this.lastIntentSequence.delete(peerId);
@@ -234,6 +216,66 @@ export class PeerRoom {
     };
     this.reportPeers();
     this.events.onStatus("Waiting for a friend to join…");
+  }
+
+  private receivePose(value: unknown, peerId: string): void {
+    if (!this.peers.has(peerId) || !validPose(value, this.expectedMap)) return;
+    const half = this.arena.sizeMeters / 2 + 0.5;
+    if (Math.abs(value.east) > half || Math.abs(value.north) > half) return;
+    const previous = this.lastSequence.get(peerId) ?? -1;
+    if (value.sequence <= previous) return;
+    const now = performance.now();
+    // A player can only have run so far since the last position accepted from them, timed by
+    // their own clock, so positions missing in between are no reason to doubt the next one.
+    // After a silence of over 1.5 s, as when a connection stalls, the next position is taken
+    // as it is: measured from where they were last seen, it would be rejected for good and
+    // the player would freeze for everyone until they respawned.
+    const last = this.lastAcceptedPose.get(peerId);
+    if (last && now - last.receivedAt < 1500) {
+      const elapsed = Math.min(1.5, Math.max(0.05, (value.sentAt - last.sentAt) / 1000));
+      if (Math.hypot(value.east - last.east, value.north - last.north) > 0.9 + 10 * elapsed) return;
+    }
+    this.lastSequence.set(peerId, value.sequence);
+    this.lastAcceptedPose.set(peerId, { east: value.east, north: value.north, receivedAt: now, sentAt: value.sentAt });
+    const pose = {
+      east: value.east,
+      north: value.north,
+      heading: value.heading,
+      pitch: value.pitch,
+      jumpHeight: value.jumpHeight,
+      moving: value.moving,
+      running: value.running,
+      crouching: value.crouching,
+      sliding: value.sliding === true,
+      airborne: value.airborne === true,
+      lean: value.lean ?? 0,
+    };
+    this.match.setPose(peerId, pose, value.sentAt);
+    this.events.onPose(peerId, pose, value.sentAt);
+  }
+
+  // Opens the position lane to a peer, who opens its end with the same id.
+  private openLane(peerId: string): void {
+    const connection = this.room.getPeers()[peerId];
+    if (!connection || this.lanes.has(peerId)) return;
+    try {
+      const lane = connection.createDataChannel("positions", { negotiated: true, id: POSITION_LANE_ID, ordered: false, maxRetransmits: 0 });
+      lane.onmessage = ({ data }) => {
+        if (typeof data !== "string" || data.length > 1024) return;
+        let value: unknown;
+        try { value = JSON.parse(data); } catch { return; }
+        this.receivePose(value, peerId);
+      };
+      lane.onclose = () => { if (this.lanes.get(peerId) === lane) this.lanes.delete(peerId); };
+      this.lanes.set(peerId, lane);
+    } catch {
+      // Without a lane, positions to this peer take the shared channel.
+    }
+  }
+
+  private closeLane(peerId: string): void {
+    this.lanes.get(peerId)?.close();
+    this.lanes.delete(peerId);
   }
 
   private refreshLeader(): void {
@@ -301,7 +343,7 @@ export class PeerRoom {
   }
 
   sendPose(pose: PlayerPose): void {
-    if (!this.peers.size || this.sending) return;
+    if (!this.peers.size) return;
     const round = (value: number): number => Math.round(value * 100) / 100;
     const packet: PosePacket = {
       version: PROTOCOL_VERSION,
@@ -320,8 +362,16 @@ export class PeerRoom {
       airborne: pose.airborne === true,
       lean: round(pose.lean ?? 0),
     };
+    // The lane where it is open; a congested lane skips this position rather than queue it.
+    const text = JSON.stringify(packet), shared: string[] = [];
+    for (const peerId of this.peers) {
+      const lane = this.lanes.get(peerId);
+      if (lane?.readyState === "open") { if (lane.bufferedAmount < LANE_BACKLOG_BYTES) lane.send(text); }
+      else shared.push(peerId);
+    }
+    if (!shared.length || this.sending) return;
     this.sending = true;
-    void this.poseAction.send(packet).catch(() => {
+    void this.poseAction.send(packet, { target: shared }).catch(() => {
       if (!this.failed) this.events.onStatus("Connection interrupted. Waiting for peers to reconnect…");
       this.failed = true;
     }).finally(() => {
@@ -338,6 +388,7 @@ export class PeerRoom {
     this.room.onPeerJoin = null;
     this.room.onPeerLeave = null;
     window.clearTimeout(this.broadcastTimer);
+    for (const peerId of [...this.lanes.keys()]) this.closeLane(peerId);
     await this.room.leave();
     this.peers.clear();
     this.lastSequence.clear();
