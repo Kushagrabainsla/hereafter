@@ -31,6 +31,22 @@ On an idle machine the previous release held 60 FPS at Retina resolution and 33 
 | 5K display, 2560 × 1440 | 1 to 1.5 FPS, up to 23 s | 49 FPS, worst 33 ms |
 | Dragging the window wider, then fullscreen | 2.5 s freeze per resize, after coarser tiles | worst frame 50 ms |
 
+**Many players.** With eleven remote players in view, the main thread's time goes almost entirely to three preparing and submitting draws, not to the GPU or the network. On a CPU slowed threefold, a crowded room dropped from 57 to 34 FPS. About 690 objects passed through the renderer each frame, 300 of them through its full per-object update. Half of those came from redrawing the sun's shadow map. Two changes cut this:
+
+- **The sun's shadow map is drawn once.** The low sun only reaches the upper floors, where nothing moves, so its shadow covers the whole map from a fixed place (`shadow.autoUpdate` off). It used to follow the camera and be redrawn every frame, with every remote player in it.
+- **Remote players out of view are neither drawn nor animated.** three never culls the characters, because their skinned bounds are unreliable, so `RemotePlayers.update` tests each one against the view itself. Players beyond 18 m animate every second frame and beyond 35 m every third, with the skipped time caught up.
+
+WebGPU render bundles (`BundleGroup`) were tried for the static scenery and made it slower: three r186 still runs its full update for every bundled object each frame, so a bundle saves only the GPU command encoding.
+
+| Renderer CPU per frame, median of three alternating runs | Before | After |
+|---|---|---|
+| Alone | 13.7 ms | 10.0 ms |
+| Eleven players running in view | 21.0 ms | 16.3 ms |
+| Eleven players firing carbines in view | 20.3 ms | 17.4 ms |
+| Eleven players firing behind the camera | 6.6 ms | 4.2 ms |
+
+These runs shared the machine with other applications, so single runs varied up to threefold; the new build was faster in ten of twelve paired runs. Most of the remaining cost with everyone firing is the effects of each shot.
+
 ## Approach
 
 Each player renders the same bundled map locally and sends pose and combat data over WebRTC; peers do not stream geometry or animation bones. [Rapier 3D](https://rapier.rs/docs/user_guides/javascript/getting_started_js/) runs character physics and scene queries in WebAssembly. Before claiming 2–8 player performance, test several real MacBooks and Windows GPUs in a live room, record frame-time percentiles and memory use, and inspect worst-case views with other players and weapon effects visible.

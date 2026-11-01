@@ -1,6 +1,6 @@
 import {
-  BoxGeometry, CapsuleGeometry, Color, CylinderGeometry, Group, Mesh, MeshStandardMaterial,
-  Scene, SphereGeometry, Vector3, type Object3D,
+  BoxGeometry, CapsuleGeometry, Color, CylinderGeometry, Frustum, Group, Matrix4, Mesh, MeshStandardMaterial,
+  Scene, Sphere, SphereGeometry, Vector3, type Camera, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
@@ -48,6 +48,10 @@ interface RemoteAvatar {
   offset: number | null;
   offsetAt: number;
   displayTime: number;
+  // Animation time owed while the player was off screen or skipped for distance, and a slot
+  // that spreads the skipped frames of distant players across frames.
+  pendingAnimation: number;
+  slot: number;
 }
 
 function addPart(parent: Group, geometry: BoxGeometry | CapsuleGeometry | CylinderGeometry | SphereGeometry, material: MeshStandardMaterial, x: number, y: number, z: number): void {
@@ -110,7 +114,7 @@ function createAvatar(peerId: string): RemoteAvatar {
   return { root, mannequin, model: null, tint: new Color().setHSL(hue, 0.5, 0.78), head, leftArm, rightArm, leftLeg, rightLeg, pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
-  }, heading: 0, stride: 0, weapons, samples: [], offset: null, offsetAt: 0, displayTime: 0, dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
+  }, heading: 0, stride: 0, weapons, samples: [], offset: null, offsetAt: 0, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
 }
 
 export class RemotePlayers {
@@ -313,13 +317,27 @@ export class RemotePlayers {
     this.equipped.clear();
   }
 
-  update(seconds: number): void {
+  // Players out of view are neither drawn nor animated, and distant ones animate every second or
+  // third frame. three never culls the characters (their skinned bounds are unreliable), so
+  // without this every player cost a full skeleton update and a draw each frame, even behind
+  // the camera.
+  private frustum = new Frustum();
+  private viewProjection = new Matrix4();
+  private bounds = new Sphere(new Vector3(), 1.3);
+  private frame = 0;
+
+  update(seconds: number, camera?: Camera): void {
     const delta = Math.min(seconds, 0.1);
     const blend = 1 - Math.exp(-delta * 12);
+    this.frame += 1;
+    if (camera) {
+      camera.updateMatrixWorld();
+      this.frustum.setFromProjectionMatrix(this.viewProjection.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    }
     for (const [peerId, avatar] of this.avatars) {
       const { root } = avatar;
       if (!avatar.model && this.models.ready()) this.attachModel(avatar, this.dead.has(peerId));
-      if (avatar.ragdoll) { avatar.ragdoll.update(); continue; }
+      if (avatar.ragdoll) { root.visible = true; avatar.ragdoll.update(); continue; }
       if (avatar.dying && avatar.model && this.physics) {
         avatar.dying = false;
         try {
@@ -345,10 +363,18 @@ export class RemotePlayers {
       const lean = this.dead.has(peerId) ? 0 : pose.lean ?? 0;
       root.rotation.z = lean * 0.1;
       if (avatar.model) {
+        this.bounds.center.set(root.position.x, root.position.y + 0.95, root.position.z);
+        root.visible = !camera || this.frustum.intersectsSphere(this.bounds);
+        avatar.pendingAnimation = Math.min(0.25, avatar.pendingAnimation + delta);
+        if (!root.visible) continue;
+        const distance = camera ? camera.position.distanceTo(root.position) : 0;
+        const every = distance > 35 ? 3 : distance > 18 ? 2 : 1;
+        if ((this.frame + avatar.slot) % every !== 0) continue;
         avatar.model.setStance(pose.crouching ? "crouch" : pose.moving ? pose.running ? "run" : "walk" : "idle");
         avatar.model.setPitch(pose.pitch);
         avatar.model.setLean(lean);
-        avatar.model.update(delta);
+        avatar.model.update(avatar.pendingAnimation);
+        avatar.pendingAnimation = 0;
         continue;
       }
       root.scale.y += ((pose.crouching ? 0.72 : 1) - root.scale.y) * blend;

@@ -169,6 +169,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   sun.shadow.camera.far = 700;
   sun.shadow.bias = -0.0002;
   sun.shadow.normalBias = 0.035;
+  // The low sun only reaches the upper floors, where nothing moves, so its shadow map covers
+  // the whole map from a fixed place and is drawn once rather than every frame. Redrawing it
+  // took about 150 objects through the renderer each frame, a fifth of its work.
+  sun.shadow.autoUpdate = false;
+  sun.shadow.needsUpdate = true;
   scene.add(sun, sun.target);
   // Every breakable or solid object is an entity with a stable id; refs record the instances
   // that draw each one, and groups the plain objects, so it can disappear when destroyed.
@@ -431,7 +436,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       camera.position.copy(deathView.position).add(new Vector3(0, -1.3 * eased, 0));
       camera.quaternion.copy(deathView.quaternion).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 1.15 * eased));
     }
-    remotePlayers.update(delta);
+    remotePlayers.update(delta, camera);
     soundStage.update(camera, player.gait(), player.motion(), remotePlayers);
     const gait = player.gait();
     if (gait.landings !== lastLandings) {
@@ -477,9 +482,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       haze.scale.set(0.2 * Math.tan(camera.fov * Math.PI / 360) * 2 * camera.aspect * 1.2, 0.2 * Math.tan(camera.fov * Math.PI / 360) * 2 * 1.2, 1);
     }
     truck.update(Math.min(delta, 0.1));
-    sun.target.position.set(camera.position.x, 0, camera.position.z);
-    sun.position.set(camera.position.x + sunOffset.x, sunOffset.y, camera.position.z + sunOffset.z);
-    sun.target.updateMatrixWorld();
     previousFrame = time;
     viewCamera.aspect = camera.aspect;
     viewCamera.fov = camera.fov;
