@@ -40,6 +40,7 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 |---|---|---|---|---|---|---|---|
 | Baseline | 39 | 38 | 38 | 1 / 6 | 59 / 580 | 12.4 / 14.2 | 10 |
 | 1. Positions lane | 30 | 29 | 29 | 1 / 5 | 59 / 676 | 4.5 / 4.9 | 11 |
+| 2. Compact positions | 10 | 9 | 9 | 1 / 6 | 59 / 654 | 3.5 / 3.6 | 11 |
 
 ### Firefight (20 s, everyone running and firing carbines)
 
@@ -47,6 +48,7 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 |---|---|---|---|---|---|---|---|---|
 | Baseline | 109 | 27 | 41 | 3 / 331 | 412 / 955 | 1629 / 4165 | 12.7 / 10.8 | 10 |
 | 1. Positions lane | 100 | 19 | 34 | 8 / 284 | 362 / 956 | 1516 / 3266 | 10.9 / 8.2 | 11 |
+| 2. Compact positions | 103 | 7 | 25 | 6 / 273 | 370 / 767 | 1492 / 4180 | 11.2 / 6.9 | 11 |
 
 ### What each stage changed
 
@@ -57,3 +59,5 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 The step also fixed a bug the benchmark exposed. A player's position was rejected when it lay further from the last accepted one than they could have run in at most half a second. After a stall of a second or more, such as a bad moment on Wi-Fi, every later position failed that test, and the player froze on everyone's screen until they respawned. The check now times the run by the sender's own clock and, after more than 1.5 s without a position, takes the next one as it is.
 
 The lane's statistics show what limits the firefight: there, the host sends 26 to 47 positions a second instead of 100, because deciding shots and drawing leave its main thread too little time for the timer that sends them.
+
+**2. Compact positions.** A position on the lane is now 25 bytes of numbers instead of about 238 bytes of text: position and jump height to the centimetre, heading, pitch and lean to the hundredth, and five movement flags packed into one byte. A round trip between two players came back exact to those units. Each player now uploads 9 KB/s while moving, against 29 after step 1 and 38 at the start, and 7 KB/s in the firefight. Handling network messages drops again, to about 3.5 ms a second. Delays and gaps are unchanged, as expected: the bytes were never what held positions up on one machine. The host still uploads about 100 KB/s in the firefight. That is now almost all its updates to the other players, which step 3 addresses.

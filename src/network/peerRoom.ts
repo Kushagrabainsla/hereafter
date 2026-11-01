@@ -5,7 +5,7 @@ import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matc
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 9;
+const PROTOCOL_VERSION = 10;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -50,6 +50,43 @@ export interface PeerRoomEvents {
 const POSITION_LANE_ID = 512;
 // A lane with this much waiting to go is congested; the newest position waits for the next tick.
 const LANE_BACKLOG_BYTES = 8192;
+
+// A position on the lane, 25 bytes, little-endian: protocol (u8), sequence (u32), sent at
+// (f64 ms), east, north and jump height in centimetres (i16), heading in hundredths of a
+// degree (u16), pitch in hundredths (i16), lean in hundredths (i8) and movement flags (u8).
+// As text it was about 238 bytes.
+const POSITION_BYTES = 25;
+const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16 } as const;
+
+function encodePosition(packet: PosePacket): ArrayBuffer {
+  const view = new DataView(new ArrayBuffer(POSITION_BYTES));
+  view.setUint8(0, PROTOCOL_VERSION);
+  view.setUint32(1, packet.sequence >>> 0, true);
+  view.setFloat64(5, packet.sentAt, true);
+  view.setInt16(13, Math.round(packet.east * 100), true);
+  view.setInt16(15, Math.round(packet.north * 100), true);
+  view.setInt16(17, Math.round(Math.max(-327, Math.min(327, packet.jumpHeight)) * 100), true);
+  view.setUint16(19, Math.round(((packet.heading % 360) + 360) % 360 * 100), true);
+  view.setInt16(21, Math.round(packet.pitch * 100), true);
+  view.setInt8(23, Math.round(Math.max(-1.27, Math.min(1.27, packet.lean ?? 0)) * 100));
+  view.setUint8(24, (packet.moving ? FLAG.moving : 0) | (packet.running ? FLAG.running : 0) | (packet.crouching ? FLAG.crouching : 0)
+    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0));
+  return view.buffer;
+}
+
+function decodePosition(data: ArrayBuffer, map: string): PosePacket | null {
+  if (data.byteLength !== POSITION_BYTES) return null;
+  const view = new DataView(data);
+  if (view.getUint8(0) !== PROTOCOL_VERSION) return null;
+  const flags = view.getUint8(24);
+  return {
+    version: PROTOCOL_VERSION, map, sequence: view.getUint32(1, true), sentAt: view.getFloat64(5, true),
+    east: view.getInt16(13, true) / 100, north: view.getInt16(15, true) / 100, jumpHeight: view.getInt16(17, true) / 100,
+    heading: view.getUint16(19, true) / 100, pitch: view.getInt16(21, true) / 100, lean: view.getInt8(23) / 100,
+    moving: (flags & FLAG.moving) !== 0, running: (flags & FLAG.running) !== 0, crouching: (flags & FLAG.crouching) !== 0,
+    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0,
+  };
+}
 
 // Peers only exchange packets for the same map and protocol.
 const MAP_KEY = "night-market-v1";
@@ -260,11 +297,10 @@ export class PeerRoom {
     if (!connection || this.lanes.has(peerId)) return;
     try {
       const lane = connection.createDataChannel("positions", { negotiated: true, id: POSITION_LANE_ID, ordered: false, maxRetransmits: 0 });
+      lane.binaryType = "arraybuffer";
       lane.onmessage = ({ data }) => {
-        if (typeof data !== "string" || data.length > 1024) return;
-        let value: unknown;
-        try { value = JSON.parse(data); } catch { return; }
-        this.receivePose(value, peerId);
+        const value = data instanceof ArrayBuffer ? decodePosition(data, this.expectedMap) : null;
+        if (value) this.receivePose(value, peerId);
       };
       lane.onclose = () => { if (this.lanes.get(peerId) === lane) this.lanes.delete(peerId); };
       this.lanes.set(peerId, lane);
@@ -363,10 +399,10 @@ export class PeerRoom {
       lean: round(pose.lean ?? 0),
     };
     // The lane where it is open; a congested lane skips this position rather than queue it.
-    const text = JSON.stringify(packet), shared: string[] = [];
+    const bytes = encodePosition(packet), shared: string[] = [];
     for (const peerId of this.peers) {
       const lane = this.lanes.get(peerId);
-      if (lane?.readyState === "open") { if (lane.bufferedAmount < LANE_BACKLOG_BYTES) lane.send(text); }
+      if (lane?.readyState === "open") { if (lane.bufferedAmount < LANE_BACKLOG_BYTES) lane.send(bytes); }
       else shared.push(peerId);
     }
     if (!shared.length || this.sending) return;
