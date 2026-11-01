@@ -20,7 +20,7 @@ Each player records:
 | Up and down KB/s | Bytes on the wire, all data channels, including Trystero's framing, SCTP and DTLS | WebRTC `getStats()` transport counters |
 | Position delay | Time from a peer sending its position to this player using it, on the same machine clock | the viewer's `setRemotePose` |
 | Position gap | Time between two positions arriving from the same peer; 50 ms when nothing is lost or held up | the same |
-| Shot confirm | For players who are not the host: time from sending an attack to playing its shot from the host's update | the viewer's `playEvent` |
+| Shot confirm | For players who are not the host: time from sending an attack to playing the shot the host made of it, matched exactly (see the correction below) | the attack's sequence number, the host's record of the shot each attack made, the viewer's `playEvent` |
 | Network CPU | Main-thread time per second in Trystero and `src/network/`, including everything their messages trigger | Chrome CPU profile, 1 ms sampling |
 | FPS | Frames drawn per second | `requestAnimationFrame` |
 
@@ -50,11 +50,11 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 
 | Build | Host up KB/s | Player up KB/s | Player down KB/s | Position delay p50 / p95 | Position gap p95 / max | Shot confirm p50 / p95 | Network CPU host / player ms/s | FPS |
 |---|---|---|---|---|---|---|---|---|
-| Baseline | 109 | 27 | 41 | 3 / 331 | 412 / 955 | 1629 / 4165 | 12.7 / 10.8 | 10 |
-| 1. Positions lane | 100 | 19 | 34 | 8 / 284 | 362 / 956 | 1516 / 3266 | 10.9 / 8.2 | 11 |
-| 2. Compact positions | 103 | 7 | 25 | 6 / 273 | 370 / 767 | 1492 / 4180 | 11.2 / 6.9 | 11 |
-| 3. Only what changed | 39 | 7 | 12 | 3 / 204 | 277 / 568 | 1350 / 3680 | 6.9 / 5.2 | 14 |
-| 4. Less when quiet (side by side with 3) | 47 | 7 | 14 | 3 / 225 | 302 / 682 | 1379 / 3285 | 9.4 / 5.9 | 13 |
+| Baseline | 109 | 27 | 41 | 3 / 331 | 412 / 955 | * | 12.7 / 10.8 | 10 |
+| 1. Positions lane | 100 | 19 | 34 | 8 / 284 | 362 / 956 | * | 10.9 / 8.2 | 11 |
+| 2. Compact positions | 103 | 7 | 25 | 6 / 273 | 370 / 767 | * | 11.2 / 6.9 | 11 |
+| 3. Only what changed | 39 | 7 | 12 | 3 / 204 | 277 / 568 | * | 6.9 / 5.2 | 14 |
+| 4. Less when quiet (side by side with 3) | 47 | 7 | 14 | 3 / 225 | 302 / 682 | * | 9.4 / 5.9 | 13 |
 
 ### Standing still (from step 4, each side by side with step 3)
 
@@ -65,11 +65,15 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 | Lull after the fight, step 3 | 10.0 | 9.1 | 9.3 | 99 | 0.45 | 3.3 / 2.4 |
 | Lull after the fight, step 4 | 1.8 | 1.8 | 1.9 | 19 | 0 | 1.0 / 0.7 |
 
+\* *Invalid; see the correction below.*
+
+**Correction: shot confirmation.** Until the final comparison, the benchmark paired each attack a player sent with the next shot of theirs it played, in order. The host refuses some attacks, such as those from a gun that has just run dry, which the shooter's copy of the match learns of only a moment later. Every refusal shifted the pairing by one, and the list of attacks waiting to be paired held eight, 1.28 s of firing. The 1.3 to 1.6 s it reported at every stage was mostly that, not delay, so those figures are struck out above. The final comparison matches each attack exactly: the shooter records its sequence number and when it sent it, the host records which shot each accepted attack made, and the shooter records when it played that shot. Nothing else in the tables was affected.
+
 ### What each stage changed
 
 **Baseline.** Every message (positions, shots, the host's updates) travels on one reliable, ordered channel per pair of players. Positions are sent as text, about 238 bytes each, 20 times a second to every other player, which alone makes about 38 KB/s each way per player. In the firefight, players upload *less* (27 KB/s): a position waits while the channel is busy with shots, and the next one is skipped, so other players see each player less often just when it matters. One position in twenty then arrives more than 400 ms after the one before.
 
-**1. A lane of its own for positions.** Positions now travel on a second data channel beside Trystero's, opened by both players with the same id: unordered, and never resent. A lost position holds nothing up, and the next one replaces it 50 ms later. If the lane is backed up, a position is skipped rather than queued. Positions also skip Trystero's own framing, so each player uploads a quarter less while moving (38 to 29 KB/s), and handling network messages takes a third of the time it did (about 13 to under 5 ms of main thread each second). In the firefight, position gaps and delays shrink a little (the slowest one in twenty: 412 to 362 ms between positions, 331 to 284 ms in transit). Shot confirmation moves from 1.6 to 1.5 s typically and 4.2 to 3.3 s at worst. The firefight is limited mostly by six copies of the game sharing one processor, and lost packets, which this step is mainly for, do not happen on one machine.
+**1. A lane of its own for positions.** Positions now travel on a second data channel beside Trystero's, opened by both players with the same id: unordered, and never resent. A lost position holds nothing up, and the next one replaces it 50 ms later. If the lane is backed up, a position is skipped rather than queued. Positions also skip Trystero's own framing, so each player uploads a quarter less while moving (38 to 29 KB/s), and handling network messages takes a third of the time it did (about 13 to under 5 ms of main thread each second). In the firefight, position gaps and delays shrink a little (the slowest one in twenty: 412 to 362 ms between positions, 331 to 284 ms in transit). The firefight is limited mostly by six copies of the game sharing one processor, and lost packets, which this step is mainly for, do not happen on one machine.
 
 The step also fixed a bug the benchmark exposed. A player's position was rejected when it lay further from the last accepted one than they could have run in at most half a second. After a stall of a second or more, such as a bad moment on Wi-Fi, every later position failed that test, and the player froze on everyone's screen until they respawned. The check now times the run by the sender's own clock and, after more than 1.5 s without a position, takes the next one as it is.
 
@@ -83,8 +87,8 @@ These three runs had a quieter machine than the earlier stages: load averages of
 
 | Firefight, side by side | Host up KB/s | Player down KB/s | Host updates KB/s | Position delay p50 / p95 | Position gap p95 / max | Shot confirm p50 / p95 | FPS |
 |---|---|---|---|---|---|---|---|
-| 2. Compact positions | 104 | 26 | 91 | 4 / 214 | 297 / 654 | 1340 / 3693 | 14 |
-| 3. Only what changed | 40 | 13 | 28 | 2 / 213 | 294 / 681 | 1357 / 3080 | 14 |
+| 2. Compact positions | 104 | 26 | 91 | 4 / 214 | 297 / 654 | * | 14 |
+| 3. Only what changed | 40 | 13 | 28 | 2 / 213 | 294 / 681 | * | 14 |
 
 ("Host updates" counts only what the host's updates carry, before any framing.) Under the same conditions, the traffic falls as before and the timings do not move: on one machine, with no packet loss and bandwidth to spare, the bytes were never what held shots up. The gain is for real connections, where a host's upload is shared with everything else in the house and 100 KB/s of reliable, ordered traffic queues behind any lost packet.
 
@@ -94,4 +98,34 @@ A separate check ran three players, then a fourth who joined mid-fight, then had
 
 The host also used to resend every prop that had been knocked out of place every two seconds, for players who had just joined. Now it sends those that moved since it last did, and everything only after someone joins.
 
-Standing still, each player now uploads 1.9 KB/s instead of 8.9 and sends 18 positions a second instead of 96, and the prop updates stop, in the quiet before a fight and in the lull after it. Handling network messages drops to under 1 ms a second. Running and fighting are unchanged, as they should be: the moving rows match step 3. In the firefight the host uploaded 47 KB/s against 37, but these runs happened to fire more: 221 to 275 shots confirmed, against 178 to 246. The host's update bytes per confirmed shot overlap (0.11 to 0.15 KB against 0.10 to 0.15), and nothing this step changes is sent while players move. The same check as for step 3, with a late joiner and a host leaving, found every player's copy of the match in agreement with the host's.
+Standing still, each player now uploads 1.9 KB/s instead of 8.9 and sends 18 positions a second instead of 96, and the prop updates stop, in the quiet before a fight and in the lull after it. Handling network messages drops to under 1 ms a second. Running and fighting are unchanged, as they should be: the moving rows match step 3. In the firefight the host uploaded 47 KB/s against 37, but more shots got through in these runs: 221 to 275 of the other players' shots, against 178 to 246. The host's update bytes per shot overlap (0.11 to 0.15 KB against 0.10 to 0.15), and nothing this step changes is sent while players move. The same check as for step 3, with a late joiner and a host leaving, found every player's copy of the match in agreement with the host's.
+
+**5. Choosing the host.** The host used to be whoever had the lowest of the random player ids, so a player who joined mid-match with a lower id took the role over, and a host whose computer struggled stayed host. Now the room keeps its host until it leaves, whoever joins, and every two seconds each player reports how long its game keeps an arriving message waiting and its round trip to every other player. The host hands the role to the best player when the typical player would answer clearly faster, for six seconds running. [Multiplayer notes](multiplayer.md) give the rules and the measurements behind each.
+
+A check with four players confirmed the parts that must not go wrong: a fourth player who joined with the lowest id of all did not take over; a host slowed to a quarter speed handed over, and the players' copies of the match agreed with the new host's; and when that host left, the next took over and they agreed again. A host slowed to a sixth of its speed hands over within about 14 seconds.
+
+To measure what it buys, the host's processor was slowed to a sixth of its speed, as on a struggling laptop, and the players first fired into the ground for 20 s, as in a match's first fight. Medians of three runs each, side by side:
+
+| Slowed host, firefight | Host role moved | Network work on the slow machine | Shot to host p50 / p95 | Host back to shooter p50 / p95 | Shot confirm p50 / p95 |
+|---|---|---|---|---|---|
+| 4. Less when quiet | in 0 of 3 runs | 56 ms a second | 71 / 376 | 94 / 387 | 240 / 585 |
+| 5. Choosing the host | in 3 of 3 runs | 7.6 ms a second | 28 / 321 | 64 / 391 | 245 / 623 |
+
+The role left the slow machine every time, which no longer resolves everyone's shots, and each leg of a shot got shorter. The whole round trip did not: on one overloaded computer the slowed player still shares the same processor with the others. In these runs the role also moved a second time during the measured fight. A host's own load rises in a fight, and on this machine one copy of the game sometimes stalled for over ten seconds; the twenty-second median is meant to ride out shorter stalls.
+
+## Before and after
+
+The original game against all five steps, side by side, three runs each. The machine was heavily loaded by other work during these runs, about 6 frames a second in each copy, so the timings are long for both; the traffic does not depend on that. These step 5 runs used an earlier form of the handover rule, which sends the same messages.
+
+| Phase | Host up KB/s | Player up KB/s | Player down KB/s | Network CPU host / player ms/s |
+|---|---|---|---|---|
+| Idle, before | 38 | 36.5 | 36.6 | 15.4 / 11.7 |
+| Idle, after | 2.3 | 1.9 | 1.8 | 2.9 / 2.7 |
+| Moving, before | 39.6 | 39 | 39 | 9.5 / 9.1 |
+| Moving, after | 9.9 | 9.3 | 9.3 | 5.9 / 5.9 |
+| Firefight, before | 110.5 | 31.3 | 42.8 | 14.5 / 16 |
+| Firefight, after | 16.5 | 8.3 | 11.8 | 14.9 / 15.5 |
+| Lull, before | 39.3 | 38.7 | 38.8 | 10 / 11.9 |
+| Lull, after | 2.4 | 2 | 1.9 | 2.1 / 2 |
+
+The host uploads a seventh of what it did in a fight, and every player a quarter or less. Shot confirmation, now matched exactly, was 205 ms typically and 1.35 s at worst before, and 224 ms and 1.26 s after, under that load. With three players firing one round a second on a quiet machine, it was 13 and 182 ms typically in two runs of the original game, 49 and 201 ms after step 4, and 37 to 59 ms in three runs after step 5, with the slowest one in twenty between 0.2 and 0.35 s throughout. Shots are no slower for all the changes. On one machine, with no packet loss and bandwidth to spare, they could not get much faster: what the steps buy is room on real connections, where six players' traffic shares a household's upload and Wi-Fi drops packets.

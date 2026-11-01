@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 11;
+const PROTOCOL_VERSION = 12;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -30,6 +30,11 @@ type IntentPacket = { version: number; map: string; sequence: number; intent: Co
 // The coordinator's whole state, or what has changed since its last update.
 type SnapshotPacket = { version: number; map: string; leader: string; state?: CombatSnapshot; delta?: CombatDelta };
 type SyncPacket = { version: number; map: string };
+// The coordinator a peer follows and the epoch of that choice.
+type LeaderPacket = { version: number; map: string; leader: string; epoch: number };
+// How well a peer could coordinate: how long its main thread keeps a message waiting, and its
+// round trip to each peer, in ms.
+type FitnessPacket = { version: number; map: string; lag: number; rtt: Record<string, number> };
 // Loose prop transforms from the coordinator: [id, x, y, z, qx, qy, qz, qw].
 export type PropState = [string, number, number, number, number, number, number, number];
 type PropsPacket = { version: number; map: string; states: PropState[] };
@@ -45,6 +50,17 @@ export interface PeerRoomEvents {
   onProps?: (states: PropState[]) => void;
   onPushes?: (pushes: PropPush[]) => void;
 }
+
+// Every two seconds each peer tells the coordinator how well it could coordinate, and the
+// coordinator weighs handing over to the best of them. It does so only when the typical peer,
+// the median, would add at most 60% of the delay it adds itself and at least 8 ms less, three
+// checks running, and not within 30 s of taking over. A slow machine is slower than all the
+// others; measured against the best of five busy peers, the coordinator often lost by chance.
+const FITNESS_MS = 2000;
+const HANDOVER_RATIO = 0.6;
+const HANDOVER_GAIN_MS = 8;
+const HANDOVER_CHECKS = 3;
+const HANDOVER_SETTLE_MS = 30_000;
 
 // Positions travel on a data channel of their own beside Trystero's, both peers opening it
 // with this id, so it needs no negotiation of its own.
@@ -162,6 +178,8 @@ export class PeerRoom {
   private syncAction;
   private propsAction;
   private pushAction;
+  private leaderAction;
+  private fitnessAction;
   private peers = new Set<string>();
   private lastSequence = new Map<string, number>();
   private lastAcceptedPose = new Map<string, { east: number; north: number; receivedAt: number; sentAt: number }>();
@@ -180,6 +198,32 @@ export class PeerRoom {
   private expectedMap: string;
   private leaderId = selfId;
   private handoffUntil = 0;
+  // The epoch of the coordinator this peer follows. A lone peer leads itself at epoch 0. A new
+  // room settles on its lowest id, which then moves to epoch 1, so a peer joining later never
+  // displaces it; each handover adds one. A peer takes a coordinator another announces if its
+  // epoch is higher, or the same with a lower id, and only once connected to it.
+  private epoch = 0;
+  // The highest epoch any peer has announced, and the peers that have announced one. A peer
+  // settles a new room only once every peer has told it whom it follows, all at epoch 0; one
+  // that has heard of a settled room waits to reach that room's coordinator instead.
+  private heardEpoch = 0;
+  private announced = new Set<string>();
+  private fitness = new Map<string, FitnessPacket & { at: number }>();
+  private own: (FitnessPacket & { at: number }) | null = null;
+  // A timer due every 100 ms runs late by as long as the main thread is busy when it falls
+  // due, which is how long a message arriving then waits too. A frame rate would not show
+  // this: a processor slowed to a quarter speed still drew as many frames, the graphics card
+  // being the limit, while its timers ran four times as late. A peer reports the median of
+  // its last ten two-second medians, so a stall of under ten seconds moves it not at all,
+  // while a slow machine, slow in every window, shows within twelve. The coordinator stalls
+  // like that in a fight, when every shot comes to it at once or a blast throws props it
+  // alone simulates, and recovers once the moment passes.
+  private late: number[] = [];
+  private lags: number[] = [];
+  private lagTimer = 0;
+  private fitnessTimer = 0;
+  private leadingSince = performance.now();
+  private betterChecks = 0;
   // The newest event broadcast so far, and when the last broadcast left; see broadcastSnapshot.
   private lastSentEvent = 0;
   private lastBroadcastAt = 0;
@@ -210,6 +254,21 @@ export class PeerRoom {
     this.syncAction = this.room.makeAction<SyncPacket>("combat-sync-v1");
     this.propsAction = this.room.makeAction<PropsPacket>("props-v1");
     this.pushAction = this.room.makeAction<PushPacket>("prop-push-v1");
+    this.leaderAction = this.room.makeAction<LeaderPacket>("leader-v1");
+    this.fitnessAction = this.room.makeAction<FitnessPacket>("fitness-v1");
+    this.leaderAction.onMessage = (value, { peerId }) => {
+      if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || typeof value.leader !== "string" || value.leader.length > 64
+        || !Number.isSafeInteger(value.epoch) || value.epoch < 0) return;
+      this.announced.add(peerId);
+      this.hear(value.leader, value.epoch);
+    };
+    this.fitnessAction.onMessage = (value, { peerId }) => {
+      if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap
+        || !Number.isFinite(value.lag) || !value.rtt || typeof value.rtt !== "object") return;
+      const rtt: Record<string, number> = {};
+      for (const [id, ms] of Object.entries(value.rtt)) if ((id === selfId || this.peers.has(id)) && Number.isFinite(ms) && ms >= 0) rtt[id] = Math.min(ms, 5000);
+      this.fitness.set(peerId, { version: value.version, map: value.map, lag: Math.max(0, Math.min(5000, value.lag)), rtt, at: performance.now() });
+    };
     this.pushAction.onMessage = (value, { peerId }) => {
       if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.pushes)) return;
       // A body can only lean so hard on a prop in the time between packets.
@@ -262,11 +321,14 @@ export class PeerRoom {
       const wasLeader = this.leaderId === selfId;
       this.peers.add(peerId);
       this.openLane(peerId);
+      // Every peer tells a newcomer whom it follows; the coordinator also sends its state.
+      void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: this.leaderId, epoch: this.epoch }, { target: peerId }).catch(() => undefined);
       if (wasLeader) {
         this.match.ensurePlayer(peerId);
         this.sendSnapshot(peerId);
       }
-      this.refreshLeader();
+      // Until a room has settled on a coordinator, its lowest id coordinates.
+      if (this.epoch === 0) this.setLeader([selfId, ...this.peers].sort()[0]);
       this.reportPeers();
       this.events.onStatus(`${this.peers.size + 1} players connected directly.`);
     };
@@ -277,13 +339,19 @@ export class PeerRoom {
       this.lastAcceptedPose.delete(peerId);
       this.lastIntentSequence.delete(peerId);
       this.match.removePose(peerId);
+      this.fitness.delete(peerId);
+      this.announced.delete(peerId);
       this.events.onPeerLeave(peerId);
-      this.refreshLeader();
+      // A coordinator that leaves is succeeded by the lowest id left, at the same epoch.
+      if (peerId === this.leaderId) this.setLeader([selfId, ...this.peers].sort()[0]);
+      else this.broadcastSnapshot();
       this.reportPeers();
       this.events.onStatus(this.peers.size ? `${this.peers.size + 1} players connected directly.` : "Waiting for a friend to join…");
     };
     this.reportPeers();
     this.events.onStatus("Waiting for a friend to join…");
+    this.probeLag();
+    this.fitnessTimer = window.setInterval(() => void this.checkFitness(), FITNESS_MS);
   }
 
   private receivePose(value: unknown, peerId: string): void {
@@ -345,20 +413,109 @@ export class PeerRoom {
     this.lanes.delete(peerId);
   }
 
-  private refreshLeader(): void {
-    const nextLeader = [selfId, ...this.peers].sort()[0];
-    if (nextLeader === this.leaderId) {
-      if (nextLeader === selfId) this.broadcastSnapshot();
+  // Takes the coordinator another peer announces if it ranks above the one this peer follows.
+  private hear(leader: string, epoch: number): void {
+    this.heardEpoch = Math.max(this.heardEpoch, epoch);
+    if (leader !== selfId && !this.peers.has(leader)) return;
+    if (epoch < this.epoch || (epoch === this.epoch && leader >= this.leaderId)) return;
+    this.epoch = epoch;
+    this.setLeader(leader);
+  }
+
+  private setLeader(next: string): void {
+    if (next === this.leaderId) {
+      if (next === selfId) this.broadcastSnapshot();
       return;
     }
-    this.leaderId = nextLeader;
+    this.leaderId = next;
     this.handoffUntil = Date.now() + 1800;
     this.sent = null;
-    if (nextLeader === selfId) {
+    this.betterChecks = 0;
+    if (next === selfId) {
       this.held = "";
+      this.leadingSince = performance.now();
       for (const peerId of this.peers) this.match.ensurePlayer(peerId);
       window.setTimeout(() => this.broadcastSnapshot(), 500);
-    } else this.askSync(nextLeader);
+    } else this.askSync(next);
+  }
+
+  private probeLag(): void {
+    const due = performance.now() + 100;
+    this.lagTimer = window.setTimeout(() => {
+      if (this.late.length < 100) this.late.push(Math.max(0, performance.now() - due));
+      this.probeLag();
+    }, 100);
+  }
+
+  // Every two seconds: this peer measures how late its timers ran and its round trips. Others
+  // report them to the coordinator; the coordinator settles a new room, repeats whom the room
+  // follows for any peer that missed it, and weighs handing over.
+  private async checkFitness(): Promise<void> {
+    // A page in the background runs timers about once a second, if that.
+    const late = this.late.sort((a, b) => a - b);
+    this.lags = [...this.lags.slice(-9), late.length ? late[Math.floor(late.length / 2)] : 1000];
+    this.late = [];
+    const lag = [...this.lags].sort((a, b) => a - b)[Math.floor(this.lags.length / 2)];
+    if (!this.peers.size) return;
+    const rtt = await this.roundTrips();
+    this.own = { version: PROTOCOL_VERSION, map: this.expectedMap, lag, rtt, at: performance.now() };
+    if (this.leaderId !== selfId) {
+      void this.fitnessAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, lag, rtt }, { target: this.leaderId }).catch(() => undefined);
+      return;
+    }
+    if (this.epoch === 0 && this.heardEpoch === 0 && [...this.peers].every((peerId) => this.announced.has(peerId))) this.epoch = 1;
+    void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, epoch: this.epoch }).catch(() => undefined);
+    this.weighHandover(performance.now());
+  }
+
+  // Each peer's round trip in ms, from the connection's selected candidate pair.
+  private async roundTrips(): Promise<Record<string, number>> {
+    const rtt: Record<string, number> = {};
+    await Promise.all([...this.peers].map(async (peerId) => {
+      try {
+        const report = await this.room.getPeers()[peerId]?.getStats();
+        report?.forEach((entry: RTCIceCandidatePairStats) => {
+          if (entry.type === "candidate-pair" && entry.nominated && entry.state === "succeeded" && typeof entry.currentRoundTripTime === "number") rtt[peerId] = Math.round(entry.currentRoundTripTime * 1000);
+        });
+      } catch {
+        // No figure for this peer this time.
+      }
+    }));
+    return rtt;
+  }
+
+  // What a peer coordinating would add to each shot: its average round trip to the others, and
+  // how long its main thread keeps a message waiting. Null without a recent report.
+  private delayOf(id: string, now: number): number | null {
+    const report = id === selfId ? this.own : this.fitness.get(id);
+    if (!report || now - report.at > 3 * FITNESS_MS) return null;
+    const others = [selfId, ...this.peers].filter((member) => member !== id);
+    let total = 0;
+    for (const member of others) {
+      const trip = report.rtt[member] ?? (member === selfId ? this.own : this.fitness.get(member))?.rtt[id];
+      if (trip === undefined) return null;
+      total += trip;
+    }
+    return total / Math.max(1, others.length) + report.lag;
+  }
+
+  private weighHandover(now: number): void {
+    const mine = this.delayOf(selfId, now);
+    const others = [...this.peers].flatMap((peerId) => { const delay = this.delayOf(peerId, now); return delay === null ? [] : [{ peerId, delay }]; }).sort((a, b) => a.delay - b.delay);
+    const best = others[0]?.peerId ?? "", typical = others[Math.floor(others.length / 2)]?.delay ?? Infinity;
+    const clearlyBetter = mine !== null && best !== "" && typical < mine * HANDOVER_RATIO && mine - typical >= HANDOVER_GAIN_MS;
+    this.betterChecks = clearlyBetter ? this.betterChecks + 1 : 0;
+    if (clearlyBetter && this.betterChecks >= HANDOVER_CHECKS && now - this.leadingSince > HANDOVER_SETTLE_MS) this.handOver(best);
+  }
+
+  // Everyone gets the latest changes first, so the new coordinator starts from the same state.
+  private handOver(to: string): void {
+    window.clearTimeout(this.broadcastTimer);
+    this.broadcastTimer = 0;
+    this.broadcastNow();
+    this.epoch += 1;
+    void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: to, epoch: this.epoch }).catch(() => undefined);
+    this.setLeader(to);
   }
 
   // Asks the coordinator for its whole state, at most once every two seconds.
@@ -494,6 +651,10 @@ export class PeerRoom {
     this.snapshotAction.onMessage = null;
     this.syncAction.onMessage = null;
     this.propsAction.onMessage = null;
+    this.leaderAction.onMessage = null;
+    this.fitnessAction.onMessage = null;
+    window.clearTimeout(this.lagTimer);
+    window.clearInterval(this.fitnessTimer);
     this.room.onPeerJoin = null;
     this.room.onPeerLeave = null;
     window.clearTimeout(this.broadcastTimer);
