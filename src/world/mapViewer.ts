@@ -7,7 +7,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { film } from "three/addons/tsl/display/FilmNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
-import { ClusteredLighting } from "three/addons/lighting/ClusteredLighting.js";
+import { FixedGridLighting } from "./fixedClusters";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
@@ -213,20 +213,32 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   cloudScene.add(haze);
   let hazeLevel = 0;
   const renderer = new WebGPURenderer({ antialias: false, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
-  const maximumPixelRatio = Math.min(window.devicePixelRatio, 2);
-  const minimumPixelRatio = Math.min(maximumPixelRatio, 1.25);
-  let pixelRatio = maximumPixelRatio;
+  // The world renders at most `budget` pixels, at up to twice the CSS resolution. A large
+  // Retina screen or an external display would otherwise multiply the cost of every lit
+  // pixel. Changing the drawing size rebuilds every shader (the clustered lights fit their
+  // grid to it), which can stall the page for seconds, so the size is chosen when the window
+  // settles and lowered at most twice during play, never raised again.
+  let budget = 4.2e6;
+  const ratioFor = (width: number, height: number): number => Math.max(0.6, Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (width * height))));
+  let pixelRatio = ratioFor(Math.max(1, container.clientWidth), Math.max(1, container.clientHeight));
   renderer.setPixelRatio(pixelRatio);
   renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.25;
   renderer.shadowMap.type = PCFShadowMap;
   renderer.shadowMap.enabled = true;
   await renderer.init();
+  // If the graphics device gives up, say so rather than leave the last frame frozen on screen.
+  renderer.onDeviceLost = (info) => {
+    console.error(`Graphics device lost: ${info.message}`);
+    events.onStatus("error", "The graphics device stopped responding");
+  };
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
   // On WebGPU, clustered lighting lets every lamp, bulb string and sign be a real light at a
   // fixed shading cost; WebGL 2 keeps a handful of lights and painted pools of light instead.
   const clustered = isWebGPU;
-  if (clustered) renderer.lighting = new ClusteredLighting();
+  // A fixed 40 × 24 grid of tiles and 16 depth slices (fixedClusters.ts), so resizing never
+  // rebuilds shaders; ninety lights fit 48 to a cluster.
+  if (clustered) renderer.lighting = new FixedGridLighting(1024, 64, 16, 48);
   built.light(clustered);
   container.appendChild(renderer.domElement);
   await step(0.8, 0.92, "Building physics");
@@ -363,16 +375,24 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // The first-person view drops and rolls when eliminated, from the pose at that moment.
   let deathView: { position: Vector3; quaternion: Quaternion; time: number } | null = null;
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
-  const resize = (): void => {
+  const applySize = (): void => {
     const width = Math.max(1, container.clientWidth);
     const height = Math.max(1, container.clientHeight);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    pixelRatio = ratioFor(width, height);
+    renderer.setPixelRatio(pixelRatio);
     renderer.setSize(width, height);
+  };
+  // A window being dragged to a new size resizes once it stops, not on every step.
+  let resizeTimer = 0;
+  const resize = (): void => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(applySize, 300);
   };
   const observer = new ResizeObserver(resize);
   observer.observe(container);
-  resize();
+  applySize();
 
   let frames = 0;
   let renderedFrames = 0;
@@ -380,7 +400,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let lastMetrics = performance.now();
   let readySent = false;
   let slowSamples = 0;
-  let fastSamples = 0;
+  let downgrades = 0;
+  let readyAt = 0;
   let localBloom = 0;
   let lastLocalShot = 0;
   let lastSpread = -1;
@@ -472,23 +493,18 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     if (!readySent && renderedFrames >= 2) {
       events.onStatus("ready", `${data.layout.name} loaded. Use arrow keys to move and drag on the map to look around.`);
       readySent = true;
+      readyAt = time;
     }
     if (time - lastMetrics >= 500) {
       const fps = Math.round(frames * 1000 / (time - lastMetrics));
-      slowSamples = !document.hidden && fps < 45 ? slowSamples + 1 : 0;
-      fastSamples = !document.hidden && fps >= 57 ? fastSamples + 1 : 0;
-      if (slowSamples >= 6 && pixelRatio > minimumPixelRatio) {
-        pixelRatio = Math.max(minimumPixelRatio, pixelRatio - 0.25);
-        renderer.setPixelRatio(pixelRatio);
-        resize();
+      // Four seconds under 40 FPS, once the first frames' shader builds are past: render a
+      // little over half the pixels, in one step.
+      slowSamples = !document.hidden && readyAt && time - readyAt > 6000 && fps < 40 ? slowSamples + 1 : 0;
+      if (slowSamples >= 8 && downgrades < 2 && pixelRatio > 0.6) {
+        budget *= 0.55;
+        downgrades += 1;
         slowSamples = 0;
-        fastSamples = 0;
-      } else if (fastSamples >= 24 && pixelRatio < maximumPixelRatio) {
-        pixelRatio = Math.min(maximumPixelRatio, pixelRatio + 0.25);
-        renderer.setPixelRatio(pixelRatio);
-        resize();
-        slowSamples = 0;
-        fastSamples = 0;
+        applySize();
       }
       events.onMetrics({
         fps,

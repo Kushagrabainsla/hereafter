@@ -126,8 +126,10 @@ function setStatus(state: MapState, message: string): void {
   loader.dataset.state = state;
   if (state === "error") {
     window.clearInterval(tipTimer);
+    loader.hidden = false;
+    loader.classList.remove("done");
     loaderStep.textContent = message;
-    loaderTip.textContent = "Arena unavailable. Reload the page to try again.";
+    loaderTip.textContent = "Reload the page to try again. If it keeps happening, add ?renderer=webgl to the address.";
     return;
   }
   if (state !== "ready") return;
