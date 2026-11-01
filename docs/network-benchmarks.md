@@ -41,6 +41,7 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 | Baseline | 39 | 38 | 38 | 1 / 6 | 59 / 580 | 12.4 / 14.2 | 10 |
 | 1. Positions lane | 30 | 29 | 29 | 1 / 5 | 59 / 676 | 4.5 / 4.9 | 11 |
 | 2. Compact positions | 10 | 9 | 9 | 1 / 6 | 59 / 654 | 3.5 / 3.6 | 11 |
+| 3. Only what changed | 10 | 9 | 9 | 1 / 4 | 58 / 300 | 1.9 / 2.4 | 14 |
 
 ### Firefight (20 s, everyone running and firing carbines)
 
@@ -49,6 +50,7 @@ Medians of three runs. Delays and gaps are in milliseconds; p50 is the typical v
 | Baseline | 109 | 27 | 41 | 3 / 331 | 412 / 955 | 1629 / 4165 | 12.7 / 10.8 | 10 |
 | 1. Positions lane | 100 | 19 | 34 | 8 / 284 | 362 / 956 | 1516 / 3266 | 10.9 / 8.2 | 11 |
 | 2. Compact positions | 103 | 7 | 25 | 6 / 273 | 370 / 767 | 1492 / 4180 | 11.2 / 6.9 | 11 |
+| 3. Only what changed | 39 | 7 | 12 | 3 / 204 | 277 / 568 | 1350 / 3680 | 6.9 / 5.2 | 14 |
 
 ### What each stage changed
 
@@ -61,3 +63,9 @@ The step also fixed a bug the benchmark exposed. A player's position was rejecte
 The lane's statistics show what limits the firefight: there, the host sends 26 to 47 positions a second instead of 100, because deciding shots and drawing leave its main thread too little time for the timer that sends them.
 
 **2. Compact positions.** A position on the lane is now 25 bytes of numbers instead of about 238 bytes of text: position and jump height to the centimetre, heading, pitch and lean to the hundredth, and five movement flags packed into one byte. A round trip between two players came back exact to those units. Each player now uploads 9 KB/s while moving, against 29 after step 1 and 38 at the start, and 7 KB/s in the firefight. Handling network messages drops again, to about 3.5 ms a second. Delays and gaps are unchanged, as expected: the bytes were never what held positions up on one machine. The host still uploads about 100 KB/s in the firefight. That is now almost all its updates to the other players, which step 3 addresses.
+
+**3. Only what has changed.** After the first update, the host's updates carry only what has changed since the one before. Before, every update carried every player whole, about 230 bytes each, and the shot at full precision. Now an update after a shot carries the shooter's rounds in that gun (about 35 bytes), the health of whatever the round damaged, and the shot itself. Its numbers go to four decimal places, a tenth of a millimetre in a position, which makes a shot 462 bytes instead of 684. A player who joins, or asks to catch up, still gets the whole state once, and so does everyone when a new host takes over. In the firefight the host uploads 39 KB/s instead of 103, and each player downloads 12 KB/s instead of 25. Handling network messages takes 6.9 ms of the host's main thread each second instead of 11.2.
+
+These three runs had a quieter machine than the earlier stages: load averages of 2 to 5, against 5 to 10. So the higher frame rate, which rose in the moving phase too where this step changes nothing, and part of the shorter delays come from that. The traffic figures do not depend on the load.
+
+A separate check ran three players, then a fourth who joined mid-fight, then had the host leave so another took over. It fired carbines, threw a grenade and opened a door, and after each stage compared every player's copy of the match with the host's: players, damaged objects, pickups, grenades, drops and doors all agreed, and no page reported an error.

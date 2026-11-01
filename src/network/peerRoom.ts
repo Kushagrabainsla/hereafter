@@ -1,11 +1,11 @@
 import { joinRoom, selfId } from "trystero";
 import { type Arena } from "../world/arena";
 import { type PlayerPose } from "../game/playerController";
-import { MatchState, type CombatIntent, type CombatSnapshot } from "../game/matchState";
+import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, type SentState } from "../game/matchState";
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 10;
+const PROTOCOL_VERSION = 11;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -27,7 +27,8 @@ type PosePacket = {
 };
 
 type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
-type SnapshotPacket = { version: number; map: string; leader: string; state: CombatSnapshot };
+// The coordinator's whole state, or what has changed since its last update.
+type SnapshotPacket = { version: number; map: string; leader: string; state?: CombatSnapshot; delta?: CombatDelta };
 type SyncPacket = { version: number; map: string };
 // Loose prop transforms from the coordinator: [id, x, y, z, qx, qy, qz, qw].
 export type PropState = [string, number, number, number, number, number, number, number];
@@ -87,6 +88,12 @@ function decodePosition(data: ArrayBuffer, map: string): PosePacket | null {
     sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0,
   };
 }
+
+// Numbers in the coordinator's updates go as text to four decimal places, a tenth of a
+// millimetre in a position: "1.7350637578964234" becomes "1.7351". Whole numbers, such as
+// times, stay as they are.
+const trimNumber = (_key: string, value: unknown): unknown =>
+  typeof value === "number" && !Number.isInteger(value) && Math.abs(value) < 1e6 ? Math.round(value * 1e4) / 1e4 : value;
 
 // Peers only exchange packets for the same map and protocol.
 const MAP_KEY = "night-market-v1";
@@ -166,6 +173,12 @@ export class PeerRoom {
   private lastSentEvent = 0;
   private lastBroadcastAt = 0;
   private broadcastTimer = 0;
+  // What this coordinator last sent its peers, so each update carries only what has changed
+  // since; null until its first update, which carries the whole state.
+  private sent: SentState | null = null;
+  // The coordinator whose state this peer holds: its changes apply only on top of its own state.
+  private held = "";
+  private syncAsked = { of: "", at: 0 };
 
   private reportPeers(): void {
     const members = [selfId, ...this.peers].sort();
@@ -212,16 +225,23 @@ export class PeerRoom {
     this.snapshotAction.onMessage = (raw, { peerId }) => {
       let value: SnapshotPacket;
       try { value = JSON.parse(raw) as SnapshotPacket; } catch { return; }
-      if (!value || !value.state) return;
+      if (!value || (!value.state && !value.delta)) return;
       if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || value.leader !== peerId) return;
       if (peerId !== this.leaderId && !(this.leaderId === selfId && Date.now() < this.handoffUntil)) return;
-      if (this.match.adopt(value.state)) {
-        // A respawn teleports the player, so its next pose must not fail the distance check.
-        for (const event of value.state.events) if (event.kind === "respawn") this.lastAcceptedPose.delete(event.actor);
-        if (this.leaderId === selfId) {
-          this.match.ensurePlayer(selfId);
-          this.broadcastSnapshot();
-        }
+      // The first whole state from a new coordinator replaces what this peer held, whatever
+      // its revision; changes it cannot place on what it holds, it asks to have resent whole.
+      const accepted = value.delta ? this.held === peerId && this.match.applyDelta(value.delta)
+        : !!value.state && this.match.adopt(value.state, peerId === this.leaderId && this.held !== peerId);
+      if (!accepted) {
+        if (value.delta && peerId === this.leaderId) this.askSync(peerId);
+        return;
+      }
+      this.held = peerId;
+      // A respawn teleports the player, so its next pose must not fail the distance check.
+      for (const event of (value.delta ?? value.state)?.events ?? []) if (event?.kind === "respawn") this.lastAcceptedPose.delete(event.actor);
+      if (this.leaderId === selfId) {
+        this.match.ensurePlayer(selfId);
+        this.broadcastSnapshot();
       }
     };
     this.syncAction.onMessage = (value, { peerId }) => {
@@ -322,25 +342,36 @@ export class PeerRoom {
     }
     this.leaderId = nextLeader;
     this.handoffUntil = Date.now() + 1800;
+    this.sent = null;
     if (nextLeader === selfId) {
+      this.held = "";
       for (const peerId of this.peers) this.match.ensurePlayer(peerId);
       window.setTimeout(() => this.broadcastSnapshot(), 500);
-    } else void this.syncAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap }, { target: nextLeader }).catch(() => undefined);
+    } else this.askSync(nextLeader);
   }
 
-  private packet(state: CombatSnapshot): string {
-    return JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, state });
+  // Asks the coordinator for its whole state, at most once every two seconds.
+  private askSync(leader: string): void {
+    const now = performance.now();
+    if (this.syncAsked.of === leader && now - this.syncAsked.at < 2000) return;
+    this.syncAsked = { of: leader, at: now };
+    void this.syncAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap }, { target: leader }).catch(() => undefined);
   }
 
-  // The whole state with its recent events, for a peer joining or catching up.
+  private packet(body: { state: CombatSnapshot } | { delta: CombatDelta }): string {
+    return JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, ...body }, trimNumber);
+  }
+
+  // The whole state with its recent events, for a peer joining or catching up. Pending changes
+  // go out first, so the state sent here is the one the next changes are made against.
   private sendSnapshot(peerId: string): void {
-    void this.snapshotAction.send(this.packet(this.match.view()), { target: peerId }).catch(() => undefined);
+    window.clearTimeout(this.broadcastTimer);
+    this.broadcastTimer = 0;
+    this.broadcastNow();
+    void this.snapshotAction.send(this.packet({ state: this.match.view() }), { target: peerId }).catch(() => undefined);
   }
 
-  // Changes go out at most 20 times a second, and each carries only the events since the
-  // last: resending the 32 most recent events every time made nine-tenths of each packet, and
-  // a firefight between three players sent over 100 KB a second to each. The channel is
-  // reliable and ordered, so a peer misses none of them.
+  // Changes go out at most 20 times a second.
   private broadcastSnapshot(): void {
     if (this.leaderId !== selfId || !this.peers.size) return;
     const wait = this.lastBroadcastAt + 50 - performance.now();
@@ -348,10 +379,27 @@ export class PeerRoom {
       if (!this.broadcastTimer) this.broadcastTimer = window.setTimeout(() => { this.broadcastTimer = 0; this.broadcastSnapshot(); }, wait);
       return;
     }
+    this.broadcastNow();
+  }
+
+  // The first update as coordinator carries the whole state; each one after carries only what
+  // has changed since the one before: the fields of each player that changed, such as one
+  // gun's rounds, the objects hit and the events since. The whole state, with the 32 most
+  // recent events, made a firefight between three players send over 100 KB a second to each.
+  // The channel is reliable and ordered, so a peer misses none of them.
+  private broadcastNow(): void {
     this.lastBroadcastAt = performance.now();
-    const state = this.match.view(this.lastSentEvent);
-    this.lastSentEvent = state.eventSeq;
-    void this.snapshotAction.send(this.packet(state)).catch(() => undefined);
+    if (!this.sent) {
+      const state = this.match.view(this.lastSentEvent);
+      this.sent = this.match.sent();
+      this.lastSentEvent = state.eventSeq;
+      void this.snapshotAction.send(this.packet({ state })).catch(() => undefined);
+      return;
+    }
+    const delta = this.match.delta(this.sent, this.lastSentEvent);
+    if (!delta) return;
+    this.lastSentEvent = delta.eventSeq;
+    void this.snapshotAction.send(this.packet({ delta })).catch(() => undefined);
   }
 
   sendCombatIntent(intent: CombatIntent): void {
@@ -424,6 +472,7 @@ export class PeerRoom {
     this.room.onPeerJoin = null;
     this.room.onPeerLeave = null;
     window.clearTimeout(this.broadcastTimer);
+    this.sent = null;
     for (const peerId of [...this.lanes.keys()]) this.closeLane(peerId);
     await this.room.leave();
     this.peers.clear();

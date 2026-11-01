@@ -103,6 +103,25 @@ export interface CombatSnapshot {
   events: CombatEvent[];
 }
 
+// The parts of a state other than players, world objects and events, sent whole when they change.
+const SHARED_PARTS = ["taken", "pickupReturns", "grenades", "drops", "open"] as const;
+
+type StateParts = Partial<Pick<CombatSnapshot, (typeof SHARED_PARTS)[number] | "entities">>;
+
+// What a coordinator sends after the whole state: the fields of each player that changed, the
+// world objects whose health changed, those of the shared parts that changed and the new
+// events, to apply on top of the state as of revision `base`.
+export type CombatDelta = StateParts & {
+  base: number;
+  revision: number;
+  eventSeq: number;
+  players?: Record<string, Partial<CombatPlayer>>;
+  events: CombatEvent[];
+};
+
+// What a coordinator last sent its peers, each field as text, to tell what has changed since.
+export interface SentState { revision: number; players: Record<string, Record<string, string>>; entities: Record<string, number>; shared: Record<string, string> }
+
 // What the coordinating peer asks of the physical world.
 export interface SurfaceHit { distance: number; thickness: number; point: Vec3; normal: Vec3; material: Material; entity?: string }
 export interface CombatWorld {
@@ -197,8 +216,24 @@ function validPlayer(player: CombatPlayer): boolean {
     && Number.isSafeInteger(player.deaths) && player.deaths >= 0;
 }
 
+const PLAYER_FIELDS = Object.keys(freshPlayer());
+
+const checkEvents = (events: CombatEvent[]): CombatEvent[] => events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
+
 function emptySnapshot(): CombatSnapshot {
   return { version: 6, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, events: [] };
+}
+
+// The fields of value whose text differs from `before`, which is brought up to date; null if none.
+function changedFields(value: object, before: Record<string, string>, keys: readonly string[] = Object.keys(value)): Record<string, unknown> | null {
+  let fields: Record<string, unknown> | null = null;
+  for (const key of keys) {
+    const field = (value as Record<string, unknown>)[key], text = JSON.stringify(field);
+    if (text === before[key]) continue;
+    before[key] = text;
+    (fields ??= {})[key] = field;
+  }
+  return fields;
 }
 
 function lerpAngle(a: number, b: number, t: number): number {
@@ -287,34 +322,107 @@ export class MatchState {
     return true;
   }
 
-  adopt(incoming: CombatSnapshot): boolean {
+  // Takes a coordinator's whole state. With force it replaces this one whatever their
+  // revisions, as when a new coordinator takes over.
+  adopt(incoming: CombatSnapshot, force = false): boolean {
     if (!incoming || incoming.version !== 6 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
-      || !incoming.players || !Array.isArray(incoming.taken) || !incoming.pickupReturns || typeof incoming.pickupReturns !== "object"
-      || !incoming.entities || typeof incoming.entities !== "object" || !Array.isArray(incoming.grenades) || !Array.isArray(incoming.drops) || !Array.isArray(incoming.events)
-      || !incoming.open || typeof incoming.open !== "object") return false;
+      || !incoming.players || typeof incoming.players !== "object" || !incoming.entities || SHARED_PARTS.some((key) => !incoming[key]) || !Array.isArray(incoming.events)) return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
-    if (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers)) return false;
+    if (!force && (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers))) return false;
     const players: Record<string, CombatPlayer> = {};
     for (const [id, player] of Object.entries(incoming.players)) {
       if (!player || !validPlayer(player)) return false;
       players[id] = structuredClone(player);
     }
-    const pickupReturns: Record<string, number> = {};
-    for (const pickup of this.pickups) {
-      const due = incoming.pickupReturns[pickup.id];
-      if (Number.isFinite(due) && due >= 0) pickupReturns[pickup.id] = due;
-    }
-    const entities: Record<string, number> = {};
-    for (const [id, health] of Object.entries(incoming.entities)) if (id.length < 64 && finite(health) && health >= 0 && health <= 100_000) entities[id] = health;
-    const grenades = incoming.grenades.filter((grenade) => grenade && Number.isSafeInteger(grenade.id) && typeof grenade.actor === "string" && finite(grenade.explodeAt) && validVec(grenade.position)
-      && (grenade.entity === undefined || (typeof grenade.entity === "string" && grenade.entity.length < 40)) && (grenade.smoke === undefined || typeof grenade.smoke === "boolean")).slice(0, 16);
-    const open: Record<string, boolean> = {};
-    for (const toggle of this.data.layout.toggles) if (typeof incoming.open[toggle.id] === "boolean") open[toggle.id] = incoming.open[toggle.id];
-    const drops = incoming.drops.filter(validDrop).slice(-DROPS_KEPT);
-    const events = incoming.events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
-    this.snapshot = { version: 6, revision: incoming.revision, eventSeq: incoming.eventSeq, players, taken: incoming.taken.filter((id) => this.pickups.some((pickup) => pickup.id === id)), pickupReturns, entities, grenades: structuredClone(grenades), drops: structuredClone(drops), open, events };
+    const parts = this.checkParts(incoming);
+    if (!parts) return false;
+    this.snapshot = { ...emptySnapshot(), ...parts, revision: incoming.revision, eventSeq: incoming.eventSeq, players, events: checkEvents(incoming.events) };
     this.onChange(this.snapshot);
     return true;
+  }
+
+  // Applies a coordinator's changes, checked as adopt checks a whole state. False if this
+  // state is older than the one they were made from, or anything in them fails the checks.
+  applyDelta(delta: CombatDelta): boolean {
+    if (!delta || !Number.isSafeInteger(delta.base) || !Number.isSafeInteger(delta.revision) || delta.revision < delta.base || this.snapshot.revision < delta.base
+      || !Number.isSafeInteger(delta.eventSeq) || !Array.isArray(delta.events) || (delta.players !== undefined && (!delta.players || typeof delta.players !== "object"))) return false;
+    const players = { ...this.snapshot.players };
+    for (const [id, fields] of Object.entries(delta.players ?? {})) {
+      if (!fields || typeof fields !== "object" || !Object.keys(fields).every((key) => PLAYER_FIELDS.includes(key))) return false;
+      const player = { ...players[id], ...structuredClone(fields) } as CombatPlayer;
+      if (!validPlayer(player)) return false;
+      players[id] = player;
+    }
+    const parts = this.checkParts(delta);
+    if (!parts) return false;
+    this.snapshot = { ...this.snapshot, ...parts, revision: delta.revision, eventSeq: delta.eventSeq, players, entities: { ...this.snapshot.entities, ...parts.entities }, events: checkEvents(delta.events) };
+    this.onChange(this.snapshot);
+    return true;
+  }
+
+  // The state as sent whole, field by field, for delta to compare with.
+  sent(): SentState {
+    const sent: SentState = { revision: this.snapshot.revision, players: {}, entities: { ...this.snapshot.entities }, shared: {} };
+    for (const [id, player] of Object.entries(this.snapshot.players)) changedFields(player, sent.players[id] = {});
+    changedFields(this.snapshot, sent.shared, SHARED_PARTS);
+    return sent;
+  }
+
+  // What has changed since `sent`, which is brought up to date, with the events after
+  // `since`; null if nothing has. Like view, it shares the live objects.
+  delta(sent: SentState, since: number): CombatDelta | null {
+    const delta: CombatDelta = { base: sent.revision, revision: this.snapshot.revision, eventSeq: this.snapshot.eventSeq, events: this.snapshot.events.filter((event) => event.id > since) };
+    let changed = delta.events.length > 0;
+    for (const [id, player] of Object.entries(this.snapshot.players)) {
+      const fields = changedFields(player, sent.players[id] ??= {});
+      if (fields) { (delta.players ??= {})[id] = fields as Partial<CombatPlayer>; changed = true; }
+    }
+    for (const [id, health] of Object.entries(this.snapshot.entities)) {
+      if (sent.entities[id] !== health) { (delta.entities ??= {})[id] = sent.entities[id] = health; changed = true; }
+    }
+    const shared = changedFields(this.snapshot, sent.shared, SHARED_PARTS);
+    if (shared) { Object.assign(delta, shared); changed = true; }
+    if (!changed) return null;
+    sent.revision = this.snapshot.revision;
+    return delta;
+  }
+
+  // Checked copies of whichever parts other than players and events are given; null if one is malformed.
+  private checkParts(incoming: StateParts): StateParts | null {
+    const parts: StateParts = {};
+    const record = (value: unknown): boolean => !!value && typeof value === "object" && !Array.isArray(value);
+    if (incoming.taken !== undefined) {
+      if (!Array.isArray(incoming.taken)) return null;
+      parts.taken = incoming.taken.filter((id) => this.pickups.some((pickup) => pickup.id === id));
+    }
+    if (incoming.pickupReturns !== undefined) {
+      if (!record(incoming.pickupReturns)) return null;
+      const pickupReturns: Record<string, number> = parts.pickupReturns = {};
+      for (const pickup of this.pickups) {
+        const due = incoming.pickupReturns[pickup.id];
+        if (Number.isFinite(due) && due >= 0) pickupReturns[pickup.id] = due;
+      }
+    }
+    if (incoming.entities !== undefined) {
+      if (!record(incoming.entities)) return null;
+      const entities: Record<string, number> = parts.entities = {};
+      for (const [id, health] of Object.entries(incoming.entities)) if (id.length < 64 && finite(health) && health >= 0 && health <= 100_000) entities[id] = health;
+    }
+    if (incoming.grenades !== undefined) {
+      if (!Array.isArray(incoming.grenades)) return null;
+      parts.grenades = structuredClone(incoming.grenades.filter((grenade) => grenade && Number.isSafeInteger(grenade.id) && typeof grenade.actor === "string" && finite(grenade.explodeAt) && validVec(grenade.position)
+        && (grenade.entity === undefined || (typeof grenade.entity === "string" && grenade.entity.length < 40)) && (grenade.smoke === undefined || typeof grenade.smoke === "boolean")).slice(0, 16));
+    }
+    if (incoming.open !== undefined) {
+      if (!record(incoming.open)) return null;
+      const open: Record<string, boolean> = parts.open = {};
+      for (const toggle of this.data.layout.toggles) if (typeof incoming.open[toggle.id] === "boolean") open[toggle.id] = incoming.open[toggle.id];
+    }
+    if (incoming.drops !== undefined) {
+      if (!Array.isArray(incoming.drops)) return null;
+      parts.drops = structuredClone(incoming.drops.filter(validDrop).slice(-DROPS_KEPT));
+    }
+    return parts;
   }
 
   apply(actor: string, intent: CombatIntent, now = Date.now()): boolean {
