@@ -193,3 +193,30 @@ A friend opening the link for the first time downloads the game's 23 MB first, a
 | Playing together after opening the link | 33.0, 31.8, 31.6 s | 46.4, 29.7, 29.6 s |
 
 The 46 s run loaded slowly from the start. Six more runs, in the same conditions, opened a new room's link in two browsers at once, or in the second 3 s after the first had loaded and was alone. Every time both followed one host at epoch 1 with the same players, and a lone host kept the role while its friend loaded, including when the friend had the lower id, which under the old rule took the room over once it arrived. A host crash still took 2.1 s, and a six-player fight sent the same traffic as with step 1 (2.0 KB/s a player standing still, 9.3 running, 40.5 from the host in the fight) without the host moving.
+
+### 3. Relays that work, and quickly
+
+Players find each other through public Nostr relays, which pass the messages that set up a connection. Left to itself Trystero uses five of its 29 relays, picked by the game's id. Timed from here, publishing an event and receiving it back, three rounds each in four probes over two days: relay.routstr.com timed out or took 3.5 to 6 s in the last two, relay.degmods.com lost some or all of its messages in three of the four, and the other three took 135 to 285 ms. The game now names seven relays that passed every message in the three latest probes:
+
+| Relay | Echo |
+|---|---|
+| relay.aarpia.com | 48 to 53 ms |
+| cdn.satellite.earth | 78 to 86 ms |
+| nostrcity-club.fly.dev | 77 to 129 ms |
+| nostr.red5d.dev | 83 to 116 ms |
+| relay.agentry.com | 111 to 131 ms |
+| relay.hackshed.dev | 135 to 195 ms |
+| relay.nostr.blockhenge.com | 195 to 196 ms |
+
+Every message goes out on all of them, so the quickest carries it. These times are from California; a relay fast here may be slower elsewhere, which is one reason to keep seven.
+
+Two players already in the game meeting by room code, the second typing the code once its first frames were past, four runs each, alternating:
+
+| Room code to playing together | Step 2 | Step 3 |
+|---|---|---|
+| First relay connection open | 0.22 s | 0.03 to 0.04 s |
+| First relay message back | 0.41 s | 0.05 to 0.10 s |
+| Connected | 0.93 to 1.11 s | 0.25 to 0.31 s |
+| Playing together | 1.13, 1.09, 0.96, 0.95 s | 0.26, 0.30, 0.32, 0.29 s |
+
+A friend opening an invite link connects while the world loads, so there the gain is hidden behind loading.

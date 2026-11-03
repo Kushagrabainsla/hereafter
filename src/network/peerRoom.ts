@@ -7,6 +7,13 @@ const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
 const PROTOCOL_VERSION = 14;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+// The Nostr relays that pass connection messages between players, the same for everyone. Left to
+// itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
+// of the five it picked failed or took seconds to pass a message on, and the rest took 135 to
+// 285 ms. These seven passed every message in three rounds of tests, in 50 to 200 ms from
+// California. Every message goes out on all of them, so a slow or failed relay costs nothing
+// while another carries it.
+const RELAYS = ["relay.aarpia.com", "cdn.satellite.earth", "nostrcity-club.fly.dev", "nostr.red5d.dev", "relay.agentry.com", "relay.hackshed.dev", "relay.nostr.blockhenge.com"].map((host) => `wss://${host}`);
 
 type PosePacket = {
   version: number;
@@ -272,7 +279,7 @@ export class PeerRoom {
     if (this.code.length < 6 || this.code.length > 24) throw new Error("Room code must be 6–24 letters or numbers.");
     this.expectedMap = MAP_KEY;
     // The room name keeps the map id the night market's rooms have always used.
-    this.room = joinRoom({ appId: APP_ID, password: this.code }, `${this.code}@night-market`, {
+    this.room = joinRoom({ appId: APP_ID, password: this.code, relayConfig: { urls: RELAYS } }, `${this.code}@night-market`, {
       onJoinError: () => this.events.onStatus("A peer could not connect. Try another network or leave and rejoin."),
     });
     this.poseAction = this.room.makeAction<PosePacket>("pose-v1");
