@@ -435,7 +435,7 @@ function enterRoom(rawCode: string): void {
     lastEventId = 0;
     sharedProps.clear();
     roomSize = 1;
-    peerRoom = new PeerRoom(code, arena, match!, {
+    peerRoom = new PeerRoom(code, arena, {
       onPeers(count, spawnSlot) {
         if (count > roomSize) playerJoined = true;
         roomSize = count;
@@ -458,6 +458,7 @@ function enterRoom(rawCode: string): void {
         viewer?.applyShoves(pushes);
       },
     });
+    if (match) peerRoom.attach(match);
     roomCodeInput.value = code;
     activeRoomCode.textContent = code;
     inviteLink.value = roomLink(code);
@@ -596,6 +597,10 @@ window.setInterval(() => {
 // Mobile browsers often skip beforeunload when a page goes away; pagehide comes in either case.
 for (const event of ["beforeunload", "pagehide"]) window.addEventListener(event, () => { void peerRoom?.leave(); });
 
+// An invite link joins its room at once, so the connection is made while the world loads.
+const invite = new URLSearchParams(window.location.search).get("room");
+if (invite) enterRoom(invite);
+
 void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
   onProgress: showProgress,
@@ -631,8 +636,7 @@ void createMapViewer(element("map"), arena, {
     canvas.addEventListener("pointercancel", () => { pointerDown = null; });
   }
   syncPause();
-  const invite = new URLSearchParams(window.location.search).get("room");
-  if (invite) enterRoom(invite);
+  peerRoom?.attach(match);
 }).catch(() => {
   setStatus("error", "The world could not load. Check browser WebGPU or WebGL 2 support, then reload.");
   performanceLabel.textContent = "Graphics unavailable";

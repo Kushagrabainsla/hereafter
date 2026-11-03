@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 13;
+const PROTOCOL_VERSION = 14;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -32,8 +32,9 @@ type IntentPacket = { version: number; map: string; sequence: number; intent: Co
 // The coordinator's whole state, or what has changed since its last update.
 type SnapshotPacket = { version: number; map: string; leader: string; state?: CombatSnapshot; delta?: CombatDelta };
 type SyncPacket = { version: number; map: string };
-// The coordinator a peer follows and the epoch of that choice.
-type LeaderPacket = { version: number; map: string; leader: string; epoch: number };
+// The coordinator a peer follows and the epoch of that choice. A peer still loading the world
+// says so: it cannot coordinate, or be chosen to, until it is in the game.
+type LeaderPacket = { version: number; map: string; leader: string; epoch: number; loading?: boolean };
 // How well a peer could coordinate: how long its main thread keeps a message waiting, and its
 // round trip to each peer, in ms.
 type FitnessPacket = { version: number; map: string; lag: number; rtt: Record<string, number> };
@@ -208,7 +209,11 @@ export class PeerRoom {
   private sending = false;
   private failed = false;
   private expectedMap: string;
-  private leaderId = selfId;
+  // The match, once the world has loaded. A peer joins its room as the page opens and connects
+  // while the world loads, which took 1 to 3 s after loading before; until then it follows the
+  // coordinator it hears, if any, and takes no part in the match.
+  private match: MatchState | null = null;
+  private leaderId = "";
   private handoffUntil = 0;
   // The epoch of the coordinator this peer follows. A lone peer leads itself at epoch 0. A new
   // room settles on its lowest id, which then moves to epoch 1, so a peer joining later never
@@ -220,6 +225,8 @@ export class PeerRoom {
   // that has heard of a settled room waits to reach that room's coordinator instead.
   private heardEpoch = 0;
   private announced = new Set<string>();
+  // The peers that have said they are in the game, rather than still loading the world.
+  private ready = new Set<string>();
   private fitness = new Map<string, FitnessPacket & { at: number }>();
   private own: (FitnessPacket & { at: number }) | null = null;
   // A timer due every 100 ms runs late by as long as the main thread is busy when it falls
@@ -256,11 +263,11 @@ export class PeerRoom {
   private onVisibility = (): void => this.visibilityChanged();
 
   private reportPeers(): void {
-    const members = [selfId, ...this.peers].sort();
+    const members = [selfId, ...[...this.peers].filter((id) => this.ready.has(id))].sort();
     this.events.onPeers(members.length, members.indexOf(selfId));
   }
 
-  constructor(code: string, private arena: Arena, private match: MatchState, private events: PeerRoomEvents) {
+  constructor(code: string, private arena: Arena, private events: PeerRoomEvents) {
     this.code = normalizeRoomCode(code);
     if (this.code.length < 6 || this.code.length > 24) throw new Error("Room code must be 6–24 letters or numbers.");
     this.expectedMap = MAP_KEY;
@@ -280,7 +287,17 @@ export class PeerRoom {
       if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || typeof value.leader !== "string" || value.leader.length > 64
         || !Number.isSafeInteger(value.epoch) || value.epoch < 0) return;
       this.announced.add(peerId);
+      if (value.loading === true) return;
+      const joined = !this.ready.has(peerId);
+      this.ready.add(peerId);
       this.hear(value.leader, value.epoch);
+      if (!joined) return;
+      // Until a room has settled on a coordinator, the lowest id in the game coordinates. A
+      // coordinator tells a peer that has just come into the game whom the room follows, in
+      // case that changed while it loaded.
+      if (this.match && this.epoch === 0) this.setLeader(this.lowest());
+      if (this.leaderId === selfId) void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, epoch: this.epoch }, { target: peerId }).catch(() => undefined);
+      this.reportPeers();
     };
     this.fitnessAction.onMessage = (value, { peerId }) => {
       if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap
@@ -303,7 +320,7 @@ export class PeerRoom {
     };
     this.poseAction.onMessage = (value, { peerId }) => this.receivePose(value, peerId);
     this.intentAction.onMessage = (value, { peerId }) => {
-      if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap
+      if (!this.match || this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap
         || !Number.isSafeInteger(value.sequence) || !validIntent(value.intent)) return;
       if (value.sequence <= (this.lastIntentSequence.get(peerId) ?? -1)) return;
       this.lastIntentSequence.set(peerId, value.sequence);
@@ -313,6 +330,7 @@ export class PeerRoom {
       }
     };
     this.snapshotAction.onMessage = (raw, { peerId }) => {
+      if (!this.match) return;
       let value: SnapshotPacket;
       try { value = JSON.parse(raw) as SnapshotPacket; } catch { return; }
       if (!value || (!value.state && !value.delta)) return;
@@ -343,15 +361,13 @@ export class PeerRoom {
       this.peers.add(peerId);
       this.lastHeard.set(peerId, performance.now());
       this.openLane(peerId);
-      // Every peer tells a newcomer whom it follows; the coordinator also sends its state.
-      void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: this.leaderId, epoch: this.epoch }, { target: peerId }).catch(() => undefined);
+      // Every peer tells a newcomer whom it follows, or that it is still loading; the
+      // coordinator also sends its state.
+      void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: this.leaderId, epoch: this.epoch, ...(this.match ? {} : { loading: true }) }, { target: peerId }).catch(() => undefined);
       if (wasLeader) {
-        this.match.ensurePlayer(peerId);
+        this.match?.ensurePlayer(peerId);
         this.sendSnapshot(peerId);
       }
-      // Until a room has settled on a coordinator, its lowest id coordinates.
-      if (this.epoch === 0) this.setLeader([selfId, ...this.peers].sort()[0]);
-      this.reportPeers();
       this.events.onStatus(`${this.peers.size + 1} players connected directly.`);
     };
     this.room.onPeerLeave = (peerId) => this.dropPeer(peerId);
@@ -370,14 +386,15 @@ export class PeerRoom {
     this.lastSequence.delete(peerId);
     this.lastAcceptedPose.delete(peerId);
     this.lastIntentSequence.delete(peerId);
-    this.match.removePose(peerId);
+    this.match?.removePose(peerId);
     this.fitness.delete(peerId);
     this.announced.delete(peerId);
+    this.ready.delete(peerId);
     this.lastHeard.delete(peerId);
     this.away.delete(peerId);
     this.events.onPeerLeave(peerId);
-    // A coordinator that leaves is succeeded by the lowest id left, at the same epoch.
-    if (peerId === this.leaderId) this.setLeader([selfId, ...this.peers].sort()[0]);
+    // A coordinator that leaves is succeeded by the lowest id left in the game, at the same epoch.
+    if (peerId === this.leaderId) this.setLeader(this.lowest());
     else this.broadcastSnapshot();
     this.reportPeers();
     this.events.onStatus(this.peers.size ? `${this.peers.size + 1} players connected directly.` : "Waiting for a friend to join…");
@@ -393,6 +410,7 @@ export class PeerRoom {
     if (value.sequence <= previous) return;
     if (value.away) this.away.add(peerId);
     else this.away.delete(peerId);
+    if (!this.match) return;
     // A player can only have run so far since the last position accepted from them, timed by
     // their own clock, so positions missing in between are no reason to doubt the next one.
     // After a silence of over 1.5 s, as when a connection stalls, the next position is taken
@@ -449,8 +467,8 @@ export class PeerRoom {
   // Takes the coordinator another peer announces if it ranks above the one this peer follows.
   private hear(leader: string, epoch: number): void {
     this.heardEpoch = Math.max(this.heardEpoch, epoch);
-    if (leader !== selfId && !this.peers.has(leader)) return;
-    if (epoch < this.epoch || (epoch === this.epoch && leader >= this.leaderId)) return;
+    if (leader === selfId ? !this.match : !this.peers.has(leader)) return;
+    if (epoch < this.epoch || (epoch === this.epoch && this.leaderId && leader >= this.leaderId)) return;
     this.epoch = epoch;
     this.setLeader(leader);
   }
@@ -467,7 +485,7 @@ export class PeerRoom {
     if (next === selfId) {
       this.held = "";
       this.leadingSince = performance.now();
-      for (const peerId of this.peers) this.match.ensurePlayer(peerId);
+      for (const peerId of this.peers) this.match?.ensurePlayer(peerId);
       window.setTimeout(() => this.broadcastSnapshot(), 500);
     } else this.askSync(next);
   }
@@ -484,6 +502,7 @@ export class PeerRoom {
   // report them to the coordinator; the coordinator settles a new room, repeats whom the room
   // follows for any peer that missed it, and weighs handing over.
   private async checkFitness(): Promise<void> {
+    if (!this.match) return;
     // A page in the background runs timers about once a second, if that.
     const late = this.late.sort((a, b) => a - b);
     this.lags = [...this.lags.slice(-9), late.length ? late[Math.floor(late.length / 2)] : 1000];
@@ -556,7 +575,7 @@ export class PeerRoom {
   private successor(gone: string, includeSelf: boolean): string | null {
     const now = performance.now();
     const live = [...(includeSelf ? [selfId] : []), ...this.peers].filter((id) => id !== gone
-      && (id === selfId || now - (this.lastHeard.get(id) ?? -Infinity) < HOST_SILENCE_MS));
+      && (id === selfId || (this.ready.has(id) && now - (this.lastHeard.get(id) ?? -Infinity) < HOST_SILENCE_MS)));
     const present = live.filter((id) => !(id === selfId ? document.hidden : this.away.has(id)));
     return (present.length ? present : includeSelf ? live : []).sort()[0] ?? null;
   }
@@ -568,12 +587,12 @@ export class PeerRoom {
     this.lastSilenceCheck = now;
     // After a stall of this page's own, the messages that arrived meanwhile are read only after
     // this check, so a coordinator counts as gone only if it is still unheard at the next.
-    const silent = gap <= 1500 && leader !== selfId && this.peers.has(leader) && now - (this.lastHeard.get(leader) ?? now) >= HOST_SILENCE_MS;
+    const silent = gap <= 1500 && !!this.match && leader !== selfId && this.peers.has(leader) && now - (this.lastHeard.get(leader) ?? now) >= HOST_SILENCE_MS;
     const confirmed = silent && this.unheard === leader;
     this.unheard = silent ? leader : "";
     if (!confirmed) return;
     // A peer that hears none of the others has lost its own connection, not the coordinator.
-    const others = [...this.peers].filter((id) => id !== leader);
+    const others = [...this.peers].filter((id) => id !== leader && this.ready.has(id));
     if (others.length && !others.some((id) => now - (this.lastHeard.get(id) ?? -Infinity) < HOST_SILENCE_MS)) return;
     const next = this.successor(leader, true);
     if (!next) return;
@@ -599,6 +618,7 @@ export class PeerRoom {
 
   // Asks the coordinator for its whole state, at most once every two seconds.
   private askSync(leader: string): void {
+    if (!this.match || !leader) return;
     const now = performance.now();
     if (this.syncAsked.of === leader && now - this.syncAsked.at < 2000) return;
     this.syncAsked = { of: leader, at: now };
@@ -612,6 +632,7 @@ export class PeerRoom {
   // The whole state with its recent events, for a peer joining or catching up. Pending changes
   // go out first, so the state sent here is the one the next changes are made against.
   private sendSnapshot(peerId: string): void {
+    if (!this.match) return;
     window.clearTimeout(this.broadcastTimer);
     this.broadcastTimer = 0;
     this.broadcastNow();
@@ -635,6 +656,7 @@ export class PeerRoom {
   // recent events, made a firefight between three players send over 100 KB a second to each.
   // The channel is reliable and ordered, so a peer misses none of them.
   private broadcastNow(): void {
+    if (!this.match) return;
     this.lastBroadcastAt = performance.now();
     if (!this.sent) {
       const state = this.match.view(this.lastSentEvent);
@@ -650,6 +672,7 @@ export class PeerRoom {
   }
 
   sendCombatIntent(intent: CombatIntent): void {
+    if (!this.match) return;
     if (this.leaderId === selfId) {
       if (this.match.apply(selfId, intent)) this.broadcastSnapshot();
       return;
@@ -658,7 +681,28 @@ export class PeerRoom {
   }
 
   tickCombat(): void {
-    if (this.leaderId === selfId && this.match.tick()) this.broadcastSnapshot();
+    if (this.leaderId === selfId && this.match?.tick()) this.broadcastSnapshot();
+  }
+
+  // The world has loaded: this peer joins the game in the room it connected to meanwhile. Its
+  // timers ran late while the world loaded, so their record starts again. In a room that has
+  // not settled, the lowest id in the game coordinates; otherwise the peer asks the
+  // coordinator it follows for the match, and tells everyone it is in.
+  attach(match: MatchState): void {
+    if (this.match) return;
+    this.match = match;
+    this.late = [];
+    this.lags = [];
+    this.lastSilenceCheck = performance.now();
+    if (this.epoch === 0 || !this.leaderId) this.setLeader(this.lowest());
+    this.askSync(this.leaderId === selfId ? "" : this.leaderId);
+    void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: this.leaderId, epoch: this.epoch }).catch(() => undefined);
+    this.reportPeers();
+  }
+
+  // The lowest id among the peers in the game, this one included once it is.
+  private lowest(): string {
+    return [...(this.match ? [selfId] : []), ...[...this.peers].filter((id) => this.ready.has(id))].sort()[0] ?? "";
   }
 
   leading(): boolean { return this.leaderId === selfId; }

@@ -177,3 +177,19 @@ A player who is not the host, gone from a three-player room, is dropped by the o
 | Its page is closed, running its unload handlers | 2.0 s | 0.004 s; 0.37 s |
 
 Until it is dropped, its body stands where it was. The first version of this step closed the connections at once without a goodbye; that dropped a closed tab in 2.7 s, but cut off Trystero's own goodbye when a player left the room, which then took 0.5 to 1.2 s.
+
+### 2. Connecting while the world loads
+
+An invite link now joins its room as the page opens, so the relay messages and the WebRTC handshake happen while the world downloads and builds. A player still loading tells the others so: it cannot be chosen as host and takes no part in the match until its world is ready, and then it asks the host for the match.
+
+On this machine one thing dominates loading: the first frame builds every shader before it draws, which held the page still for about 20 s, connections included. With the game's files already cached the world itself loads in under a second before that, so a page opened from a link connects after the shaders either way. After them, playing together took 1.6 to 2.1 s with step 1 and 1.1 to 1.2 s with step 2, which had connected to its relays and announced itself beforehand (three runs each, alternating, on the development server). Building the shaders off the page with three's `compileAsync` freed the page, but made loading four times slower here, so the game does not.
+
+A friend opening the link for the first time downloads the game's 23 MB first, and the page is free while it does. Built as shipped, with the second player's browser held to a 25 Mbit/s connection with nothing cached, three runs each, alternating:
+
+| First visit at 25 Mbit/s | Step 1 | Step 2 |
+|---|---|---|
+| Connected | 2.0 to 2.1 s after the world loaded | 26 to 43 s before |
+| Playing together after the world loaded | 2.21, 2.14, 2.22 s | 0.39, 0.34, 0.41 s |
+| Playing together after opening the link | 33.0, 31.8, 31.6 s | 46.4, 29.7, 29.6 s |
+
+The 46 s run loaded slowly from the start. Six more runs, in the same conditions, opened a new room's link in two browsers at once, or in the second 3 s after the first had loaded and was alone. Every time both followed one host at epoch 1 with the same players, and a lone host kept the role while its friend loaded, including when the friend had the lower id, which under the old rule took the room over once it arrived. A host crash still took 2.1 s, and a six-player fight sent the same traffic as with step 1 (2.0 KB/s a player standing still, 9.3 running, 40.5 from the host in the fight) without the host moving.
