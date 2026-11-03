@@ -129,3 +129,41 @@ The original game against all five steps, side by side, three runs each. The mac
 | Lull, after | 2.4 | 2 | 1.9 | 2.1 / 2 |
 
 The host uploads a seventh of what it did in a fight, and every player a quarter or less. Shot confirmation, now matched exactly, was 205 ms typically and 1.35 s at worst before, and 224 ms and 1.26 s after, under that load. With three players firing one round a second on a quiet machine, it was 13 and 182 ms typically in two runs of the original game, 49 and 201 ms after step 4, and 37 to 59 ms in three runs after step 5, with the slowest one in twenty between 0.2 and 0.35 s throughout. Shots are no slower for all the changes. On one machine, with no packet loss and bandwidth to spare, they could not get much faster: what the steps buy is room on real connections, where six players' traffic shares a household's upload and Wi-Fi drops packets.
+
+## Connection layer
+
+A second set of steps works on how players connect, and on what happens when the host goes. These steps are measured with probes of their own, each side by side with the build before it: each build from its own copy of the code on its own server, alternating run by run, with a fresh browser for every run.
+
+### How it is measured
+
+- **Host lost.** Three players join one room, each in a tab of a headless Chrome. Once all three hold the host's match, the host's tab crashes (Chrome's `Page.crash`), is closed (`Target.closeTarget`), or navigates to another page. The time is from that moment until each of the other two follows a new host and holds its match, or, for the new host, has sent it. The tables give the slower of the two; three runs each.
+- **Host in the background.** The same three players, in a Chrome that slows background tabs as an ordinary one does. The host's tab is covered by another tab, so it runs its timers once a second and draws no frames. The probe times how long the host role takes to move to a player whose tab is in front, while the players fire one round a second.
+- **Joining.** A second player opens an invite link to a room the first has open. The probe records, on the machine's shared clock, when the page opened, when the world finished loading, when each relay connection opened, the WebRTC connection's progress, and when the two first play together.
+- **Six-player fight.** The benchmark above, two runs a build, to check that the new rules leave traffic alone and do not move the host in a fight.
+
+### The original connection layer
+
+Joining: the room opened only once the world had loaded, 5.9 s after the page opened on a quiet machine and 42 to 44 s on a busy one. Connecting then took 1.0 and 1.07 s on the quiet machine (2.2 to 3.3 s on the busy one): 0.14 s for the relay connections to open, three trips through the relays of about 0.2 s each, a 0.38 s stall while the new page drew its first frames, and 0.33 s for the WebRTC handshake. The game always used the same five of Trystero's 29 public relays, chosen by its app id; from here they took 186 to 283 ms to pass an event back, and one of them, relay.degmods.com, accepted connections but relayed nothing in that run. Other public relays answered in 14 to 120 ms.
+
+| Host lost (three players) | Until the others play again |
+|---|---|
+| Its tab crashes | 11.8 to 13.1 s |
+| Its tab is closed | 11.7 to 13.2 s |
+| Its page navigates away | 0.01 to 0.02 s |
+| Its tab goes to the background | the role moves after 14.3 to 16.4 s |
+
+When a tab crashed, the browser reported the connection "disconnected" after 5 to 7.5 s, and Trystero waited 5 s more before giving the peer up. A closing tab fared no better, because it was gone before its goodbye got out. Navigating away worked, because the page lives long enough to say goodbye. A host whose tab went to the background kept the role until its slowness showed in its reports. Shots stayed fast meanwhile (6 to 7 ms typically), since a background tab still answers messages as they come; what stops is everything run on its own timers or frames, such as the props it simulates.
+
+### 1. Noticing a lost host
+
+Every player now notes when it last heard from each other player. Positions come at least four times a second, so a host unheard for 2 s, and still unheard at the next check a quarter of a second later, has gone: the player that notices names the next host and the others follow. A closing tab now closes its connections at once, which tells the others immediately, and a host whose tab goes to the background hands the role to a player whose tab is in front. [Multiplayer notes](multiplayer.md) give the rules.
+
+| Host lost (three players) | Before | After |
+|---|---|---|
+| Its tab crashes | 12.06, 12.42, 12.41 s | 2.02, 2.08, 2.25 s |
+| Its tab is closed | 13.12, 12.21, 13.15 s | 0.025, 0.201, 0.023 s |
+| Its tab goes to the background (the role moves after) | 16.4 s; 15.2 to 15.4 s | 0.4 s; 0.3 s |
+
+The crash runs of the final rule ran on their own; a first version without the second check, run side by side with the original, took 1.94 to 2.00 s, and the original's time is set by fixed waits in the browser and Trystero. A host frozen for 1.5 s kept the role, and one frozen for 3 s lost it, after which all three players, the old host among them, followed the new host and held the same players.
+
+In the six-player benchmark the traffic did not change: each player sent 1.9 to 2.2 KB/s standing still and 9.2 to 9.4 KB/s running, in both builds. During the fights a player went at most 0.45 to 1.97 s without hearing the host, and most of each player's longest wait was its own page freezing; the host itself froze for at most 0.8 s in a fight. The new rule moved the role once in each of three runs, always outside the measured fight. In the run timed to the moment, the host's page froze for 3.6 s just after every player was given a carbine, most likely drawing six carbines for the first time on an overloaded machine, and the role moved 2.3 s into that freeze; the old host followed the new one when it recovered. Because the role moved just before the fight, the host upload figures of those runs belong to the wrong player and are left out. The original build kept its host through both of its runs.

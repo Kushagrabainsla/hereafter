@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 12;
+const PROTOCOL_VERSION = 13;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
 type PosePacket = {
@@ -24,6 +24,8 @@ type PosePacket = {
   sliding?: boolean;
   airborne?: boolean;
   lean?: number;
+  // The player's tab is in the background, where its timers run once a second at most.
+  away?: boolean;
 };
 
 type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
@@ -61,6 +63,13 @@ const HANDOVER_RATIO = 0.6;
 const HANDOVER_GAIN_MS = 8;
 const HANDOVER_CHECKS = 3;
 const HANDOVER_SETTLE_MS = 30_000;
+// Every peer sends its position at least four times a second, so a coordinator unheard for this
+// long has gone or frozen: its tab crashed or closed, or its connection or computer dropped out.
+// Trystero notices only when the connection itself fails, which took 12 to 13 s, all that time
+// without shots. In six-player fights on one overloaded machine a coordinator froze for at most
+// 0.8 s; players went up to 2 s without hearing it only while frozen themselves.
+const HOST_SILENCE_MS = 2000;
+const SILENCE_CHECK_MS = 250;
 
 // Positions travel on a data channel of their own beside Trystero's, both peers opening it
 // with this id, so it needs no negotiation of its own.
@@ -70,14 +79,14 @@ const LANE_BACKLOG_BYTES = 8192;
 
 // A position on the lane, 25 bytes, little-endian: protocol (u8), sequence (u32), sent at
 // (f64 ms), east, north and jump height in centimetres (i16), heading in hundredths of a
-// degree (u16), pitch in hundredths (i16), lean in hundredths (i8) and movement flags (u8).
-// As text it was about 238 bytes.
+// degree (u16), pitch in hundredths (i16), lean in hundredths (i8) and flags (u8): movement,
+// and whether the player's tab is in the background. As text it was about 238 bytes.
 const POSITION_BYTES = 25;
-const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16 } as const;
+const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32 } as const;
 // A player whose position has not changed sends it this often instead of every 50 ms: often
 // enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
 const STILL_INTERVAL_MS = 250;
-const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean"] as const;
+const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away"] as const;
 // Standing on the ground, the height above it wavers by a centimetre from one frame to the
 // next, so a change of under 1.5 cm counts as none.
 const samePose = (a: PosePacket, b: PosePacket): boolean => POSE_FIELDS.every((key) => a[key] === b[key]) && Math.abs(a.jumpHeight - b.jumpHeight) < 0.015;
@@ -94,7 +103,7 @@ function encodePosition(packet: PosePacket): ArrayBuffer {
   view.setInt16(21, Math.round(packet.pitch * 100), true);
   view.setInt8(23, Math.round(Math.max(-1.27, Math.min(1.27, packet.lean ?? 0)) * 100));
   view.setUint8(24, (packet.moving ? FLAG.moving : 0) | (packet.running ? FLAG.running : 0) | (packet.crouching ? FLAG.crouching : 0)
-    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0));
+    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0) | (packet.away ? FLAG.away : 0));
   return view.buffer;
 }
 
@@ -108,7 +117,7 @@ function decodePosition(data: ArrayBuffer, map: string): PosePacket | null {
     east: view.getInt16(13, true) / 100, north: view.getInt16(15, true) / 100, jumpHeight: view.getInt16(17, true) / 100,
     heading: view.getUint16(19, true) / 100, pitch: view.getInt16(21, true) / 100, lean: view.getInt8(23) / 100,
     moving: (flags & FLAG.moving) !== 0, running: (flags & FLAG.running) !== 0, crouching: (flags & FLAG.crouching) !== 0,
-    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0,
+    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0, away: (flags & FLAG.away) !== 0,
   };
 }
 
@@ -134,7 +143,8 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && Number.isFinite(packet.jumpHeight) && (packet.jumpHeight ?? -1) >= 0 && (packet.jumpHeight ?? 11) <= 2.5
     && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean"
     && (packet.sliding === undefined || typeof packet.sliding === "boolean") && (packet.airborne === undefined || typeof packet.airborne === "boolean")
-    && (packet.lean === undefined || (Number.isFinite(packet.lean) && Math.abs(packet.lean) <= 1));
+    && (packet.lean === undefined || (Number.isFinite(packet.lean) && Math.abs(packet.lean) <= 1))
+    && (packet.away === undefined || typeof packet.away === "boolean");
 }
 
 function validAim(aim: unknown): boolean {
@@ -234,6 +244,14 @@ export class PeerRoom {
   // The coordinator whose state this peer holds: its changes apply only on top of its own state.
   private held = "";
   private syncAsked = { of: "", at: 0 };
+  // When each peer was last heard from, and the peers whose tabs are in the background.
+  private lastHeard = new Map<string, number>();
+  private away = new Set<string>();
+  private silenceTimer = 0;
+  private lastSilenceCheck = performance.now();
+  // The coordinator found unheard at the last check, if any.
+  private unheard = "";
+  private onVisibility = (): void => this.visibilityChanged();
 
   private reportPeers(): void {
     const members = [selfId, ...this.peers].sort();
@@ -297,6 +315,7 @@ export class PeerRoom {
       try { value = JSON.parse(raw) as SnapshotPacket; } catch { return; }
       if (!value || (!value.state && !value.delta)) return;
       if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || value.leader !== peerId) return;
+      this.lastHeard.set(peerId, performance.now());
       if (peerId !== this.leaderId && !(this.leaderId === selfId && Date.now() < this.handoffUntil)) return;
       // The first whole state from a new coordinator replaces what this peer held, whatever
       // its revision; changes it cannot place on what it holds, it asks to have resent whole.
@@ -320,6 +339,7 @@ export class PeerRoom {
     this.room.onPeerJoin = (peerId) => {
       const wasLeader = this.leaderId === selfId;
       this.peers.add(peerId);
+      this.lastHeard.set(peerId, performance.now());
       this.openLane(peerId);
       // Every peer tells a newcomer whom it follows; the coordinator also sends its state.
       void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: this.leaderId, epoch: this.epoch }, { target: peerId }).catch(() => undefined);
@@ -341,6 +361,8 @@ export class PeerRoom {
       this.match.removePose(peerId);
       this.fitness.delete(peerId);
       this.announced.delete(peerId);
+      this.lastHeard.delete(peerId);
+      this.away.delete(peerId);
       this.events.onPeerLeave(peerId);
       // A coordinator that leaves is succeeded by the lowest id left, at the same epoch.
       if (peerId === this.leaderId) this.setLeader([selfId, ...this.peers].sort()[0]);
@@ -352,15 +374,20 @@ export class PeerRoom {
     this.events.onStatus("Waiting for a friend to join…");
     this.probeLag();
     this.fitnessTimer = window.setInterval(() => void this.checkFitness(), FITNESS_MS);
+    this.silenceTimer = window.setInterval(() => this.checkSilence(), SILENCE_CHECK_MS);
+    document.addEventListener("visibilitychange", this.onVisibility);
   }
 
   private receivePose(value: unknown, peerId: string): void {
     if (!this.peers.has(peerId) || !validPose(value, this.expectedMap)) return;
+    const now = performance.now();
+    this.lastHeard.set(peerId, now);
     const half = this.arena.sizeMeters / 2 + 0.5;
     if (Math.abs(value.east) > half || Math.abs(value.north) > half) return;
     const previous = this.lastSequence.get(peerId) ?? -1;
     if (value.sequence <= previous) return;
-    const now = performance.now();
+    if (value.away) this.away.add(peerId);
+    else this.away.delete(peerId);
     // A player can only have run so far since the last position accepted from them, timed by
     // their own clock, so positions missing in between are no reason to doubt the next one.
     // After a silence of over 1.5 s, as when a connection stalls, the next position is taken
@@ -518,6 +545,52 @@ export class PeerRoom {
     this.setLeader(to);
   }
 
+  // Who should coordinate instead of `gone`: the lowest id among this peer and the peers heard
+  // from lately, preferring those whose tabs are in front. Null if no one qualifies.
+  private successor(gone: string, includeSelf: boolean): string | null {
+    const now = performance.now();
+    const live = [...(includeSelf ? [selfId] : []), ...this.peers].filter((id) => id !== gone
+      && (id === selfId || now - (this.lastHeard.get(id) ?? -Infinity) < HOST_SILENCE_MS));
+    const present = live.filter((id) => !(id === selfId ? document.hidden : this.away.has(id)));
+    return (present.length ? present : includeSelf ? live : []).sort()[0] ?? null;
+  }
+
+  // A coordinator unheard for two seconds has gone: the lowest live peer takes over at the next
+  // epoch, as if it had left, and everyone follows the announcement.
+  private checkSilence(): void {
+    const now = performance.now(), gap = now - this.lastSilenceCheck, leader = this.leaderId;
+    this.lastSilenceCheck = now;
+    // After a stall of this page's own, the messages that arrived meanwhile are read only after
+    // this check, so a coordinator counts as gone only if it is still unheard at the next.
+    const silent = gap <= 1500 && leader !== selfId && this.peers.has(leader) && now - (this.lastHeard.get(leader) ?? now) >= HOST_SILENCE_MS;
+    const confirmed = silent && this.unheard === leader;
+    this.unheard = silent ? leader : "";
+    if (!confirmed) return;
+    // A peer that hears none of the others has lost its own connection, not the coordinator.
+    const others = [...this.peers].filter((id) => id !== leader);
+    if (others.length && !others.some((id) => now - (this.lastHeard.get(id) ?? -Infinity) < HOST_SILENCE_MS)) return;
+    const next = this.successor(leader, true);
+    if (!next) return;
+    this.epoch += 1;
+    void this.leaderAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: next, epoch: this.epoch }).catch(() => undefined);
+    this.setLeader(next);
+  }
+
+  // A tab in the background runs its timers once a second at most, and none of its frames, so
+  // its coordinator hands over at once to a peer whose tab is in front; before, it held on for
+  // 14 s until its slowness showed. Its position goes out now, saying it is away.
+  private visibilityChanged(): void {
+    if (this.lastPose) {
+      this.lastPose = { ...this.lastPose, sequence: ++this.sequence, sentAt: Date.now(), away: document.hidden };
+      this.lastPoseAt = performance.now();
+      this.heldPose = null;
+      this.transmitPose(this.lastPose);
+    }
+    if (!document.hidden || this.leaderId !== selfId) return;
+    const next = this.successor(selfId, false);
+    if (next) this.handOver(next);
+  }
+
   // Asks the coordinator for its whole state, at most once every two seconds.
   private askSync(leader: string): void {
     const now = performance.now();
@@ -613,6 +686,7 @@ export class PeerRoom {
       sliding: pose.sliding === true,
       airborne: pose.airborne === true,
       lean: round(pose.lean ?? 0),
+      away: document.hidden,
     };
     // Standing still, a player sends the same position only every quarter second. When they
     // move again, the position they held goes out first, stamped at the moment before, so
@@ -655,12 +729,19 @@ export class PeerRoom {
     this.fitnessAction.onMessage = null;
     window.clearTimeout(this.lagTimer);
     window.clearInterval(this.fitnessTimer);
+    window.clearInterval(this.silenceTimer);
+    document.removeEventListener("visibilitychange", this.onVisibility);
     this.room.onPeerJoin = null;
     this.room.onPeerLeave = null;
     window.clearTimeout(this.broadcastTimer);
     this.sent = null;
     for (const peerId of [...this.lanes.keys()]) this.closeLane(peerId);
-    await this.room.leave();
+    // Trystero's goodbye goes out now, and it closes the connections 99 ms later; a tab being
+    // closed is gone by then, and its peers waited 12 s to notice. A connection closed now
+    // tells the peer at the other end at once.
+    const leaving = this.room.leave();
+    for (const connection of Object.values(this.room.getPeers())) connection.close();
+    await leaving;
     this.peers.clear();
     this.lastSequence.clear();
     this.lastAcceptedPose.clear();

@@ -593,7 +593,8 @@ window.setInterval(() => {
     respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : "Press Enter to respawn";
   }
 }, 100);
-window.addEventListener("beforeunload", () => { void peerRoom?.leave(); });
+// Mobile browsers often skip beforeunload when a page goes away; pagehide comes in either case.
+for (const event of ["beforeunload", "pagehide"]) window.addEventListener(event, () => { void peerRoom?.leave(); });
 
 void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
