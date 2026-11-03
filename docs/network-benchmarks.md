@@ -270,4 +270,4 @@ Each row compares the build just before the step that changed it, which behaved 
 | Shots lost in ten handovers | 5 to 11 | 0 |
 | Upload of a running player, per other player | about 1.9 KB/s | about 2.9 KB/s |
 
-On the live site after the last step, three players joined from invite links and a closed tab was dropped by the others in 15 to 360 ms over five checks. What these steps could not change here: on this machine the first frame builds every shader before drawing, which holds the page still for about 20 s, and a TURN relay for networks that block direct connections needs an account whose password would be public in the site's code.
+On the live site, after each step from the goodbye on, three players joined from invite links and the other two dropped a closed tab in 15 to 380 ms, over six checks. What these steps could not change here: on this machine the first frame builds every shader before drawing, which holds the page still for about 20 s, and a TURN relay for networks that block direct connections needs an account whose password would be public in the site's code.
