@@ -93,7 +93,7 @@ const POSITION_BYTES = 25;
 // A single byte, the protocol, on the lane: the sender is leaving the room.
 const GOODBYE = Uint8Array.of(PROTOCOL_VERSION);
 const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32 } as const;
-// A player whose position has not changed sends it this often instead of every 50 ms: often
+// A player whose position has not changed sends it this often instead of every 33 ms: often
 // enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
 const STILL_INTERVAL_MS = 250;
 const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away"] as const;

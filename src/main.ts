@@ -577,7 +577,7 @@ window.setInterval(() => {
   const pose = viewer.playerPose();
   match.setPose(selfId, pose);
   peerRoom?.sendPose(pose);
-}, 50);
+}, 33);
 
 window.setInterval(() => {
   if (!viewer || !match) return;

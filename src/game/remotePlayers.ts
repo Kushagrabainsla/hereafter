@@ -10,9 +10,14 @@ import { PlayerModelLibrary, type PlayerModelInstance } from "./playerModel";
 import { CharacterRagdoll } from "./ragdoll";
 import { type PhysicsWorld, type Vec3 } from "../world/physics";
 
-// Other players are drawn this far behind their latest pose, interpolating between pose
-// packets placed on the sender's own clock, so they move smoothly despite network jitter.
-const INTERP_DELAY_MS = 100;
+// Other players are drawn behind their latest pose, interpolating between pose packets placed
+// on the sender's own clock, so they move smoothly despite network jitter. Each is drawn just
+// far enough behind that its next pose has almost always arrived: the time between its poses
+// while it moves, plus how late nine in ten of its last 64 poses arrived beyond the quickest.
+// A fixed 100 ms drew everyone that far in the past however steady the connection. The delay
+// follows a change at a tenth of real time, so a player's motion never jumps.
+const MIN_DELAY_MS = 40;
+const MAX_DELAY_MS = 150;
 const EXTRAPOLATE_MS = 100;
 
 interface PoseSample { time: number; pose: PlayerPose }
@@ -47,6 +52,12 @@ interface RemoteAvatar {
   // Smallest observed (receive clock - send clock), relaxed slowly so clock drift is followed.
   offset: number | null;
   offsetAt: number;
+  // How late recent poses arrived beyond the quickest, the gaps between poses sent while
+  // moving, the delay they call for and the delay drawn now, in ms.
+  lateness: number[];
+  gaps: number[];
+  targetDelay: number;
+  delay: number;
   displayTime: number;
   // Animation time owed while the player was off screen or skipped for distance, and a slot
   // that spreads the skipped frames of distant players across frames.
@@ -114,7 +125,7 @@ function createAvatar(peerId: string): RemoteAvatar {
   return { root, mannequin, model: null, tint: new Color().setHSL(hue, 0.5, 0.78), head, leftArm, rightArm, leftLeg, rightLeg, pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
-  }, heading: 0, stride: 0, weapons, samples: [], offset: null, offsetAt: 0, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
+  }, heading: 0, stride: 0, weapons, samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
 }
 
 export class RemotePlayers {
@@ -187,6 +198,17 @@ export class RemotePlayers {
     avatar.offset = avatar.offset === null ? observed : Math.min(observed, avatar.offset + (now - avatar.offsetAt) * 0.02);
     avatar.offsetAt = now;
     const samples = avatar.samples;
+    avatar.lateness.push(observed - avatar.offset);
+    if (avatar.lateness.length > 64) avatar.lateness.shift();
+    // A player standing still sends a pose only every quarter second; those gaps say nothing
+    // about how far apart its poses come while it moves.
+    const gap = samples.length ? sentAt - samples[samples.length - 1].time : 0;
+    if (gap > 0 && gap < 150) {
+      avatar.gaps.push(gap);
+      if (avatar.gaps.length > 16) avatar.gaps.shift();
+    }
+    const late = [...avatar.lateness].sort((a, b) => a - b), gaps = [...avatar.gaps].sort((a, b) => a - b);
+    avatar.targetDelay = Math.min(MAX_DELAY_MS, Math.max(MIN_DELAY_MS, (gaps[gaps.length >> 1] ?? 50) + late[Math.floor(late.length * 0.9)]));
     if (!samples.length || sentAt > samples[samples.length - 1].time) samples.push({ time: sentAt, pose });
     while (samples.length > 2 && samples[0].time < sentAt - 1500) samples.shift();
     avatar.pose = pose;
@@ -350,7 +372,8 @@ export class RemotePlayers {
         }
         continue;
       }
-      avatar.displayTime = Date.now() - (avatar.offset ?? 0) - INTERP_DELAY_MS;
+      avatar.delay += Math.max(-100 * delta, Math.min(100 * delta, avatar.targetDelay - avatar.delay));
+      avatar.displayTime = Date.now() - (avatar.offset ?? 0) - avatar.delay;
       const pose = this.interpolated(avatar);
       root.position.set(pose.east, terrainHeight(this.data, pose.east, pose.north) + pose.jumpHeight, pose.north);
       if (delta > 0) avatar.velocity.lerp(root.position.clone().sub(avatar.previous).divideScalar(delta), 0.3);

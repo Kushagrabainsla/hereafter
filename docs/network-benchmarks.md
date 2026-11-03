@@ -220,3 +220,22 @@ Two players already in the game meeting by room code, the second typing the code
 | Playing together | 1.13, 1.09, 0.96, 0.95 s | 0.26, 0.30, 0.32, 0.29 s |
 
 A friend opening an invite link connects while the world loads, so there the gain is hidden behind loading.
+
+### 4. Drawing other players closer to now
+
+Each player now sends its position 30 times a second instead of 20, and draws every other player only as far behind that player's newest position as the connection needs: the time between its positions while it moves, plus how late nine in ten of its last 64 arrived beyond the quickest, between 40 and 150 ms. It was a fixed 100 ms. The delay changes at a tenth of real time, so nobody's motion jumps when it does.
+
+To measure it, every player runs a circle of its own at a steady 4.8 m/s, moved every 16 ms as a function of the shared clock, so each viewer knows where each other player really is at every moment. Each viewer records, every frame, how far behind now it draws each other player, how far the drawn body is from where that player really is, and how often drawing runs past the newest position (extrapolating) or past the 100 ms limit on that (frozen). Three players, three runs each, alternating, and one run each with six players:
+
+| | Step 3 | Step 4 |
+|---|---|---|
+| Three players: drawn behind now, typical / 1 in 20 | 109 to 110 / 117 to 119 ms | 47 / 52 to 55 ms |
+| Three players: drawn body from the real one, typical / 1 in 20 | 53 to 54 / 58 to 59 cm | 24 to 25 / 28 to 31 cm |
+| Three players: frames extrapolating / frozen | 0% / 0% | 0.2 to 0.3% / 0 to 0.07% |
+| Three players: each player's upload | 3.8 to 4.1 KB/s | 5.7 to 6.0 KB/s |
+| Six players (7 to 10 frames a second): drawn behind now | 115 / 125 ms | 48 / 56 ms |
+| Six players: drawn body from the real one | 57 / 63 cm | 25 / 30 cm |
+| Six players: frames extrapolating / frozen | 0% / 0% | 0.4% / 0% |
+| Six players: each player's upload | 9.5 KB/s | 14.3 KB/s |
+
+Other players are drawn about 60 ms nearer the present, which puts a running player about 30 cm nearer where they really are, and the shooter's aim is checked against that same moment. One step 4 run had a single frame 47 m out, where a player had briefly frozen. Running players send half as much again; standing still they send what they did before, four positions a second.
