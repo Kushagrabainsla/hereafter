@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 14;
+const PROTOCOL_VERSION = 15;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
@@ -96,6 +96,9 @@ const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, aw
 // A player whose position has not changed sends it this often instead of every 33 ms: often
 // enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
 const STILL_INTERVAL_MS = 250;
+// Intents sent this recently go again to a new coordinator: one that reached the last as it
+// handed over, or never reached it because it had gone, was lost.
+const RESEND_MS = 300;
 const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away"] as const;
 // Standing on the ground, the height above it wavers by a centimetre from one frame to the
 // next, so a change of under 1.5 cm counts as none.
@@ -212,7 +215,10 @@ export class PeerRoom {
   private heldPose: PosePacket | null = null;
   private lastIntentSequence = new Map<string, number>();
   private sequence = 0;
-  private intentSequence = 0;
+  // Intent numbers carry on from the clock, so a player rejoining a room whose coordinator still
+  // holds the number of its last intent is never taken to be repeating itself.
+  private intentSequence = Date.now();
+  private pendingIntents: { sequence: number; intent: CombatIntent; at: number }[] = [];
   private sending = false;
   private failed = false;
   private expectedMap: string;
@@ -331,10 +337,9 @@ export class PeerRoom {
         || !Number.isSafeInteger(value.sequence) || !validIntent(value.intent)) return;
       if (value.sequence <= (this.lastIntentSequence.get(peerId) ?? -1)) return;
       this.lastIntentSequence.set(peerId, value.sequence);
-      if (this.match.apply(peerId, value.intent)) {
-        if (value.intent.kind === "respawn") this.lastAcceptedPose.delete(peerId);
-        this.broadcastSnapshot();
-      }
+      if (!this.match.handle(peerId, value.sequence)) return;
+      if (this.match.apply(peerId, value.intent) && value.intent.kind === "respawn") this.lastAcceptedPose.delete(peerId);
+      this.broadcastSnapshot();
     };
     this.snapshotAction.onMessage = (raw, { peerId }) => {
       if (!this.match) return;
@@ -493,8 +498,20 @@ export class PeerRoom {
       this.held = "";
       this.leadingSince = performance.now();
       for (const peerId of this.peers) this.match?.ensurePlayer(peerId);
+      // This peer's own intents that the last coordinator may not have handled, it handles now.
+      for (const sent of this.unhandledIntents()) if (this.match?.handle(selfId, sent.sequence)) this.match.apply(selfId, sent.intent);
       window.setTimeout(() => this.broadcastSnapshot(), 500);
-    } else this.askSync(next);
+    } else {
+      this.askSync(next);
+      for (const sent of this.unhandledIntents()) void this.intentAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, sequence: sent.sequence, intent: sent.intent }, { target: next }).catch(() => undefined);
+    }
+  }
+
+  // Intents sent in the last RESEND_MS that the state this peer holds does not show handled.
+  private unhandledIntents(): { sequence: number; intent: CombatIntent }[] {
+    const now = performance.now(), handled = this.match?.player(selfId)?.intent ?? 0;
+    this.pendingIntents = this.pendingIntents.filter((sent) => now - sent.at < RESEND_MS);
+    return this.pendingIntents.filter((sent) => sent.sequence > handled);
   }
 
   private probeLag(): void {
@@ -684,7 +701,9 @@ export class PeerRoom {
       if (this.match.apply(selfId, intent)) this.broadcastSnapshot();
       return;
     }
-    void this.intentAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, sequence: ++this.intentSequence, intent }, { target: this.leaderId }).catch(() => undefined);
+    const sequence = ++this.intentSequence, now = performance.now();
+    this.pendingIntents = [...this.pendingIntents.filter((sent) => now - sent.at < RESEND_MS), { sequence, intent, at: now }];
+    void this.intentAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, sequence, intent }, { target: this.leaderId }).catch(() => undefined);
   }
 
   tickCombat(): void {

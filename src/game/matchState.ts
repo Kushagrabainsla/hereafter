@@ -24,6 +24,9 @@ export interface CombatPlayer {
   respawnAfter: number;
   kills: number;
   deaths: number;
+  // The newest intent the coordinator has handled from this player, by its number, so a new
+  // coordinator never handles again one the last already did.
+  intent: number;
 }
 
 export type CombatIntent =
@@ -87,7 +90,7 @@ export interface Drop { id: string; weapon: GunKind; gun: boolean; rounds: numbe
 export interface LiveGrenade { id: number; actor: string; explodeAt: number; position: Vec3; entity?: string; smoke?: boolean }
 
 export interface CombatSnapshot {
-  version: 6;
+  version: 7;
   revision: number;
   eventSeq: number;
   players: Record<string, CombatPlayer>;
@@ -199,7 +202,7 @@ function validDrop(drop: Drop): boolean {
 
 // Every life starts with only the knife and grenades: guns and ammunition are found.
 function freshPlayer(): CombatPlayer {
-  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0 };
+  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0 };
 }
 
 function validPlayer(player: CombatPlayer): boolean {
@@ -213,7 +216,8 @@ function validPlayer(player: CombatPlayer): boolean {
     && Number.isFinite(player.reloadUntil) && player.reloadUntil >= 0
     && Number.isFinite(player.respawnAfter) && player.respawnAfter >= 0
     && Number.isSafeInteger(player.kills) && player.kills >= 0
-    && Number.isSafeInteger(player.deaths) && player.deaths >= 0;
+    && Number.isSafeInteger(player.deaths) && player.deaths >= 0
+    && Number.isSafeInteger(player.intent) && player.intent >= 0;
 }
 
 const PLAYER_FIELDS = Object.keys(freshPlayer());
@@ -221,7 +225,7 @@ const PLAYER_FIELDS = Object.keys(freshPlayer());
 const checkEvents = (events: CombatEvent[]): CombatEvent[] => events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
 
 function emptySnapshot(): CombatSnapshot {
-  return { version: 6, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, events: [] };
+  return { version: 7, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, events: [] };
 }
 
 // The fields of value whose text differs from `before`, which is brought up to date; null if none.
@@ -325,7 +329,7 @@ export class MatchState {
   // Takes a coordinator's whole state. With force it replaces this one whatever their
   // revisions, as when a new coordinator takes over.
   adopt(incoming: CombatSnapshot, force = false): boolean {
-    if (!incoming || incoming.version !== 6 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
+    if (!incoming || incoming.version !== 7 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
       || !incoming.players || typeof incoming.players !== "object" || !incoming.entities || SHARED_PARTS.some((key) => !incoming[key]) || !Array.isArray(incoming.events)) return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
     if (!force && (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers))) return false;
@@ -425,14 +429,23 @@ export class MatchState {
     return parts;
   }
 
+  // Notes the newest intent handled from a player; false if this one was handled already.
+  handle(actor: string, sequence: number): boolean {
+    const player = this.snapshot.players[actor];
+    if (!player || sequence <= player.intent) return false;
+    player.intent = sequence;
+    this.snapshot.revision += 1;
+    return true;
+  }
+
   apply(actor: string, intent: CombatIntent, now = Date.now()): boolean {
     this.now = now;
     const player = this.snapshot.players[actor];
     if (!player) return false;
     if (intent.kind === "respawn") {
       if (player.health > 0 || now < player.respawnAfter) return false;
-      const { kills, deaths } = player;
-      Object.assign(player, freshPlayer(), { kills, deaths });
+      const { kills, deaths, intent: handled } = player;
+      Object.assign(player, freshPlayer(), { kills, deaths, intent: handled });
       this.removePose(actor);
       this.emit({ kind: "respawn", actor });
       this.changed();

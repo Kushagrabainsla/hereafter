@@ -239,3 +239,16 @@ To measure it, every player runs a circle of its own at a steady 4.8 m/s, moved 
 | Six players: each player's upload | 9.5 KB/s | 14.3 KB/s |
 
 Other players are drawn about 60 ms nearer the present, which puts a running player about 30 cm nearer where they really are, and the shooter's aim is checked against that same moment. One step 4 run had a single frame 47 m out, where a player had briefly frozen. Running players send half as much again; standing still they send what they did before, four positions a second.
+
+### 5. Keeping shots through a handover
+
+An attack that reached the host just after it had handed the role over, or a host that had gone, was dropped. Now each player sends again to a new host its intents from the last 300 ms that the match it holds does not show handled. The match records the number of the last intent the host handled from each player, so a new host never handles one twice.
+
+Three players fired a carbine into the ground every 300 ms, magazines kept full, for 10 s with no handover, then while the host handed the role to the next player every 3 s, ten times. An attack counts as lost if no player received it while hosting; one received and refused, for coming too soon after the last, is not lost. Three runs each, alternating:
+
+| Shots lost | Step 4 | Step 5 |
+|---|---|---|
+| 10 s, no handover (about 68 sent) | 0, 0, 0 | 0, 0, 0 |
+| Ten handovers (230 to 238 sent) | 11, 5, 5 | 0, 0, 0 |
+
+Every run ended with all three players following one host and holding the same players. Before handing over, a host sends out its last changes, and on the ordered channel they arrive before the handover, so each player knew exactly which of its intents had been handled and resent only those that had not; a fourth run counted no resent intent turned away as already handled. When a host vanishes instead, its last changes may never arrive, and the record in the match is what stops a repeat. Intents older than 300 ms are not sent again, so a vanished host still costs the shots of the two seconds before it is noticed.
