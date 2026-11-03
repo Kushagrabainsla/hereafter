@@ -156,7 +156,7 @@ When a tab crashed, the browser reported the connection "disconnected" after 5 t
 
 ### 1. Noticing a lost host
 
-Every player now notes when it last heard from each other player. Positions come at least four times a second, so a host unheard for 2 s, and still unheard at the next check a quarter of a second later, has gone: the player that notices names the next host and the others follow. A closing tab now closes its connections at once, which tells the others immediately, and a host whose tab goes to the background hands the role to a player whose tab is in front. [Multiplayer notes](multiplayer.md) give the rules.
+Every player now notes when it last heard from each other player. Positions come at least four times a second, so a host unheard for 2 s, and still unheard at the next check a quarter of a second later, has gone: the player that notices names the next host and the others follow. A host whose tab goes to the background hands the role to a player whose tab is in front, and a closing tab goes to the background first, so a closing host hands over before it goes. A leaving page also says goodbye with one byte on each position lane, and the others drop it as soon as that arrives. [Multiplayer notes](multiplayer.md) give the rules.
 
 | Host lost (three players) | Before | After |
 |---|---|---|
@@ -167,3 +167,13 @@ Every player now notes when it last heard from each other player. Positions come
 The crash runs of the final rule ran on their own; a first version without the second check, run side by side with the original, took 1.94 to 2.00 s, and the original's time is set by fixed waits in the browser and Trystero. A host frozen for 1.5 s kept the role, and one frozen for 3 s lost it, after which all three players, the old host among them, followed the new host and held the same players.
 
 In the six-player benchmark the traffic did not change: each player sent 1.9 to 2.2 KB/s standing still and 9.2 to 9.4 KB/s running, in both builds. During the fights a player went at most 0.45 to 1.97 s without hearing the host, and most of each player's longest wait was its own page freezing; the host itself froze for at most 0.8 s in a fight. The new rule moved the role once in each of three runs, always outside the measured fight. In the run timed to the moment, the host's page froze for 3.6 s just after every player was given a carbine, most likely drawing six carbines for the first time on an overloaded machine, and the role moved 2.3 s into that freeze; the old host followed the new one when it recovered. Because the role moved just before the fight, the host upload figures of those runs belong to the wrong player and are left out. The original build kept its host through both of its runs.
+
+A player who is not the host, gone from a three-player room, is dropped by the other two after (one run before, two after; where the two differed, both):
+
+| How the player goes | Before | After |
+|---|---|---|
+| Leaves the room, the tab staying open | 0.17 s | 0.11 s; 0.11 s |
+| Its tab is closed | 14.2 s | 0.02 and 0.36 s; 0.42 s |
+| Its page is closed, running its unload handlers | 2.0 s | 0.004 s; 0.37 s |
+
+Until it is dropped, its body stands where it was. The first version of this step closed the connections at once without a goodbye; that dropped a closed tab in 2.7 s, but cut off Trystero's own goodbye when a player left the room, which then took 0.5 to 1.2 s.

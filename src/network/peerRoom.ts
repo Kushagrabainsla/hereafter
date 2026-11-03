@@ -82,6 +82,8 @@ const LANE_BACKLOG_BYTES = 8192;
 // degree (u16), pitch in hundredths (i16), lean in hundredths (i8) and flags (u8): movement,
 // and whether the player's tab is in the background. As text it was about 238 bytes.
 const POSITION_BYTES = 25;
+// A single byte, the protocol, on the lane: the sender is leaving the room.
+const GOODBYE = Uint8Array.of(PROTOCOL_VERSION);
 const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32 } as const;
 // A player whose position has not changed sends it this often instead of every 50 ms: often
 // enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
@@ -352,30 +354,33 @@ export class PeerRoom {
       this.reportPeers();
       this.events.onStatus(`${this.peers.size + 1} players connected directly.`);
     };
-    this.room.onPeerLeave = (peerId) => {
-      this.peers.delete(peerId);
-      this.closeLane(peerId);
-      this.lastSequence.delete(peerId);
-      this.lastAcceptedPose.delete(peerId);
-      this.lastIntentSequence.delete(peerId);
-      this.match.removePose(peerId);
-      this.fitness.delete(peerId);
-      this.announced.delete(peerId);
-      this.lastHeard.delete(peerId);
-      this.away.delete(peerId);
-      this.events.onPeerLeave(peerId);
-      // A coordinator that leaves is succeeded by the lowest id left, at the same epoch.
-      if (peerId === this.leaderId) this.setLeader([selfId, ...this.peers].sort()[0]);
-      else this.broadcastSnapshot();
-      this.reportPeers();
-      this.events.onStatus(this.peers.size ? `${this.peers.size + 1} players connected directly.` : "Waiting for a friend to join…");
-    };
+    this.room.onPeerLeave = (peerId) => this.dropPeer(peerId);
     this.reportPeers();
     this.events.onStatus("Waiting for a friend to join…");
     this.probeLag();
     this.fitnessTimer = window.setInterval(() => void this.checkFitness(), FITNESS_MS);
     this.silenceTimer = window.setInterval(() => this.checkSilence(), SILENCE_CHECK_MS);
     document.addEventListener("visibilitychange", this.onVisibility);
+  }
+
+  // A peer that has left, by Trystero's account or by its own goodbye, whichever comes first.
+  private dropPeer(peerId: string): void {
+    if (!this.peers.delete(peerId)) return;
+    this.closeLane(peerId);
+    this.lastSequence.delete(peerId);
+    this.lastAcceptedPose.delete(peerId);
+    this.lastIntentSequence.delete(peerId);
+    this.match.removePose(peerId);
+    this.fitness.delete(peerId);
+    this.announced.delete(peerId);
+    this.lastHeard.delete(peerId);
+    this.away.delete(peerId);
+    this.events.onPeerLeave(peerId);
+    // A coordinator that leaves is succeeded by the lowest id left, at the same epoch.
+    if (peerId === this.leaderId) this.setLeader([selfId, ...this.peers].sort()[0]);
+    else this.broadcastSnapshot();
+    this.reportPeers();
+    this.events.onStatus(this.peers.size ? `${this.peers.size + 1} players connected directly.` : "Waiting for a friend to join…");
   }
 
   private receivePose(value: unknown, peerId: string): void {
@@ -425,6 +430,7 @@ export class PeerRoom {
       const lane = connection.createDataChannel("positions", { negotiated: true, id: POSITION_LANE_ID, ordered: false, maxRetransmits: 0 });
       lane.binaryType = "arraybuffer";
       lane.onmessage = ({ data }) => {
+        if (data instanceof ArrayBuffer && data.byteLength === 1 && new Uint8Array(data)[0] === PROTOCOL_VERSION) { this.dropPeer(peerId); return; }
         const value = data instanceof ArrayBuffer ? decodePosition(data, this.expectedMap) : null;
         if (value) this.receivePose(value, peerId);
       };
@@ -735,10 +741,12 @@ export class PeerRoom {
     this.room.onPeerLeave = null;
     window.clearTimeout(this.broadcastTimer);
     this.sent = null;
+    // Trystero's goodbye goes out once its message is ready, and it closes the connections 99 ms
+    // later; a tab being closed is gone by then, and its peers waited 12 to 14 s to notice, until
+    // the connection failed. A goodbye on each lane goes out at once, and closing the connections
+    // now tells the peers at the other end within a few seconds if the goodbye is lost.
+    for (const lane of this.lanes.values()) if (lane.readyState === "open") lane.send(GOODBYE);
     for (const peerId of [...this.lanes.keys()]) this.closeLane(peerId);
-    // Trystero's goodbye goes out now, and it closes the connections 99 ms later; a tab being
-    // closed is gone by then, and its peers waited 12 s to notice. A connection closed now
-    // tells the peer at the other end at once.
     const leaving = this.room.leave();
     for (const connection of Object.values(this.room.getPeers())) connection.close();
     await leaving;
