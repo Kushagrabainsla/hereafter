@@ -252,3 +252,22 @@ Three players fired a carbine into the ground every 300 ms, magazines kept full,
 | Ten handovers (230 to 238 sent) | 11, 5, 5 | 0, 0, 0 |
 
 Every run ended with all three players following one host and holding the same players. Before handing over, a host sends out its last changes, and on the ordered channel they arrive before the handover, so each player knew exactly which of its intents had been handled and resent only those that had not; a fourth run counted no resent intent turned away as already handled. When a host vanishes instead, its last changes may never arrive, and the record in the match is what stops a repeat. Intents older than 300 ms are not sent again, so a vanished host still costs the shots of the two seconds before it is noticed.
+
+### Connection layer: before and after
+
+Each row compares the build just before the step that changed it, which behaved as the original did in that respect, with the build after it.
+
+| | Before | After |
+|---|---|---|
+| Host's tab crashes: the others play again after | 11.8 to 13.1 s | 2.0 to 2.25 s |
+| Host's tab is closed | 11.7 to 13.2 s | 0.02 to 0.2 s |
+| Host's tab goes to the background: the role moves after | 14.3 to 16.4 s | 0.3 to 0.4 s |
+| A player who is not the host closes its tab: dropped after | 14.2 s | 0.02 to 0.42 s |
+| A friend's first visit at 25 Mbit/s: playing after the world loads | 2.1 to 2.2 s | 0.34 to 0.41 s |
+| Two players in the game meeting by room code | 0.95 to 1.13 s | 0.26 to 0.32 s |
+| Other players drawn behind now (three players; six) | 109 to 110 ms; 115 ms | 47 ms; 48 ms |
+| Drawn body from where the player really is (three; six) | 53 to 54 cm; 57 cm | 24 to 25 cm; 25 cm |
+| Shots lost in ten handovers | 5 to 11 | 0 |
+| Upload of a running player, per other player | about 1.9 KB/s | about 2.9 KB/s |
+
+On the live site after the last step, three players joined from invite links and a closed tab was dropped by the others in 15 to 360 ms over five checks. What these steps could not change here: on this machine the first frame builds every shader before drawing, which holds the page still for about 20 s, and a TURN relay for networks that block direct connections needs an account whose password would be public in the site's code.
