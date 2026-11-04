@@ -15,7 +15,7 @@ Nodes the game drives, each with its origin where it moves from:
   wheel_fl ... wheel_rr  wheels, at the axle centre
   propane_a, propane_b   propane cylinders, at their centres
   glass_serving, glass_windshield, glass_cab_left, glass_cab_right   breakable glass
-  roof_sign, menu_board  planes the game paints with canvas signs
+  roof_sign, menu_board  the lit roof sign and the menu board, modelled with their lettering
   interior_light         ceiling panels
 """
 
@@ -95,7 +95,15 @@ def make_materials():
     material("seat", 0x2a2a2c, 0.0, 0.8)
     material("propane", 0xe8e8e2, 0.3, 0.4)
     material("plate", 0xf4f2ea, 0.1, 0.5)
-    material("sign", 0xffffff, 0.0, 0.6)
+    # The backlit roof sign and the menu board, lit by their own glow.
+    material("sign_face", 0x1d7a73, 0.0, 0.5, emit=0x1d7a73, strength=0.9)
+    material("sign_ink", 0xfff4dc, 0.0, 0.45, emit=0xfff4dc, strength=1.2)
+    material("menu_face", 0x1b1d1c, 0.0, 0.85, emit=0x1b1d1c, strength=0.3)
+    material("menu_gold", 0xc9a46a, 0.6, 0.4, emit=0xc9a46a, strength=0.35)
+    material("menu_title", 0xffe9b0, 0.0, 0.5, emit=0xffe9b0, strength=1.0)
+    material("menu_ink", 0xf4f0e6, 0.0, 0.5, emit=0xf4f0e6, strength=0.85)
+    material("menu_price", 0x7dd3c0, 0.0, 0.5, emit=0x7dd3c0, strength=0.85)
+    material("menu_note", 0xff8a5c, 0.0, 0.5, emit=0xff8a5c, strength=0.85)
     material("box_red", 0xc0392b, 0.0, 0.6)
     material("box_white", 0xeeeeea, 0.0, 0.6)
     material("box_green", 0x3f7a3a, 0.0, 0.6)
@@ -217,8 +225,16 @@ def set_origin(obj, point):
     return obj
 
 
-def text(name, body, size, location, rotation, mat, extrude=0.004, align="CENTER"):
+# The sign font the asset pipeline letters signs with (scripts/assets/fetch.sh), if fetched.
+SIGN_FONT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets-src", "fonts", "BebasNeue-Regular.ttf")
+
+
+def text(name, body, size, location, rotation, mat, extrude=0.004, align="CENTER", font=None, resolution=None):
     curve = bpy.data.curves.new(name, "FONT")
+    if resolution:
+        curve.resolution_u = resolution
+    if font and os.path.exists(font):
+        curve.font = bpy.data.fonts.load(font, check_existing=True)
     curve.body = body
     curve.size = size
     curve.extrude = extrude
@@ -429,9 +445,47 @@ def roof():
     return join(parts, "roof")
 
 
+def frame(name, x0, x1, z0, z1, y0, y1, width, mat):
+    """A flat border of four bars round a panel, standing proud of it from y0 to y1."""
+    return [box(f"{name}_b", x0, x1, y0, y1, z0, z0 + width, mat), box(f"{name}_t", x0, x1, y0, y1, z1 - width, z1, mat),
+            box(f"{name}_l", x0, x0 + width, y0, y1, z0, z1, mat), box(f"{name}_r", x1 - width, x1, y0, y1, z0, z1, mat)]
+
+
+MENU = [("Pork belly bao", "6"), ("Chicken katsu", "6"), ("Tofu bao", "5"), ("Bao fries", "4"), ("Dumplings (6)", "7"), ("Milk tea", "5"), ("Lychee soda", "4")]
+
+
+def roof_sign():
+    """The backlit roof sign: a teal panel in a cream border, its name in raised cream letters."""
+    y, x0, x1, z0, z1 = -0.865, -2.7, -0.2, ROOF + 0.15, ROOF + 0.67
+    face = box("roof_sign_face", x0, x1, y - 0.006, y + 0.006, z0, z1, "sign_face")
+    border = frame("roof_sign_border", x0 + 0.03, x1 - 0.03, z0 + 0.03, z1 - 0.03, y - 0.012, y - 0.006, 0.014, "sign_ink")
+    name = text("roof_sign_name", "BAO & BUNS", 0.36, ((x0 + x1) / 2, y - 0.012, (z0 + z1) / 2 - 0.01), (RAD(90), 0, 0), "sign_ink", extrude=0.005, font=SIGN_FONT, resolution=4)
+    return join([face, name] + border, "roof_sign")
+
+
+def menu_board():
+    """The menu beside the serving window: dark board, gold border, a title, seven dishes with
+    their prices and dividers, and how to pay. Sizes follow the old painted board, 320 by 700
+    pixels over 0.5 by 1.1 m."""
+    x0, x1, z0, z1, y = 0.97, 1.47, 1.32, 2.42, -HALF_W - 0.006
+    px = (x1 - x0) / 320
+    at_x, at_z = (lambda p: x0 + p * px), (lambda p: z1 - p * (z1 - z0) / 700)
+    face = box("menu_face", x0, x1, y - 0.004, y + 0.006, z0, z1, "menu_face")
+    parts = [face] + frame("menu_border", x0, x1, z0, z1, y - 0.01, y - 0.004, 0.012, "menu_gold")
+    front = y - 0.01
+    parts.append(text("menu_title", "MENU", 0.09, (at_x(28), front, at_z(66)), (RAD(90), 0, 0), "menu_title", extrude=0.002, align="LEFT", font=SIGN_FONT, resolution=3))
+    for i, (dish, price) in enumerate(MENU):
+        row = 160 + i * 74
+        parts.append(text(f"menu_dish{i}", dish, 0.042, (at_x(28), front, at_z(row - 9)), (RAD(90), 0, 0), "menu_ink", extrude=0.0015, align="LEFT", resolution=2))
+        parts.append(text(f"menu_price{i}", price, 0.042, (at_x(292), front, at_z(row - 9)), (RAD(90), 0, 0), "menu_price", extrude=0.0015, align="RIGHT", resolution=2))
+        parts.append(box(f"menu_rule{i}", at_x(28), at_x(292), front - 0.001, front, at_z(row + 18), at_z(row + 16), "menu_gold"))
+    parts.append(text("menu_note", "CASH · CARD", 0.038, (at_x(28), front, at_z(662)), (RAD(90), 0, 0), "menu_note", extrude=0.0015, align="LEFT", resolution=2))
+    return join(parts, "menu_board")
+
+
 def signs():
-    board = plane("roof_sign", -2.7, -0.2, ROOF + 0.15, ROOF + 0.67, -0.865, -1, "sign")
-    menu = plane("menu_board", 0.97, 1.47, 1.32, 2.42, -HALF_W - 0.006, -1, "sign")
+    board = roof_sign()
+    menu = menu_board()
     lettering = [
         text("brand", "BAO & BUNS", 0.42, (-1.35, HALF_W + 0.004, 1.92), (RAD(90), 0, RAD(180)), "red"),
         text("tag", "STEAMED · FRIED · SOFA", 0.13, (-1.35, HALF_W + 0.004, 1.55), (RAD(90), 0, RAD(180)), "teal"),

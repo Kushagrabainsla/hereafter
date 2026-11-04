@@ -1,0 +1,151 @@
+{
+ "family": "lights",
+ "pieces": {
+  "lantern": {
+   "triangles": 1584,
+   "budget": 1800,
+   "size": [
+    0.454,
+    0.454,
+    0.88
+   ],
+   "materials": [
+    "bamboo",
+    "cable_black",
+    "glow_paper",
+    "lacquer_black",
+    "lacquer_red",
+    "tassel_red"
+   ],
+   "notes": "Each of the 12 lanterns over the market alley; tinted orange or red by the game."
+  },
+  "lantern_torn": {
+   "triangles": 1398,
+   "budget": 1800,
+   "size": [
+    0.462,
+    0.458,
+    0.88
+   ],
+   "materials": [
+    "bamboo",
+    "cable_black",
+    "lacquer_black",
+    "lacquer_red",
+    "paper_scorched",
+    "tassel_red"
+   ],
+   "notes": "A lantern after it is shot."
+  },
+  "bulb": {
+   "triangles": 84,
+   "budget": 100,
+   "size": [
+    0.06,
+    0.06,
+    0.092
+   ],
+   "materials": [
+    "glow_bulb",
+    "rubber_black"
+   ],
+   "notes": "Every string-light bulb, hundreds of them: keep it cheap."
+  },
+  "cable": {
+   "triangles": 12,
+   "budget": 12,
+   "size": [
+    1.0,
+    0.01,
+    0.009
+   ],
+   "materials": [
+    "cable_black"
+   ],
+   "notes": "Stretched and thickened per span."
+  },
+  "sconce": {
+   "triangles": 880,
+   "budget": 900,
+   "size": [
+    0.352,
+    0.536,
+    0.306
+   ],
+   "materials": [
+    "enamel_green",
+    "enamel_white",
+    "glow_bulb"
+   ],
+   "notes": "The ten wall lamps in the service alley."
+  },
+  "pendant": {
+   "triangles": 1004,
+   "budget": 1100,
+   "size": [
+    0.326,
+    0.326,
+    1.24
+   ],
+   "materials": [
+    "cable_black",
+    "enamel_cream",
+    "enamel_white",
+    "glow_bulb",
+    "lamp_brass"
+   ],
+   "notes": "Restaurant pendants and, smaller, the pass lamps."
+  },
+  "cage_lamp": {
+   "triangles": 724,
+   "budget": 800,
+   "size": [
+    0.141,
+    0.141,
+    0.264
+   ],
+   "materials": [
+    "cage_steel",
+    "glow_bulb",
+    "rubber_black"
+   ],
+   "notes": "The lamp under every stall's awning."
+  },
+  "billiard_lamp": {
+   "triangles": 1132,
+   "budget": 1200,
+   "size": [
+    0.514,
+    0.514,
+    1.072
+   ],
+   "materials": [
+    "enamel_white",
+    "glow_bulb",
+    "lamp_brass",
+    "shade_green"
+   ],
+   "notes": "Over the bar's pool table."
+  },
+  "breaker_box": {
+   "triangles": 560,
+   "budget": 900,
+   "size": [
+    0.502,
+    0.2,
+    2.9
+   ],
+   "materials": [
+    "conduit_grey",
+    "glow_led",
+    "label_black",
+    "label_yellow",
+    "panel_dark",
+    "panel_grey"
+   ],
+   "notes": "The service alley's breaker box: shoot it and the alley goes dark."
+  }
+ },
+ "triangles": 7378,
+ "bytes": 227100
+}

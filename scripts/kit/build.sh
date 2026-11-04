@@ -5,3 +5,5 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BLENDER="${BLENDER:-$(command -v blender || echo /Applications/Blender.app/Contents/MacOS/Blender)}"
 "$BLENDER" -b --python-exit-code 1 --python "$ROOT/scripts/kit/build.py" -- --out "$ROOT/public/models/market-kit.glb" ${PREVIEW:+--preview "$PREVIEW"}
+# Compressed with meshopt like the asset pipeline's families; the game decodes it (src/world/kit.ts).
+npx --yes @gltf-transform/cli@4.5.1 meshopt "$ROOT/public/models/market-kit.glb" "$ROOT/public/models/market-kit.glb" --level medium > /dev/null

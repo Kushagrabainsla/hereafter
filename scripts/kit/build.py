@@ -50,35 +50,12 @@ import bmesh
 import bpy
 from mathutils import Euler, Matrix, Vector
 
-RAD = math.radians
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "assets"))
+from lib import *  # noqa: E402,F401,F403  shared helpers: material, box, cylinder, tube, join, ...
 
 
 def log(*args):
     print("[kit]", *args, flush=True)
-
-
-def srgb(hex_value):
-    c = [((hex_value >> s) & 255) / 255 for s in (16, 8, 0)]
-    return tuple(v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c) + (1.0,)
-
-
-MATERIALS = {}
-
-
-def material(name, color, metal=0.0, rough=0.5, alpha=1.0, emit=None, strength=0.0):
-    m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    b = m.node_tree.nodes["Principled BSDF"]
-    b.inputs["Base Color"].default_value = srgb(color)
-    b.inputs["Metallic"].default_value = metal
-    b.inputs["Roughness"].default_value = rough
-    if emit is not None:
-        b.inputs["Emission Color"].default_value = srgb(emit)
-        b.inputs["Emission Strength"].default_value = strength
-    if alpha < 1:
-        b.inputs["Alpha"].default_value = alpha
-    MATERIALS[name] = m
-    return m
 
 
 SLEEVES = [0xd94f3d, 0x2f6fb5, 0xf2c14e, 0x3c9d6b, 0x1d1d1f, 0xe8e1d0, 0x8e44ad, 0xef8a3a]
@@ -137,176 +114,6 @@ def make_materials():
     material("hazard", 0xf2c230, 0.0, 0.5)
     for i, color in enumerate(SLEEVES):
         material(f"sleeve{i}", color, 0.0, 0.5)
-
-
-# ---------------------------------------------------------------------------
-# geometry helpers
-
-def link(obj):
-    bpy.context.scene.collection.objects.link(obj)
-    return obj
-
-
-def mesh_object(name, bm, mat):
-    me = bpy.data.meshes.new(name)
-    bm.to_mesh(me)
-    bm.free()
-    obj = link(bpy.data.objects.new(name, me))
-    if mat:
-        obj.data.materials.append(MATERIALS[mat])
-    return obj
-
-
-def apply_modifiers(obj):
-    bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    for mod in list(obj.modifiers):
-        bpy.ops.object.modifier_apply(modifier=mod.name)
-
-
-def bevel(obj, width, segments=2, angle=35):
-    if width <= 0:
-        return obj
-    mod = obj.modifiers.new("Bevel", "BEVEL")
-    mod.width = width
-    mod.segments = segments
-    mod.limit_method = "ANGLE"
-    mod.angle_limit = RAD(angle)
-    mod.harden_normals = False
-    apply_modifiers(obj)
-    return obj
-
-
-def box(name, x0, x1, y0, y1, z0, z1, mat, bev=0.0, segments=2):
-    (x0, x1), (y0, y1), (z0, z1) = sorted((x0, x1)), sorted((y0, y1)), sorted((z0, z1))
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    for v in bm.verts:
-        v.co = Vector(((v.co.x + 0.5) * (x1 - x0) + x0, (v.co.y + 0.5) * (y1 - y0) + y0, (v.co.z + 0.5) * (z1 - z0) + z0))
-    return bevel(mesh_object(name, bm, mat), bev, segments)
-
-
-def turned_box(name, size, center, rotation, mat, bev=0.0):
-    """A box of a size, turned by Euler angles (radians) about its centre."""
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-    m = Matrix.Translation(Vector(center)) @ Euler(rotation).to_matrix().to_4x4() @ Matrix.Diagonal((*size, 1.0))
-    bmesh.ops.transform(bm, matrix=m, verts=bm.verts)
-    return bevel(mesh_object(name, bm, mat), bev)
-
-
-def cylinder(name, radius, depth, center, axis, mat, verts=20, bev=0.0, radius2=None):
-    bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=verts, radius1=radius, radius2=radius if radius2 is None else radius2, depth=depth)
-    rot = {"X": Matrix.Rotation(RAD(90), 4, "Y"), "Y": Matrix.Rotation(RAD(90), 4, "X"), "Z": Matrix.Identity(4)}[axis]
-    bmesh.ops.transform(bm, matrix=Matrix.Translation(Vector(center)) @ rot, verts=bm.verts)
-    return bevel(mesh_object(name, bm, mat), bev)
-
-
-def tube(name, points, radius, mat, verts=12, caps=True):
-    """A round tube swept along a polyline, its rings carried along without twisting."""
-    pts = [Vector(p) for p in points]
-    bm = bmesh.new()
-    t = (pts[1] - pts[0]).normalized()
-    helper = Vector((0, 0, 1)) if abs(t.z) < 0.9 else Vector((1, 0, 0))
-    n = t.cross(helper).normalized()
-    rings = []
-    for i, p in enumerate(pts):
-        if i == 0:
-            t = (pts[1] - pts[0]).normalized()
-        elif i == len(pts) - 1:
-            t = (pts[-1] - pts[-2]).normalized()
-        else:
-            t = ((pts[i + 1] - pts[i]).normalized() + (pts[i] - pts[i - 1]).normalized()).normalized()
-        n = (n - t * n.dot(t)).normalized()
-        b = t.cross(n)
-        rings.append([bm.verts.new(p + (n * math.cos(a) + b * math.sin(a)) * radius) for a in (2 * math.pi * k / verts for k in range(verts))])
-    for r0, r1 in zip(rings, rings[1:]):
-        for k in range(verts):
-            bm.faces.new((r0[k], r0[(k + 1) % verts], r1[(k + 1) % verts], r1[k]))
-    if caps:
-        bm.faces.new(rings[0][::-1])
-        bm.faces.new(rings[-1])
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return mesh_object(name, bm, mat)
-
-
-def arc(center, radius, a0, a1, steps, plane="XY"):
-    """Points on a circular arc from angle a0 to a1 (degrees) in a plane through a centre."""
-    out = []
-    for i in range(steps + 1):
-        a = RAD(a0 + (a1 - a0) * i / steps)
-        u, v = math.cos(a) * radius, math.sin(a) * radius
-        x, y, z = center
-        out.append({"XY": (x + u, y + v, z), "XZ": (x + u, y, z + v), "YZ": (x, y + u, z + v)}[plane])
-    return out
-
-
-def ring(name, radius, minor, center, axis, mat, verts=32):
-    pts = arc((0, 0, 0), radius, 0, 360, verts, {"X": "YZ", "Y": "XZ", "Z": "XY"}[axis])
-    obj = tube(name, pts, minor, mat, verts=8, caps=False)
-    obj.data.transform(Matrix.Translation(Vector(center)))
-    return obj
-
-
-def prism(name, profile, y0, y1, mat, bev=0.0):
-    """A shape drawn in the XZ plane as (x, z) points and extruded from y0 to y1."""
-    bm = bmesh.new()
-    front = [bm.verts.new((x, y0, z)) for x, z in profile]
-    back = [bm.verts.new((x, y1, z)) for x, z in profile]
-    bm.faces.new(front[::-1])
-    bm.faces.new(back)
-    n = len(profile)
-    for i in range(n):
-        j = (i + 1) % n
-        bm.faces.new((front[i], front[j], back[j], back[i]))
-    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-    return bevel(mesh_object(name, bm, mat), bev)
-
-
-def cut(obj, cutter, mat=None, op="DIFFERENCE"):
-    """Boolean with a cutter, whose material (if given) dresses the cut faces."""
-    if mat:
-        cutter.data.materials.clear()
-        cutter.data.materials.append(MATERIALS[mat])
-        if MATERIALS[mat].name not in [m.name for m in obj.data.materials]:
-            obj.data.materials.append(MATERIALS[mat])
-    mod = obj.modifiers.new("Bool", "BOOLEAN")
-    mod.operation = op
-    mod.object = cutter
-    mod.solver = "EXACT"
-    mod.material_mode = "TRANSFER"
-    apply_modifiers(obj)
-    bpy.data.objects.remove(cutter)
-    return obj
-
-
-def join(objs, name):
-    objs = [o for o in objs if o is not None]
-    bpy.ops.object.select_all(action="DESELECT")
-    for o in objs:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = objs[0]
-    bpy.ops.object.join()
-    obj = bpy.context.view_layer.objects.active
-    obj.name = name
-    obj.data.name = name
-    return obj
-
-
-def smooth(obj, angle=40):
-    bpy.ops.object.select_all(action="DESELECT")
-    obj.select_set(True)
-    bpy.context.view_layer.objects.active = obj
-    bpy.ops.object.shade_smooth_by_angle(angle=RAD(angle))
-    return obj
-
-
-def mirror_x(obj):
-    obj.data.transform(Matrix.Diagonal((-1, 1, 1, 1)))
-    obj.data.flip_normals()
-    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -731,13 +538,6 @@ def turntable():
 # market stalls, in the stall's own frame: counter facing +X, 3 m along Y
 
 STALL_Y = 1.5
-
-
-def sphere(name, radius, center, mat, segments=10, rings=7):
-    bm = bmesh.new()
-    bmesh.ops.create_uvsphere(bm, u_segments=segments, v_segments=rings, radius=radius)
-    bmesh.ops.translate(bm, vec=Vector(center), verts=bm.verts)
-    return mesh_object(name, bm, mat)
 
 
 def stall_body():

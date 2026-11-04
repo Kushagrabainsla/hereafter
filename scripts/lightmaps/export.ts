@@ -3,12 +3,12 @@
 // surfaces (with the atlas as their only texture coordinates and a flat colour per look,
 // for Blender to bake), the lamps and the sun, and the atlas coordinates the game reads
 // back at load (public/lightmaps/night-market.json).
-import { Matrix4, Scene, Vector3, type InstancedMesh, type Material, type Mesh, type Object3D, type Texture } from "three/webgpu";
+import { Matrix4, Scene, Vector3, type BufferGeometry, type InstancedMesh, type Material, type Mesh, type Object3D, type Texture } from "three/webgpu";
 import { buildNightMarket, MARKET_ARENA, MARKET_SUN, NIGHT_MARKET } from "../../src/world/nightMarket";
 import { loadSurfaceTextures } from "../../src/world/surfaceTextures";
 import { checksum } from "../../src/world/lightmap";
 import { FoodTruck, loadFoodTruck } from "../../src/world/foodTruck";
-import { kitPieces, loadMarketKit } from "../../src/world/kit";
+import { kitPieces, loadKits } from "../../src/world/kit";
 
 const SIZE = 2048;
 // Empty texels around each chart, so neighbours do not bleed into each other when filtered.
@@ -125,6 +125,15 @@ function linear(channel: number): number {
 
 // A look's colour as Blender should see it: the material's colour times the average of its
 // texture, darkened a little where the game's walls and paving add grime and wet patches.
+// A merged kit piece carries each part's colour on its vertices (src/world/kit.ts): its mean.
+function vertexAlbedo(geometry: BufferGeometry): [number, number, number] | null {
+  const colors = geometry.getAttribute("color");
+  if (!colors) return null;
+  const sum = [0, 0, 0];
+  for (let i = 0; i < colors.count; i += 1) { sum[0] += colors.getX(i); sum[1] += colors.getY(i); sum[2] += colors.getZ(i); }
+  return [sum[0] / colors.count, sum[1] / colors.count, sum[2] / colors.count];
+}
+
 function albedo(material: Material): [number, number, number] {
   const standard = material as Material & { color?: { r: number; g: number; b: number }; map?: Texture | null; colorNode?: unknown };
   const color = standard.color ?? { r: 0.8, g: 0.8, b: 0.8 };
@@ -198,7 +207,7 @@ function base64(bytes: Uint8Array): string {
 async function exportLightmap(): Promise<object> {
   const scene = new Scene();
   const textures = await loadSurfaceTextures();
-  const built = buildNightMarket(scene, textures, [], kitPieces(await loadMarketKit()));
+  const built = buildNightMarket(scene, textures, [], kitPieces(await loadKits()));
   // The food truck shades the paving around it, with its hatch up as it starts.
   const truck = new FoodTruck(scene, await loadFoodTruck(), () => undefined);
   truck.setOpen({}, { "truck:hatch": true }, true);
@@ -241,7 +250,7 @@ async function exportLightmap(): Promise<object> {
       mesh.getMatrixAt(i, instance);
       const geometry = (mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone()).applyMatrix4(instance).applyMatrix4(mesh.matrixWorld);
       parts.push({ name: `occluder:${mesh.name}`, position: Float32Array.from(geometry.attributes.position.array), normal: Float32Array.from(geometry.attributes.normal.array),
-        uv: new Float32Array(geometry.attributes.position.count * 2), color: albedo(mesh.material as Material) });
+        uv: new Float32Array(geometry.attributes.position.count * 2), color: vertexAlbedo(geometry) ?? albedo(mesh.material as Material) });
     }
   });
   for (const [id, root] of occluders) {

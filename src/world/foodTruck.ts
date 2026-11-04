@@ -119,39 +119,6 @@ function canvas(width: number, height: number, draw: (g: CanvasRenderingContext2
   return texture;
 }
 
-// A backlit roof sign and a menu board beside the window.
-function roofSign(): CanvasTexture {
-  return canvas(1024, 210, (g) => {
-    const shade = g.createLinearGradient(0, 0, 0, 210);
-    shade.addColorStop(0, "#21857e"); shade.addColorStop(1, "#155d58");
-    g.fillStyle = shade; g.fillRect(0, 0, 1024, 210);
-    g.strokeStyle = "#f4e9d0"; g.lineWidth = 8; g.strokeRect(14, 14, 996, 182);
-    g.fillStyle = "#fff4dc"; g.textAlign = "center"; g.textBaseline = "middle";
-    g.font = `700 120px "Avenir Next Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif`;
-    g.fillText("BAO & BUNS", 512, 112, 940);
-  });
-}
-
-function menuBoard(): CanvasTexture {
-  return canvas(320, 700, (g) => {
-    g.fillStyle = "#1b1d1c"; g.fillRect(0, 0, 320, 700);
-    g.strokeStyle = "#c9a46a"; g.lineWidth = 10; g.strokeRect(5, 5, 310, 690);
-    g.textAlign = "left"; g.textBaseline = "alphabetic";
-    g.fillStyle = "#ffe9b0"; g.font = `700 54px "Avenir Next Condensed", Helvetica, Arial, sans-serif`;
-    g.fillText("MENU", 28, 82);
-    const items = [["Pork belly bao", "6"], ["Chicken katsu", "6"], ["Tofu bao", "5"], ["Bao fries", "4"], ["Dumplings (6)", "7"], ["Milk tea", "5"], ["Lychee soda", "4"]];
-    g.font = `500 27px "Avenir Next Condensed", Helvetica, Arial, sans-serif`;
-    items.forEach(([name, price], i) => {
-      const y = 160 + i * 74;
-      g.fillStyle = "#f4f0e6"; g.fillText(name, 28, y);
-      g.fillStyle = "#7dd3c0"; g.textAlign = "right"; g.fillText(price, 292, y); g.textAlign = "left";
-      g.fillStyle = "rgba(244,240,230,0.25)"; g.fillRect(28, y + 16, 264, 2);
-    });
-    g.fillStyle = "#ff8a5c"; g.font = `600 24px "Avenir Next Condensed", Helvetica, Arial, sans-serif`;
-    g.fillText("CASH · CARD", 28, 670);
-  });
-}
-
 // Grime on the paint: darker toward the ground and in broad noisy patches, like the walls.
 function weathered(source: MeshStandardMaterial): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial();
@@ -186,7 +153,6 @@ export class FoodTruck {
     scene.add(this.root);
     if (!gltf) return;
     const children = [...gltf.scene.children];
-    const signs: Record<string, CanvasTexture> = { roof_sign: this.own(roofSign()), menu_board: this.own(menuBoard()) };
     for (const child of children) {
       this.nodes.set(child.name, child);
       (child.name.startsWith("wheel_") ? this.root : this.body).add(child);
@@ -195,7 +161,7 @@ export class FoodTruck {
         object.castShadow = !child.name.startsWith("glass") && child.name !== "interior_light";
         object.receiveShadow = true;
         const materials = (Array.isArray(object.material) ? object.material : [object.material]) as MeshStandardMaterial[];
-        const dressed = materials.map((material) => this.dress(material, signs[child.name]));
+        const dressed = materials.map((material) => this.dress(material));
         object.material = Array.isArray(object.material) ? dressed : dressed[0];
       });
     }
@@ -237,8 +203,7 @@ export class FoodTruck {
     }
   }
 
-  private dress(material: MeshStandardMaterial, sign?: CanvasTexture): SurfaceMaterial {
-    if (sign) return new MeshStandardMaterial({ map: sign, emissive: 0xffffff, emissiveMap: sign, emissiveIntensity: 0.9, roughness: 0.5 });
+  private dress(material: MeshStandardMaterial): SurfaceMaterial {
     // One material per kind, shared by every part, so parts can be merged.
     const known = this.dressed.get(material.name);
     if (known) return known;

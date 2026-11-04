@@ -29,7 +29,7 @@ import { duskSky } from "./duskSky";
 import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { DOOR_LEAVES } from "./doors";
-import { kitPieces, loadMarketKit } from "./kit";
+import { kitPieces, loadKits } from "./kit";
 import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
@@ -181,9 +181,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Every breakable or solid object is an entity with a stable id; refs record the instances
   // that draw each one, and groups the plain objects, so it can disappear when destroyed.
   const entities = new EntityRegistry();
-  const [propModels, truckModel, kitModel] = await Promise.all([loadPropModels(), loadFoodTruck(), loadMarketKit()]);
+  const [propModels, truckModel, kitModels] = await Promise.all([loadPropModels(), loadFoodTruck(), loadKits()]);
   const propViews = new PropViews(scene);
-  const pieces = kitPieces(kitModel);
+  const pieces = kitPieces(kitModels);
   const built = buildNightMarket(scene, textures, propModels, pieces);
   // Baked sky occlusion and bounce light on the static surfaces, when the bake matches.
   if (lightmap) applyLightmap(built.surfaces, lightmap);

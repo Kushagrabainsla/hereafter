@@ -1,4 +1,4 @@
-import { InstancedMesh, Matrix4, type Material as SurfaceMaterial, type Mesh, type MeshStandardMaterial, type Object3D, type PointLight } from "three/webgpu";
+import { InstancedMesh, Matrix4, type InstancedBufferAttribute, type Material as SurfaceMaterial, type Mesh, type MeshStandardMaterial, type Object3D, type PointLight } from "three/webgpu";
 import { type Vec3, type WorldEntity } from "./entities";
 import { type Material } from "./materials";
 
@@ -7,6 +7,8 @@ import { type Material } from "./materials";
 // whole object (hidden).
 export type LampPart =
   | { kind: "instance"; lit: InstancedMesh; dark: InstancedMesh; index: number }
+  // One copy of a lamp among many, its glass lit while its flag is 1 and dark at 0.
+  | { kind: "flag"; flags: InstancedBufferAttribute; index: number }
   | { kind: "material"; material: MeshStandardMaterial; base: number }
   | { kind: "mesh"; mesh: Mesh; lit: SurfaceMaterial; dark: SurfaceMaterial }
   | { kind: "object"; object: Object3D };
@@ -99,6 +101,9 @@ export class Lamps {
         part.dark.setMatrixAt(part.index, on ? HIDDEN : scratch);
         part.lit.instanceMatrix.needsUpdate = true;
         part.dark.instanceMatrix.needsUpdate = true;
+      } else if (part.kind === "flag") {
+        part.flags.setX(part.index, level > 0.5 ? 1 : 0);
+        part.flags.needsUpdate = true;
       } else if (part.kind === "material") part.material.emissiveIntensity = part.base * level;
       else if (part.kind === "mesh") part.mesh.material = level > 0.5 ? part.lit : part.dark;
       else part.object.visible = level > 0.5;

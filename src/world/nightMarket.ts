@@ -1,10 +1,10 @@
 import {
-  AdditiveBlending, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, Group,
-  InstancedMesh, LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D,
-  MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, SphereGeometry, Sprite, SpriteMaterial,
+  AdditiveBlending, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, DynamicDrawUsage, Group, InstancedBufferAttribute,
+  InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D,
+  MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { clamp, float, materialColor, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
 import { type Material } from "./materials";
@@ -14,7 +14,8 @@ import { FUEL_DRUM, propEntity, type PropModel } from "./props";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
-import { KitPlacer, type KitPiece } from "./kit";
+import { glowing, instancedParts, kitObject, KitPlacer, splitGlow, type KitPiece } from "./kit";
+import signCatalog from "./signs.json";
 import { DOOR_ENTITIES, DOOR_TOGGLES, Doors } from "./doors";
 import { dressFacades, wallMatrix } from "./facades";
 import { PIPE_ENTITIES, placeSteamPipes, POWDER, SteamPipes } from "./steamPipes";
@@ -323,55 +324,6 @@ function softSpot(): CanvasTexture {
   });
 }
 
-// A sign as a colour map and an emissive map. Neon signs are tubes on a dark board: only the
-// letters and the border glow. Lightboxes glow across the whole face. Vertical signs stack
-// their letters.
-interface SignStyle { neon: boolean; vertical?: boolean }
-function signTextures(text: string, board: string, ink: string, width: number, height: number, style: SignStyle): [CanvasTexture, CanvasTexture] {
-  const letters = style.vertical ? [...text.replace(/ /g, "")] : [text];
-  const size = style.vertical ? Math.min(width * 0.62, height / letters.length * 0.8) : height * 0.56;
-  const at = (i: number): [number, number] => style.vertical ? [width / 2, height * (i + 0.5) / letters.length] : [width / 2, height / 2 + size * 0.04];
-  const lettering = (g: CanvasRenderingContext2D, glowing: boolean): void => {
-    g.font = `${style.neon ? 600 : 700} ${Math.round(size)}px "Avenir Next Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif`;
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    if (style.neon) {
-      const inset = Math.min(width, height) * 0.08, radius = Math.min(width, height) * 0.12;
-      g.lineWidth = Math.max(2, Math.min(width, height) * 0.035);
-      g.strokeStyle = ink;
-      if (glowing) { g.shadowColor = ink; g.shadowBlur = Math.min(width, height) * 0.12; }
-      g.beginPath();
-      g.roundRect(inset, inset, width - inset * 2, height - inset * 2, radius);
-      g.stroke();
-      g.lineWidth = Math.max(2, size * 0.09);
-      letters.forEach((letter, i) => { const [x, y] = at(i); g.strokeText(letter, x, y, width * 0.84); });
-      g.shadowBlur = 0;
-      // The bright core of each tube.
-      g.lineWidth = Math.max(1, size * 0.035);
-      g.strokeStyle = glowing ? "#ffffff" : ink;
-      g.globalAlpha = glowing ? 0.8 : 0.5;
-      letters.forEach((letter, i) => { const [x, y] = at(i); g.strokeText(letter, x, y, width * 0.84); });
-      g.globalAlpha = 1;
-    } else {
-      g.fillStyle = ink;
-      letters.forEach((letter, i) => { const [x, y] = at(i); g.fillText(letter, x, y, width * 0.9); });
-    }
-  };
-  const color = canvasTexture(width, height, (g) => {
-    g.fillStyle = board; g.fillRect(0, 0, width, height);
-    if (!style.neon) {
-      const shade = g.createLinearGradient(0, 0, 0, height);
-      shade.addColorStop(0, "rgba(255,255,255,0.12)"); shade.addColorStop(1, "rgba(0,0,0,0.25)");
-      g.fillStyle = shade; g.fillRect(0, 0, width, height);
-    }
-    lettering(g, false);
-  });
-  const glow = canvasTexture(width, height, (g) => {
-    g.fillStyle = style.neon ? "#000000" : board; g.fillRect(0, 0, width, height);
-    lettering(g, true);
-  });
-  return [color, glow];
-}
 
 // What a lit window shows: eight kinds of room seen from the alley.
 function windowInterior(kind: number): CanvasTexture {
@@ -636,13 +588,41 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   light([-4.6, 2.7, -26.0, 0xfff1dc, 1.6, 2.4]);
   const lamps = new Lamps(many);
   const darkGlass = std({ color: 0x2a2622, roughness: 0.25, metalness: 0.1 });
-  // A lamp drawn as its own mesh, which swaps to dark glass when it breaks.
-  const lampMesh = (geometry: BufferGeometry, x: number, y: number, z: number, parent: Object3D = root): LampPart => {
-    const mesh = new Mesh(geometry, materials.lampGlow);
-    mesh.position.set(x, y, z);
-    parent.add(mesh);
-    return { kind: "mesh", mesh, lit: materials.lampGlow, dark: darkGlass };
+  // Kit pieces placed around the market: wall dressing, lamps and their fittings.
+  const placer = new KitPlacer(kit);
+  // Lamps drawn from a kit piece: the fittings instanced like any piece, and the glass once
+  // per lamp, lit by a flag of its own, so that each goes dark on its own without a second,
+  // hidden copy being drawn. One part per lamp, in order.
+  const lampSet = (name: string, at: Matrix4[], glass: SurfaceMaterial): LampPart[] => {
+    const lit = glass as MeshStandardMaterial;
+    const { solid, glow } = splitGlow(kit.get(name));
+    placer.define(`${name}:fittings`, solid);
+    for (const matrix of at) placer.place(`${name}:fittings`, matrix);
+    if (!glow || !at.length) return [];
+    const flags = new InstancedBufferAttribute(new Float32Array(at.length).fill(1), 1);
+    flags.setUsage(DynamicDrawUsage);
+    const on = instancedDynamicBufferAttribute(flags, "float") as unknown as ReturnType<typeof float>;
+    const surface = new MeshStandardNodeMaterial({ roughness: 0.25, metalness: 0.1 });
+    surface.colorNode = mix(color(darkGlass.color), color(lit.color), on);
+    surface.emissiveNode = color(lit.emissive).mul(lit.emissiveIntensity).mul(on);
+    const mesh = new InstancedMesh(glow, surface, at.length);
+    at.forEach((matrix, index) => mesh.setMatrixAt(index, matrix));
+    root.add(mesh);
+    return at.map((_, index) => ({ kind: "flag" as const, flags, index }));
   };
+  // A lamp drawn from a kit piece as an object of its own, as one that hides with its stall;
+  // its glass swaps to dark when it breaks.
+  const lampObject = (name: string, matrix: Matrix4, parent: Object3D = root): LampPart[] => {
+    const { solid, glow: glass } = splitGlow(kit.get(name));
+    const object = kitObject(solid);
+    object.applyMatrix4(matrix);
+    parent.add(object);
+    if (!glass) return [];
+    const mesh = new Mesh(glass, materials.lampGlow);
+    object.add(mesh);
+    return [{ kind: "mesh", mesh, lit: materials.lampGlow, dark: darkGlass }];
+  };
+  const at = (x: number, y: number, z: number, scale = 1): Matrix4 => new Matrix4().compose(new Vector3(x, y, z), new Quaternion(), new Vector3(scale, scale, scale));
   const root = new Group();
   root.name = "night-market";
   scene.add(root);
@@ -742,46 +722,51 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const mesh of [frames, recesses, mullions, sills, lintels, ...glassMeshes]) { mesh.receiveShadow = true; root.add(mesh); }
 
   // ---------- shopfronts, signs, doors and shutters ----------
-  const signs: { mesh: Mesh; material: MeshStandardMaterial; base: number }[] = [];
-  const sign = (text: string, board: string, ink: string, w: number, h: number, x: number, y: number, z: number, face: Face, intensity: number, style: SignStyle, lamp?: { id: string; lights?: number[] }): MeshStandardMaterial => {
-    const px = 128, width = Math.min(2048, Math.round(px * (style.vertical ? 1 : w / h))), height = Math.min(2048, Math.round(px * (style.vertical ? h / w : 1)));
-    const [map, emissiveMap] = signTextures(text, board, ink, width, height, style).map(own);
-    const material = std({ map, emissive: 0xffffff, emissiveMap, emissiveIntensity: intensity, roughness: style.neon ? 0.35 : 0.5, side: DoubleSide });
-    const mesh = new Mesh(new PlaneGeometry(w, h), material);
-    mesh.position.set(x, y, z);
-    mesh.rotation.y = FACE_YAW[face];
-    signs.push({ mesh, material, base: intensity });
-    root.add(mesh);
+  // Every sign is a kit piece built from signs.json (scripts/assets/families/signs.py): neon
+  // tubes, lit boxes with raised letters and blade signs on brackets. Its lit parts glow in its
+  // colours at its intensity, and go dark when it is shot out. Returns those lit materials.
+  const SIGNS = new Map(signCatalog.signs.map((entry) => [entry.id, entry]));
+  const placeSign = (id: string, mount: Matrix4, collider: { center: { x: number; y: number; z: number }; half: [number, number, number]; yaw: number }, lights?: number[]): MeshStandardMaterial[] => {
+    const entry = SIGNS.get(id);
+    const lit: MeshStandardMaterial[] = [];
+    if (!entry) return lit;
+    const object = kitObject(kit.get(`sign_${id}`), undefined, (material) => {
+      if (!glowing(material)) return material;
+      const color = (material as MeshStandardMaterial).color;
+      const surface = std({ color, emissive: color, emissiveIntensity: entry.intensity, roughness: entry.style === "lightbox" ? 0.5 : 0.3 });
+      lit.push(surface);
+      return surface;
+    });
+    object.applyMatrix4(mount);
+    root.add(object);
     // A round through a sign's face or tube puts it out.
-    if (lamp) lamps.add(lamp.id, { x, y, z }, { type: "box", half: [w / 2, h / 2, 0.05] }, FACE_YAW[face], [{ kind: "material", material, base: intensity }], lamp.lights);
-    return material;
+    lamps.add(`lamp:${id}`, collider.center, { type: "box", half: collider.half }, collider.yaw, lit.map((material) => ({ kind: "material" as const, material, base: entry.intensity })), lights);
+    return lit;
+  };
+  // A sign flat against a wall, centred on (x, y, z) and facing out of it.
+  const sign = (id: string, x: number, y: number, z: number, face: Face, lights?: number[]): MeshStandardMaterial[] => {
+    const entry = SIGNS.get(id), [nx, nz] = FACE_NORMAL[face];
+    return placeSign(id, new Matrix4().compose(new Vector3(x, y, z), new Quaternion().setFromAxisAngle(UP, FACE_YAW[face]), new Vector3(1, 1, 1)),
+      { center: { x: x + nx * 0.06, y, z: z + nz * 0.06 }, half: [(entry?.width ?? 1) / 2, (entry?.height ?? 1) / 2, 0.08], yaw: FACE_YAW[face] }, lights);
   };
   shopfronts.forEach((shop, index) => {
     const [nx, nz] = FACE_NORMAL[shop.face];
     const x = nx ? shop.at + nx * 0.04 : shop.along, z = nz ? shop.at + nz * 0.04 : shop.along;
     if (!shop.open) statics.plane(shop.photo === "cafe" ? "photoCafe" : "photoStone", shop.width, 3.1, x, 1.6, z, shop.face);
-    const neon = index % 2 === 1;
-    sign(shop.sign[0], neon ? "#0b0a0f" : shop.sign[1], shop.sign[2], shop.width, 0.7, x + nx * 0.02, 3.55, z + nz * 0.02, shop.face, neon ? 2.6 : 0.95, { neon }, { id: `lamp:shop-sign-${index}` });
+    sign(`shop-sign-${index}`, x + nx * 0.02, 3.55, z + nz * 0.02, shop.face);
   });
-  sign("SOFA KITCHEN", "#2b1d16", "#ffe2b0", 8, 0.75, -8.46, 4.05, 4.5, "px", 1.0, { neon: false }, { id: "lamp:kitchen-sign" });
-  sign("THE LANTERN", "#0b0a0f", "#ff6fae", 4.2, 0.7, 15.38, 3.55, 6.2, "nx", 2.8, { neon: true }, { id: "lamp:lantern-sign", lights: [lanternSignLight] });
-  sign("SOFA NIGHT MARKET", "#7a1f2b", "#ffe9c2", 7.6, 1.3, -4, 6.3, -23.5, "pz", 1.1, { neon: false }, { id: "lamp:banner", lights: [bannerLight] });
-  sign("NIGHT MARKET", "#0b0a0f", "#ffcf5a", 7.2, 1.0, -4, 5.6, 29.5, "nz", 2.6, { neon: true }, { id: "lamp:arch", lights: [archLight] });
-  const openSign = sign("OPEN", "#05070a", "#ff3d5a", 1.2, 0.5, 17.24, 2.1, 3.4, "nx", 3.0, { neon: true }, { id: "lamp:open" });
-  sign("MENU", "#1a1a1a", "#ffe9b0", 1.8, 0.9, -11.5, 2.4, 13.96, "nz", 0.8, { neon: false }, { id: "lamp:menu" });
-  // Blade signs: a bracket from the wall and a double-sided neon panel.
-  blades.forEach(([at, along, y, face, text, color], index) => {
-    const [nx] = FACE_NORMAL[face];
-    const height = 0.42 * text.replace(/ /g, "").length + 0.36;
-    const out = at + nx * 0.5;
-    // Both faces go out together: one panel, one lamp.
-    const faces = [1, -1].map((side) => sign(text, "#0b0a0f", color, 0.62, height, out, y, along + side * 0.035, side > 0 ? "pz" : "nz", 2.4, { neon: true, vertical: true }));
-    lamps.add(`lamp:blade-${index}`, { x: out, y, z: along }, { type: "box", half: [0.31, height / 2, 0.06] }, 0, faces.map((material) => ({ kind: "material" as const, material, base: 2.4 })), [bladeLights[index]]);
-    statics.box("steelDark", 0.66, height + 0.08, 0.06, out, y - height / 2 - 0.04, along);
-    statics.box("steelDark", 0.55, 0.05, 0.05, at + nx * 0.27, y + height / 2 - 0.1, along);
+  sign("kitchen-sign", -8.46, 4.05, 4.5, "px");
+  sign("lantern-sign", 15.38, 3.55, 6.2, "nx", [lanternSignLight]);
+  sign("banner", -4, 6.3, -23.5, "pz", [bannerLight]);
+  sign("arch", -4, 5.6, 29.5, "nz", [archLight]);
+  const openSign = sign("open", 17.24, 2.1, 3.4, "nx");
+  sign("menu", -11.5, 2.4, 13.96, "nz");
+  // Blade signs: a double-sided neon box standing out from the wall on a bracket.
+  blades.forEach(([at, along, y, face], index) => {
+    const [nx] = FACE_NORMAL[face], height = SIGNS.get(`blade-${index}`)?.height ?? 1;
+    placeSign(`blade-${index}`, wallMatrix(face, at, along, y), { center: { x: at + nx * 0.5, y, z: along }, half: [0.31, height / 2, 0.06], yaw: 0 }, [bladeLights[index]]);
   });
   // Downpipes, air conditioners, meters, vents, back doors and fire escapes from the kit.
-  const placer = new KitPlacer(kit);
   dressFacades(placer, windowSpots, blades.map(([at, along, y, face, text]) => {
     const height = 0.42 * text.replace(/ /g, "").length + 0.36;
     return { face, at, along, y0: y - height / 2, y1: y + height / 2 };
@@ -823,10 +808,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const x of [1.95, 3.8, 5.65]) placer.place("record_shelf", wallMatrix("nz", -6.61, x, 0));
   placer.place("turntable", new Matrix4().compose(new Vector3(6.95, 1.0, -13.4), new Quaternion().setFromAxisAngle(UP, -Math.PI / 2), new Vector3(1, 1, 1)));
   placer.place("frame_steel", wallMatrix("px", 8.5, -8.1, 0));
-  [3.0, 6.0].forEach((x, index) => {
-    statics.cylinder("steelDark", 0.006, 0.18, x, 3.4, -10.5, 4);
-    lamps.add(`lamp:records-${index}`, { x, y: 3.3, z: -10.5 }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, [lampMesh(new CylinderGeometry(0.05, 0.16, 0.22, 12), x, 3.3, -10.5)], [recordsLights[index]]);
-  });
+  // Two pendants over the bins, their cords running up through the ceiling.
+  const recordLamps = lampSet("pendant", [3.0, 6.0].map((x) => at(x, 3.3, -10.5)), materials.lampGlow);
+  [3.0, 6.0].forEach((x, index) => lamps.add(`lamp:records-${index}`, { x, y: 3.3, z: -10.5 }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, recordLamps.slice(index, index + 1), [recordsLights[index]]));
   // The boarded-up back window: planks a few rounds or a grenade will clear.
   refs.set("boards:records", placer.place("boards", wallMatrix("px", 8.5, -10.8, 1.55)));
   entities.push({ id: "boards:records", kind: "boards", material: "wood", maxHealth: 120, yaw: 0, center: { x: 8.35, y: 1.55, z: -10.8 }, shape: { type: "box", half: [0.15, 0.95, 1.0] } });
@@ -836,15 +820,16 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     for (const [dx, dz] of [[-0.75, 0], [0.75, 0], [0, 0.7], [0, -0.7]]) statics.box("woodDark", 0.4, 0.45, 0.4, -10.3 + dx, 0, z + dz);
   }
   // Pendants over the dining tables and the pass, and a lamp over the pool table.
-  [-2, 2.4, 6.8].forEach((z, index) => lamps.add(`lamp:pendant-${index}`, { x: -10.3, y: 2.86, z }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, [lampMesh(new CylinderGeometry(0.05, 0.16, 0.22, 12), -10.3, 2.86, z)], [pendantLights[index]]));
-  [1, 4.5, 8].forEach((z, index) => lamps.add(`lamp:pass-${index}`, { x: -12.2, y: 2.9, z }, { type: "box", half: [0.15, 0.11, 0.15] }, 0, [lampMesh(new CylinderGeometry(0.05, 0.14, 0.2, 12), -12.2, 2.9, z)]));
+  const pendants = lampSet("pendant", [...[-2, 2.4, 6.8].map((z) => at(-10.3, 2.86, z)), ...[1, 4.5, 8].map((z) => at(-12.2, 2.9, z, 0.88))], materials.lampGlow);
+  [-2, 2.4, 6.8].forEach((z, index) => lamps.add(`lamp:pendant-${index}`, { x: -10.3, y: 2.86, z }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, pendants.slice(index, index + 1), [pendantLights[index]]));
+  [1, 4.5, 8].forEach((z, index) => lamps.add(`lamp:pass-${index}`, { x: -12.2, y: 2.9, z }, { type: "box", half: [0.15, 0.11, 0.15] }, 0, pendants.slice(3 + index, 4 + index)));
   statics.box("woodDark", 0.35, 0.05, 15, -14.8, 1.7, 5.5);
   statics.box("woodDark", 0.35, 0.05, 15, -14.8, 2.25, 5.5);
   for (let z = -1.8; z <= 12.8; z += 0.9) statics.box(Math.abs(z) % 1.8 < 0.9 ? "goods0" : "goods3", 0.25, 0.3, 0.3, -14.8, 1.75, z);
   for (let z = -0.4; z <= 4.8; z += 0.9) statics.cylinder("stool", 0.2, 0.75, 20.0, 0, z, 10);
   statics.box("woodBar", 0.3, 0.05, 3.6, 24.3, 2.0, 8.0);
   for (let z = 6.2; z <= 9.6; z += 0.35) statics.box("bottle", 0.08, 0.3, 0.08, 24.25, 2.05, z);
-  lamps.add("lamp:pool-table", { x: 20.1, y: 2.96, z: 8.5 }, { type: "box", half: [0.26, 0.08, 0.26] }, 0, [lampMesh(new CylinderGeometry(0.08, 0.25, 0.12, 12), 20.1, 2.96, 8.5)], [barLight]);
+  lamps.add("lamp:pool-table", { x: 20.1, y: 2.96, z: 8.5 }, { type: "box", half: [0.26, 0.08, 0.26] }, 0, lampSet("billiard_lamp", [at(20.1, 2.96, 8.5)], materials.lampGlow), [barLight]);
 
   // ---------- stalls: wooden counters that break apart ----------
   const groups = new Map<string, Object3D[]>();
@@ -857,7 +842,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     group.position.set(stall.x, 0, stall.z);
     group.rotation.y = stall.side > 0 ? 0 : Math.PI;
     // The stall's lamp hangs under the awning; it goes out with the stall or on its own.
-    lamps.add(`lamp:stall-${index}`, { x: stall.x + stall.side * 0.3, y: 2.05, z: stall.z }, { type: "box", half: [0.08, 0.11, 0.08] }, 0, [lampMesh(new BoxGeometry(0.14, 0.2, 0.14), 0.3, 2.05, 0, group)], [stallLights[index]]);
+    lamps.add(`lamp:stall-${index}`, { x: stall.x + stall.side * 0.3, y: 2.05, z: stall.z }, { type: "box", half: [0.08, 0.11, 0.08] }, 0, lampObject("cage_lamp", at(0.3, 2.05, 0), group), [stallLights[index]]);
     root.add(group);
     const id = `stall:${index}`;
     groups.set(id, [group]);
@@ -898,25 +883,19 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0, 18);
   statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0.15, 18.1);
   statics.cylinder("steelDark", 0.35, 0.03, 12.75, 0, -6, 20);
-  // Wall lamps, lit and dark copies: a broken one moves to the dark set.
-  const sconceLit = new InstancedMesh(new BoxGeometry(0.25, 0.3, 0.4), materials.sconce, sconces.length);
-  const sconceDark = new InstancedMesh(sconceLit.geometry, darkGlass, sconces.length);
+  // Barn lamps on the service alley walls, their shades 0.36 m out: lit and dark glass, so a
+  // broken one goes dark on its own.
+  const sconceParts = lampSet("sconce", sconces.map((sconce) => sconce.x < 12 ? wallMatrix("px", 8.5, sconce.z, 3.6) : wallMatrix("nx", 17, sconce.z, 3.6)), materials.sconce);
   sconces.forEach((sconce, index) => {
-    sconceLit.setMatrixAt(index, matrix.makeTranslation(sconce.x, 3.45, sconce.z));
-    sconceDark.setMatrixAt(index, matrix.makeScale(0, 0, 0));
-    lamps.add(`lamp:sconce-${index}`, { x: sconce.x, y: 3.45, z: sconce.z }, { type: "box", half: [0.13, 0.15, 0.2] }, 0, [{ kind: "instance", lit: sconceLit, dark: sconceDark, index }], [sconce.light]);
+    lamps.add(`lamp:sconce-${index}`, { x: sconce.x < 12 ? 8.86 : 16.64, y: 3.48, z: sconce.z }, { type: "box", half: [0.18, 0.13, 0.18] }, 0, sconceParts.slice(index, index + 1), [sconce.light]);
   });
-  root.add(sconceLit, sconceDark);
   // A breaker box on the service alley wall: shoot it and the alley's string lights and wall
-  // lamps go out.
-  const breaker = new Group();
-  breaker.position.set(8.62, 1.55, -12.5);
-  const panel = new Mesh(new BoxGeometry(0.18, 0.7, 0.5), materials.steelDark);
-  const led = new Mesh(new BoxGeometry(0.02, 0.04, 0.04), std({ color: 0x000000, emissive: 0x4dff6a, emissiveIntensity: 3 }));
-  led.position.set(0.1, 0.25, 0.16);
-  const conduit = new Mesh(new CylinderGeometry(0.03, 0.03, 2.2, 8), materials.steelDark);
-  conduit.position.set(-0.04, 1.45, 0.12);
-  breaker.add(panel, led, conduit);
+  // lamps go out, and its green light with them.
+  const breakerBox = splitGlow(kit.get("breaker_box"));
+  const breaker = kitObject(breakerBox.solid);
+  breaker.applyMatrix4(wallMatrix("px", 8.5, -12.5, 1.55));
+  const led = new Mesh(breakerBox.glow ?? new BufferGeometry(), std({ color: 0x000000, emissive: 0x4dff6a, emissiveIntensity: 3 }));
+  breaker.add(led);
   root.add(breaker);
 
   // ---------- rooftops against the sky ----------
@@ -931,42 +910,40 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   }
 
   // ---------- string lights, lanterns and cables ----------
-  const bulbSpots: Vector3[] = [], wires: number[] = [];
-  const hang = (x0: number, z0: number, x1: number, z1: number, y: number, sag: number, spacing: number, onPoint?: (p: Vector3, t: number) => void): void => {
+  const bulbSpots: Vector3[] = [], spans: [Vector3, Vector3, number][] = [];
+  const hang = (x0: number, z0: number, x1: number, z1: number, y: number, sag: number, spacing: number, thickness: number, onPoint?: (p: Vector3, t: number) => void): void => {
     const count = Math.max(4, Math.round(Math.hypot(x1 - x0, z1 - z0) / spacing));
     let previous: Vector3 | null = null;
     for (let i = 0; i <= count; i += 1) {
       const t = i / count, p = new Vector3(x0 + (x1 - x0) * t, y - sag * 4 * t * (1 - t), z0 + (z1 - z0) * t);
       onPoint?.(p, t);
-      if (previous) wires.push(previous.x, previous.y, previous.z, p.x, p.y, p.z);
+      if (previous) spans.push([previous, p, thickness]);
       previous = p;
     }
   };
   // Each string is three runs of bulbs, one per light; a round anywhere along a run pops it.
   const runs: Vector3[][][] = strands.map(() => [[], [], []]);
-  strands.forEach((strand, index) => hang(strand.x0, strand.z0, strand.x1, strand.z1, strand.y, strand.sag, 0.45, (p, t) => {
+  strands.forEach((strand, index) => hang(strand.x0, strand.z0, strand.x1, strand.z1, strand.y, strand.sag, 0.45, 1, (p, t) => {
     runs[index][Math.min(2, Math.floor(t * 3))].push(p);
     bulbSpots.push(p);
   }));
-  for (const [x0, z0, x1, z1, y, sag] of cables) hang(x0, z0, x1, z1, y, sag, 1.2);
-  const bulbs = new InstancedMesh(new SphereGeometry(0.05, 8, 6), glow(0xffc070, 4.5), bulbSpots.length);
-  const deadBulbs = new InstancedMesh(bulbs.geometry, darkGlass, bulbSpots.length);
-  bulbSpots.forEach((p, i) => { bulbs.setMatrixAt(i, matrix.makeTranslation(p.x, p.y - 0.08, p.z)); deadBulbs.setMatrixAt(i, matrix.makeScale(0, 0, 0)); });
-  root.add(bulbs, deadBulbs);
+  for (const [x0, z0, x1, z1, y, sag] of cables) hang(x0, z0, x1, z1, y, sag, 1.2, 2.4);
+  // Globe bulbs hanging from their sockets under the cable.
+  const bulbParts = lampSet("bulb", bulbSpots.map((p) => at(p.x, p.y, p.z)), glow(0xffc070, 4.5));
   const serviceLamps: string[] = sconces.map((_, index) => `lamp:sconce-${index}`);
   let bulb = 0;
   runs.forEach((strandRuns, index) => strandRuns.forEach((run, k) => {
     const first = run[0], last = run[run.length - 1];
     const low = Math.min(...run.map((p) => p.y)), high = Math.max(...run.map((p) => p.y));
     const id = `lamp:bulbs-${index}-${k}`;
-    const parts: LampPart[] = run.map(() => ({ kind: "instance" as const, lit: bulbs, dark: deadBulbs, index: bulb++ }));
+    const parts: LampPart[] = run.map(() => bulbParts[bulb++]).filter((part) => !!part);
     lamps.add(id, { x: (first.x + last.x) / 2, y: (low + high) / 2 - 0.08, z: (first.z + last.z) / 2 }, { type: "box", half: [Math.hypot(last.x - first.x, last.z - first.z) / 2 + 0.1, (high - low) / 2 + 0.12, 0.12] }, Math.atan2(-(last.z - first.z), last.x - first.x), parts, [strandLights[index][k]]);
     if (strands[index].x0 > 8) serviceLamps.push(id);
   }));
   lamps.add("lamp:breaker", { x: 8.62, y: 1.55, z: -12.5 }, { type: "box", half: [0.09, 0.35, 0.25] }, 0, [{ kind: "object", object: led }], [], { material: "metal-thin", maxHealth: 30, circuit: serviceLamps });
-  const wireGeometry = new BufferGeometry();
-  wireGeometry.setAttribute("position", new Float32BufferAttribute(wires, 3));
-  root.add(new LineSegments(wireGeometry, new LineBasicMaterial({ color: 0x15161a })));
+  // Every span is the kit's metre of cable, stretched and turned to fit; power lines are thicker.
+  const toward = new Vector3(), turn = new Quaternion(), X_AXIS = new Vector3(1, 0, 0);
+  for (const [from, to, thickness] of spans) placer.place("cable", new Matrix4().compose(from, turn.setFromUnitVectors(X_AXIS, toward.subVectors(to, from).normalize()), new Vector3(from.distanceTo(to), thickness, thickness)));
   const lanternSpots: { at: Vector3; color: number; phase: number; id: string }[] = [];
   lanternRows.forEach((z, row) => {
     for (let k = 0; k < 6; k += 1) {
@@ -976,29 +953,29 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
       lamps.add(id, { x: at.x, y: at.y, z: at.z }, { type: "box", half: [0.23, 0.3, 0.23] }, 0, [], [lanternLights[row][k < 3 ? 0 : 1]]);
     }
   });
-  const torn = std({ color: 0x3a1a14, roughness: 0.9, side: DoubleSide });
+  // Paper lanterns, orange and red, and the scorched, torn ones they become when shot.
   const lanternMeshes = [0, 1].map((color) => {
-    const spots = lanternSpots.filter((spot) => spot.color === color);
-    const geometry = new SphereGeometry(0.22, 14, 10);
-    const mesh = new InstancedMesh(geometry, glow(color ? 0xff4a2a : 0xffa040, 2.6), spots.length);
-    const dark = new InstancedMesh(geometry, torn, spots.length);
-    root.add(mesh, dark);
-    return { mesh, dark, spots };
+    const spots = lanternSpots.filter((spot) => spot.color === color), paper = glow(color ? 0xff4a2a : 0xffa040, 2.6);
+    const lit = instancedParts(kit.get("lantern"), spots.length, (material) => glowing(material) ? paper : material);
+    const dark = instancedParts(kit.get("lantern_torn"), spots.length);
+    root.add(...lit, ...dark);
+    return { lit, dark, spots };
   });
-  // Lanterns sway; a broken one hangs dark and torn.
-  const hidden = new Matrix4().makeScale(0, 0, 0);
+  // Lanterns sway; a broken one hangs scorched and torn.
+  const ONE = new Vector3(1, 1, 1);
   const swing = (seconds: number): void => {
-    for (const { mesh, dark, spots } of lanternMeshes) {
-      spots.forEach((spot, i) => {
+    // Whole and torn lanterns are packed into their own meshes, so only those showing are drawn.
+    for (const { lit, dark, spots } of lanternMeshes) {
+      let whole = 0, torn = 0;
+      for (const spot of spots) {
         const angle = Math.sin(seconds * 1.15 + spot.phase) * 0.07;
         q.setFromAxisAngle(new Vector3(1, 0, 0), angle);
-        matrix.compose(new Vector3(spot.at.x, spot.at.y - Math.abs(angle) * 0.05, spot.at.z + angle * 0.35), q, new Vector3(1, 1.25, 1));
-        const out = lamps.dark(spot.id);
-        mesh.setMatrixAt(i, out ? hidden : matrix);
-        dark.setMatrixAt(i, out ? matrix.clone().multiply(new Matrix4().makeScale(0.9, 0.75, 0.9)) : hidden);
-      });
-      mesh.instanceMatrix.needsUpdate = true;
-      dark.instanceMatrix.needsUpdate = true;
+        matrix.compose(new Vector3(spot.at.x, spot.at.y - Math.abs(angle) * 0.05, spot.at.z + angle * 0.35), q, ONE);
+        if (lamps.dark(spot.id)) { for (const mesh of dark) mesh.setMatrixAt(torn, matrix); torn += 1; }
+        else { for (const mesh of lit) mesh.setMatrixAt(whole, matrix); whole += 1; }
+      }
+      for (const mesh of lit) { mesh.count = whole; mesh.instanceMatrix.needsUpdate = true; }
+      for (const mesh of dark) { mesh.count = torn; mesh.instanceMatrix.needsUpdate = true; }
     }
   };
   swing(0);
@@ -1086,7 +1063,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
       pipes.update(dt);
       // The OPEN sign's tube is failing: it stutters off now and then, until it is shot out.
       const tick = Math.floor(seconds * 14), roll = Math.abs(Math.sin(tick * 12.9898) * 43758.5453) % 1;
-      if (!lamps.broken("lamp:open")) openSign.emissiveIntensity = roll < 0.07 ? 0.2 : roll < 0.1 ? 1.2 : 3.0;
+      if (!lamps.broken("lamp:open")) for (const tube of openSign) tube.emissiveIntensity = roll < 0.07 ? 0.2 : roll < 0.1 ? 1.2 : 3.0;
     },
     dispose() { for (const texture of owned) texture.dispose(); pipes.dispose(); },
   };
