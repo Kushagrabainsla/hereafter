@@ -65,6 +65,15 @@
         <p class="dialog-intro">Create an invite-only room and share its link. Players connect directly through WebRTC.</p>
         <label class="room-label" for="player-name">Your name</label>
         <input id="player-name" class="room-input room-name" type="text" autocomplete="nickname" spellcheck="false" maxlength="32" />
+        <div class="voice-settings">
+          <label class="room-label" for="voice-choice">Voice</label>
+          <select id="voice-choice" class="room-input">
+            <option value="hi">Hindi</option>
+            <option value="en">English</option>
+            <option value="grunts">Grunts only</option>
+          </select>
+          <label class="room-check"><input id="adult-voice" type="checkbox" /> <span>Hear 18+ lines: gaalis and swearing. Off plays a clean line instead.</span></label>
+        </div>
         <div id="room-entry">
           <button id="create-room" class="room-button room-button-primary" type="button">Create room</button>
           <div class="room-divider">or join a friend</div>

@@ -41,15 +41,18 @@ export class SoundStage {
       if (motion.moving && gait.grounded && !motion.sliding) gameAudio.step(surface(), motion.running ? "run" : motion.crouching ? "crouch" : "walk", index % 2 ? 1 : -1);
       this.stepIndex = index;
     }
-    if (gait.jumps !== this.jumps) { this.jumps = gait.jumps; gameAudio.jump(surface()); }
-    if (gait.landings !== this.landings) { this.landings = gait.landings; gameAudio.land(gait.landingSpeed, surface()); }
-    if (gait.mantles !== this.mantles) { this.mantles = gait.mantles; gameAudio.mantle(); }
+    // The player's own voice: a grunt on some jumps, on every climb and on hard landings, and
+    // breathing that builds with a sprint.
+    if (gait.jumps !== this.jumps) { this.jumps = gait.jumps; gameAudio.jump(surface()); if (Math.random() < 0.45) gameAudio.effort("jump", null); }
+    if (gait.landings !== this.landings) { this.landings = gait.landings; gameAudio.land(gait.landingSpeed, surface()); if (gait.landingSpeed > 8) gameAudio.effort("climb", null); }
+    if (gait.mantles !== this.mantles) { this.mantles = gait.mantles; gameAudio.mantle(); gameAudio.effort("climb", null); }
     if (gait.rungs !== this.rungs) { this.rungs = gait.rungs; gameAudio.ladderStep(); }
     if (motion.sliding !== this.sliding) {
       this.sliding = motion.sliding;
-      if (motion.sliding) gameAudio.slide(surface());
+      if (motion.sliding) { gameAudio.slide(surface()); if (Math.random() < 0.5) gameAudio.effort("jump", null); }
       else gameAudio.stopSlide();
     }
+    gameAudio.breathe(motion.exertion);
     const seen = new Set<string>();
     remotes.each((peerId, feet, pose, dead) => {
       seen.add(peerId);
@@ -59,7 +62,10 @@ export class SoundStage {
       state.x = feet.x; state.z = feet.z;
       const chest = { x: feet.x, y: feet.y + 1.1, z: feet.z };
       const at = { x: feet.x, y: feet.y + 0.05, z: feet.z };
-      if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) gameAudio.remoteLand(at, this.surfaceAt());
+      const head = { x: feet.x, y: feet.y + 1.6, z: feet.z };
+      if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) { gameAudio.remoteLand(at, this.surfaceAt()); if (state.height > 1.4) gameAudio.effort("climb", head); }
+      // Another player leaving the ground grunts now and then.
+      if (state.height < 0.05 && pose.jumpHeight > 0.12 && pose.airborne && !dead && Math.random() < 0.4) gameAudio.effort("jump", head);
       state.height = pose.jumpHeight;
       if (pose.sliding && !state.sliding && !dead) gameAudio.remoteSlide(at, this.surfaceAt());
       state.sliding = pose.sliding === true;

@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 17;
+const PROTOCOL_VERSION = 18;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
@@ -183,7 +183,7 @@ function validIntent(value: unknown): value is CombatIntent {
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
   if (intent.kind === "throw") return validAim(intent.aim) && (intent.smoke === undefined || typeof intent.smoke === "boolean");
   if (intent.kind === "fall") return typeof intent.speed === "number" && Number.isFinite(intent.speed);
-  if (intent.kind === "name") return typeof intent.name === "string" && intent.name.length <= 64;
+  if (intent.kind === "profile") return typeof intent.name === "string" && intent.name.length <= 64 && typeof intent.voice === "string" && intent.voice.length <= 8;
   return intent.kind === "reload" || intent.kind === "respawn";
 }
 

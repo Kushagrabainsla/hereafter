@@ -70,7 +70,7 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 **Matches**
 - Five-minute rounds, or first to 15 kills. The winner is shown on the scoreboard, and the next round starts 12 seconds later with the market rebuilt.
 - A scoreboard on <kbd>Tab</kbd> with kills, deaths and ping, a round clock, and a kill feed naming who got whom.
-- Pick your name in the room dialog; it's saved in your browser.
+- Pick your name and voice (Hindi, English or grunts only) in the room dialog; they are saved in your browser.
 
 **Multiplayer**
 - Share a link and play together, 2 to 8 players, browser to browser over WebRTC, with no game server.
@@ -82,6 +82,7 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 - Light bouncing off walls and floors is baked offline in Blender's Cycles. Wet paving reflects the lamps.
 - Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
 - A market that sounds alive: traffic beyond the walls, humming neon and air conditioners, and music thumping from the bar.
+- Players have voices: grunts, cries and sprint breathing, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. The lines are placeholders until recorded; see the [recording sheet](docs/voice-lines.md).
 
 ## How to play
 
@@ -139,6 +140,7 @@ Open the URL Vite prints. No API key or account is needed: every asset the game 
 | `npm run build:viewmodels` | Rebuild the first-person arms and weapons (needs Blender 4.4+) |
 | `npm run build:lightmaps` | Rebake the market's light after a map change (needs Chrome and Blender) |
 | `npm run build:audio` | Download and rebuild the sound effects |
+| `npm run build:voices` | Rebuild the players' voices, using any recorded lines |
 
 Add `?renderer=webgl` to the URL to force WebGL 2. Pushes to `main` deploy to GitHub Pages through [`deploy-pages.yml`](.github/workflows/deploy-pages.yml).
 
@@ -174,6 +176,7 @@ docs/              design and engineering notes
 | [Network benchmarks](docs/network-benchmarks.md) | Measured traffic, delays and recovery, step by step |
 | [Architecture](docs/architecture.md) | How the pieces fit |
 | [Asset sources](docs/data-sources.md) | Every model, texture and sound, with its license |
+| [Voice lines](docs/voice-lines.md) | Every line players say, and how to record them |
 
 ## Known limitations
 
@@ -191,6 +194,8 @@ docs/              design and engineering notes
 - Arms and the third-person soldier: [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT)
 - Carbine: [AKM](https://opengameart.org/content/akm) by LonesomeDucky, OpenGameArt (CC0)
 - Sounds, all CC0: [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), reload packs on OpenGameArt, and [Kenney](https://kenney.nl/)'s Impact Sounds and RPG Audio
+
+- Voices: grunts and cries by HaelDB on OpenGameArt (CC0); placeholder lines from [Piper](https://github.com/OHF-Voice/piper1-gpl) with its public-domain "norman" voice, and [eSpeak NG](https://github.com/espeak-ng/espeak-ng)
 
 Full records, with authors and links, are in [asset sources](docs/data-sources.md).
 

@@ -6,6 +6,7 @@ import { selfId } from "trystero";
 import { carriedMass, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
 import { cleanName, standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
+import { PlayerVoices, VOICE_CHOICES, type VoiceChoice } from "./game/playerVoices";
 
 function element<T extends HTMLElement>(id: string): T {
   const found = document.getElementById(id);
@@ -61,6 +62,8 @@ const loaderStep = element<HTMLElement>("loader-step");
 const loaderPercent = element<HTMLElement>("loader-percent");
 const loaderTip = element<HTMLElement>("loader-tip");
 const playerNameInput = element<HTMLInputElement>("player-name");
+const voiceChoiceInput = element<HTMLSelectElement>("voice-choice");
+const adultVoiceInput = element<HTMLInputElement>("adult-voice");
 const roundHud = element<HTMLElement>("round-hud");
 const roundClock = element<HTMLElement>("round-clock");
 const roundNote = element<HTMLElement>("round-note");
@@ -130,6 +133,30 @@ playerNameInput.addEventListener("input", () => {
   try { window.localStorage.setItem(NAME_KEY, name); } catch { /* as above */ }
 });
 playerNameInput.addEventListener("change", () => { playerNameInput.value = playerName; });
+
+// The voice this player speaks with, and whether they hear 18+ lines; both kept in this browser.
+// English is the default until the Hindi lines are recorded.
+const VOICE_KEY = "hereafter.voice", ADULT_KEY = "hereafter.adult";
+const stored = (key: string): string | null => { try { return window.localStorage.getItem(key); } catch { return null; } };
+const store = (key: string, value: string): void => { try { window.localStorage.setItem(key, value); } catch { /* storage unavailable */ } };
+let voiceChoice: VoiceChoice = VOICE_CHOICES.find((choice) => choice === stored(VOICE_KEY)) ?? "en";
+voiceChoiceInput.value = voiceChoice;
+voiceChoiceInput.addEventListener("change", () => {
+  voiceChoice = VOICE_CHOICES.find((choice) => choice === voiceChoiceInput.value) ?? "en";
+  store(VOICE_KEY, voiceChoice);
+  nameSentAt = 0;
+});
+// Other players speak with their own choice, heard from where they stand.
+const voices = new PlayerVoices(selfId, (id) => {
+  if (id === selfId) return voiceChoice;
+  return VOICE_CHOICES.find((choice) => choice === match?.player(id)?.voice) ?? "en";
+}, (id) => {
+  const at = viewer?.remotePosition(id);
+  return at ? { x: at.x, y: at.y + 1.6, z: at.z } : null;
+});
+voices.adult = stored(ADULT_KEY) === "1";
+adultVoiceInput.checked = voices.adult;
+adultVoiceInput.addEventListener("change", () => { voices.adult = adultVoiceInput.checked; store(ADULT_KEY, voices.adult ? "1" : "0"); });
 
 // Another player's name, or a stand-in made from their id until theirs arrives.
 function nameOf(id: string): string {
@@ -314,8 +341,11 @@ let lastPhase = "";
 function onMatchChange(state: CombatSnapshot): void {
   const player = state.players[selfId];
   if (!player) return;
-  // A round ending rings the bell once.
-  if (state.round.phase === "over" && lastPhase === "live") gameAudio.roundBell(false);
+  // A round ending rings the bell once, and the winner has something to say.
+  if (state.round.phase === "over" && lastPhase === "live") {
+    gameAudio.roundBell(false);
+    voices.roundOver(state.round.winner, Object.keys(state.players), state.round.number);
+  }
   lastPhase = state.round.phase;
   const wasDead = !deathOverlay.hidden;
   healthNumber.textContent = String(player.health);
@@ -350,6 +380,7 @@ function onMatchChange(state: CombatSnapshot): void {
     lastEventId = event.id;
     playEvent(event);
   }
+  voices.events(fresh, state.players, state.grenades);
 }
 
 function playEvent(event: CombatEvent): void {
@@ -583,7 +614,12 @@ function attack(stroke: KnifeStroke = "slash"): void {
   if (now - lastLocalAttack < WEAPONS[weapon].cooldownMs || player.reloadUntil > now) return;
   if (player.ammo[weapon] <= 0) {
     // Held triggers retry every frame; click and remind at most a few times a second.
-    if (now - lastDryFire > 300) { lastDryFire = now; gameAudio.dryFire(); toast(player.mags[weapon].length ? "Press R to reload" : "Out of ammunition: find magazines"); }
+    if (now - lastDryFire > 300) {
+      lastDryFire = now;
+      gameAudio.dryFire();
+      toast(player.mags[weapon].length ? "Press R to reload" : "Out of ammunition: find magazines");
+      if (!player.mags[weapon].length) voices.say(selfId, "empty", now);
+    }
     return;
   }
   lastLocalAttack = now;
@@ -797,10 +833,10 @@ window.setInterval(() => {
     const seconds = Math.max(0, Math.ceil((player.respawnAfter - roomClock()) / 1000));
     respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : "Press Enter to respawn";
   }
-  // The coordinator keeps everyone's name; this player's goes again until it shows there.
-  if (player && player.name !== playerName && Date.now() - nameSentAt > 1500) {
+  // The coordinator keeps everyone's name and voice; this player's go again until they show there.
+  if (player && (player.name !== playerName || player.voice !== voiceChoice) && Date.now() - nameSentAt > 1500) {
     nameSentAt = Date.now();
-    submit({ kind: "name", name: playerName });
+    submit({ kind: "profile", name: playerName, voice: voiceChoice });
   }
   showRound();
   showScoreboard();
@@ -854,6 +890,8 @@ void createMapViewer(element("map"), arena, {
   }
   syncPause();
   peerRoom?.attach(match);
+  // The voices load once the world has, about 1.2 MB in the background.
+  void gameAudio.loadVoices(PlayerVoices.clips());
 }).catch(() => {
   setStatus("error", "The world could not load. Check browser WebGPU or WebGL 2 support, then reload.");
   performanceLabel.textContent = "Graphics unavailable";

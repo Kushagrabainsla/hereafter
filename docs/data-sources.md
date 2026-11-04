@@ -39,6 +39,16 @@ The 69 MP3 files in `public/audio/` (420 KB in total) are cut, peak-normalised a
 
 The gunshot takes start 3 ms before each detected onset and keep a short tail; the mid-distance takes keep their street echo and, for the AK-47, the supersonic crack that arrives ahead of the report. The pistol reload loses two silent gaps to fit the 1.2 s reload, and the rifle reload gains 0.12 s to fit 1.7 s. The hit tick, headshot ring, elimination confirmation, knife swing, near-miss crack and the low thump under shots are synthesised in the browser.
 
+## Voices
+
+`npm run build:voices` (`scripts/audio/voices.py`) builds `public/audio/voice/` from these and from `src/game/voiceLines.json`. A line recorded into `assets-src/voices/<hi|en>/<line id>.wav` replaces its placeholder; see the [recording sheet](voice-lines.md).
+
+| Sounds | Source | Author | License |
+|---|---|---|---|
+| Wordless efforts: jump and climb grunts, pain and death cries (`voice/effort/*`) | [Male Grunt/Yelling sounds](https://opengameart.org/content/male-gruntyelling-sounds), vocalist 3: `3grunt1` to `3grunt6` and ten `3yell` takes | HaelDB | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (also offered as OGA-BY 3.0) |
+| English lines, placeholders until recorded (`voice/en/*`) | Synthesised with [Piper](https://github.com/OHF-Voice/piper1-gpl) 1.3 and its voice [`en_US-norman-medium`](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/norman/medium), trained from scratch on public-domain LibriVox recordings | Bryce Beattie (voice) | Voice model MIT, training data public domain; the generated audio carries no licence |
+| Hindi lines, placeholders until recorded (`voice/hi/*`) | Synthesised with [eSpeak NG](https://github.com/espeak-ng/espeak-ng) 1.52, voice `hi+m3` | eSpeak NG contributors | The program is GPL-3.0; audio it generates is not covered by it |
+
 ## Props
 
 `public/models/props/*.glb` and `props.json` are built by `scripts/props/build.sh` (run by `npm run build:props`) from Poly Haven models downloaded by `scripts/props/fetch.sh`, which pins every source file by MD5. The build keeps the clean variant where a source has two, seats the trash can lid, removes the air-conditioner's hanging pipe, simplifies each mesh, resizes textures to 512 px WebP and centres each model with its base at y = 0. All are CC0 1.0 under the [Poly Haven license](https://polyhaven.com/license).

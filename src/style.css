@@ -191,7 +191,11 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .scoreboard footer { margin-top: 12px; color: #7f979e; font-size: 11px; }
 .death-overlay small { color: #f5ece0; font-size: 14px; font-weight: 700; letter-spacing: .06em; text-shadow: 0 2px 8px #38080c; }
 .death-overlay small:empty { display: none; }
-.room-name { margin-bottom: 14px; }
+.room-name { margin-bottom: 4px; }
+.voice-settings { margin-bottom: 14px; }
+.voice-settings select { appearance: auto; cursor: pointer; }
+.room-check { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; color: #a8bec6; font-size: 12px; line-height: 1.45; cursor: pointer; }
+.room-check input { margin: 2px 0 0; accent-color: #4fc8c4; }
 
 .attribution { position: absolute; z-index: 3; bottom: 10px; right: 10px; display: flex; gap: 8px; align-items: center; padding: 4px 7px; border-radius: 5px; background: rgba(8, 22, 31, .74); color: #d4e3e5; font-size: 9px; }
 .attribution a { color: inherit; text-decoration: underline; text-decoration-color: #77949c; }

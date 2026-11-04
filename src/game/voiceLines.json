@@ -1,0 +1,63 @@
+{
+  "efforts": { "jump": 3, "climb": 3, "pain": 6, "death": 5 },
+  "lines": [
+    { "id": "round-go", "moment": "roundStart", "tier": "clean", "hi": "चलो, शुरू करते हैं!", "hiLatin": "Chalo, shuru karte hain!", "en": "Let's do this!" },
+    { "id": "round-ready", "moment": "roundStart", "tier": "clean", "hi": "तैयार हो जाओ!", "hiLatin": "Taiyaar ho jao!", "en": "Get ready!" },
+    { "id": "round-band", "moment": "roundStart", "tier": "spicy", "hi": "आज सबकी बैंड बजेगी!", "hiLatin": "Aaj sabki band bajegi!", "en": "Everybody's going down today!" },
+
+    { "id": "win-jeet", "moment": "roundWin", "tier": "clean", "hi": "जीत गए!", "hiLatin": "Jeet gaye!", "en": "We won!" },
+    { "id": "win-bhagwan", "moment": "roundWin", "tier": "spicy", "hi": "अपुन ही भगवान है!", "hiLatin": "Apun hi bhagwan hai!", "en": "Who's the boss now?" },
+    { "id": "win-jhakaas", "moment": "roundWin", "tier": "spicy", "hi": "झकास!", "hiLatin": "Jhakaas!", "en": "Sweet!" },
+
+    { "id": "lose-agli", "moment": "roundLose", "tier": "clean", "hi": "अगली बार देख लेंगे।", "hiLatin": "Agli baar dekh lenge.", "en": "Next time, then." },
+    { "id": "lose-kismat", "moment": "roundLose", "tier": "clean", "hi": "किस्मत ही ख़राब है।", "hiLatin": "Kismat hi kharab hai.", "en": "Just bad luck." },
+    { "id": "lose-bakwaas", "moment": "roundLose", "tier": "spicy", "hi": "बकवास!", "hiLatin": "Bakwaas!", "en": "Garbage!" },
+    { "id": "lose-harami", "moment": "roundLose", "tier": "adult", "hi": "हरामी लोग!", "hiLatin": "Harami log!", "en": "Bastards!" },
+
+    { "id": "reload-kar", "moment": "reload", "tier": "clean", "hi": "रीलोड कर रहा हूँ!", "hiLatin": "Reload kar raha hoon!", "en": "Reloading!" },
+    { "id": "reload-cover", "moment": "reload", "tier": "clean", "hi": "कवर दे!", "hiLatin": "Cover de!", "en": "Cover me!" },
+
+    { "id": "empty-goli", "moment": "empty", "tier": "clean", "hi": "गोली ख़त्म!", "hiLatin": "Goli khatam!", "en": "I'm out!" },
+    { "id": "empty-khaali", "moment": "empty", "tier": "clean", "hi": "अरे, ख़ाली है!", "hiLatin": "Arre, khaali hai!", "en": "It's empty!" },
+
+    { "id": "grenade-hato", "moment": "grenade", "tier": "clean", "hi": "ग्रेनेड! हटो!", "hiLatin": "Grenade! Hato!", "en": "Grenade out!" },
+    { "id": "grenade-sambhaal", "moment": "grenade", "tier": "spicy", "hi": "ले, संभाल!", "hiLatin": "Le, sambhaal!", "en": "Catch this!" },
+    { "id": "smoke-dhuaan", "moment": "smoke", "tier": "clean", "hi": "धुआँ डाल रहा हूँ!", "hiLatin": "Dhuaan daal raha hoon!", "en": "Smoke out!" },
+    { "id": "near-bhaago", "moment": "grenadeNear", "tier": "clean", "hi": "भागो!", "hiLatin": "Bhaago!", "en": "Run!" },
+
+    { "id": "miss-baap", "moment": "nearMiss", "tier": "clean", "hi": "अरे बाप रे!", "hiLatin": "Arre baap re!", "en": "Whoa!" },
+    { "id": "miss-bal", "moment": "nearMiss", "tier": "clean", "hi": "बाल-बाल बचे!", "hiLatin": "Bal-bal bache!", "en": "That was close!" },
+    { "id": "miss-kaun", "moment": "nearMiss", "tier": "clean", "hi": "कौन मार रहा है?", "hiLatin": "Kaun maar raha hai?", "en": "Who's shooting?" },
+    { "id": "miss-pagal", "moment": "nearMiss", "tier": "spicy", "hi": "पागल है क्या?", "hiLatin": "Pagal hai kya?", "en": "Are you crazy?" },
+    { "id": "miss-gaandu", "moment": "nearMiss", "tier": "adult", "hi": "गांडू, ढंग से मार!", "hiLatin": "Gaandu, dhang se maar!", "en": "Learn to aim, asshole!" },
+
+    { "id": "hurt-lag", "moment": "hurt", "tier": "clean", "hi": "लग गई!", "hiLatin": "Lag gayi!", "en": "I'm hit!" },
+    { "id": "hurt-teri", "moment": "hurt", "tier": "spicy", "hi": "तेरी तो...!", "hiLatin": "Teri toh...!", "en": "Oh, you...!" },
+    { "id": "hurt-bc", "moment": "hurt", "tier": "adult", "hi": "बहनचोद!", "hiLatin": "Behenchod!", "en": "Son of a bitch!" },
+    { "id": "low-jaan", "moment": "lowHealth", "tier": "clean", "hi": "बस थोड़ी सी जान बची है।", "hiLatin": "Bas thodi si jaan bachi hai.", "en": "I'm barely standing." },
+
+    { "id": "death-gaya", "moment": "death", "tier": "clean", "hi": "गया मैं...", "hiLatin": "Gaya main...", "en": "I'm done..." },
+    { "id": "death-kamina", "moment": "death", "tier": "spicy", "hi": "कमीना...", "hiLatin": "Kamina...", "en": "Jerk..." },
+    { "id": "death-mc", "moment": "death", "tier": "adult", "hi": "मादरचोद...", "hiLatin": "Madarchod...", "en": "Motherfucker..." },
+
+    { "id": "kill-gaya", "moment": "kill", "tier": "clean", "hi": "गया!", "hiLatin": "Gaya!", "en": "Gotcha!" },
+    { "id": "kill-ekaur", "moment": "kill", "tier": "clean", "hi": "एक और!", "hiLatin": "Ek aur!", "en": "One more!" },
+    { "id": "kill-mazaa", "moment": "kill", "tier": "clean", "hi": "मज़ा आ गया!", "hiLatin": "Mazaa aa gaya!", "en": "That was fun!" },
+    { "id": "kill-beta", "moment": "kill", "tier": "spicy", "hi": "ले बेटा!", "hiLatin": "Le beta!", "en": "Take that!" },
+    { "id": "kill-nikal", "moment": "kill", "tier": "spicy", "hi": "चल निकल!", "hiLatin": "Chal nikal!", "en": "Get lost!" },
+    { "id": "kill-darr", "moment": "kill", "tier": "spicy", "hi": "क्या रे, डर गया?", "hiLatin": "Kya re, darr gaya?", "en": "Scared, huh?" },
+    { "id": "kill-ullu", "moment": "kill", "tier": "spicy", "hi": "उल्लू का पट्ठा!", "hiLatin": "Ullu ka pattha!", "en": "Idiot!" },
+    { "id": "kill-bsdk", "moment": "kill", "tier": "adult", "hi": "भोसड़ीके, ले!", "hiLatin": "Bhosdike, le!", "en": "Eat it, motherfucker!" },
+    { "id": "kill-chutiya", "moment": "kill", "tier": "adult", "hi": "चूतिया कहीं का!", "hiLatin": "Chutiya kahin ka!", "en": "What a dumbass!" },
+
+    { "id": "head-khopdi", "moment": "headshot", "tier": "clean", "hi": "सीधा खोपड़ी में!", "hiLatin": "Seedha khopdi mein!", "en": "Right between the eyes!" },
+    { "id": "head-bheja", "moment": "headshot", "tier": "spicy", "hi": "भेजा फ़्राई!", "hiLatin": "Bheja fry!", "en": "Brains fried!" },
+    { "id": "knife-chaku", "moment": "knifeKill", "tier": "clean", "hi": "चाकू चल गया!", "hiLatin": "Chaaku chal gaya!", "en": "Knifed!" },
+    { "id": "double-teer", "moment": "doubleKill", "tier": "clean", "hi": "एक तीर, दो शिकार!", "hiLatin": "Ek teer, do shikaar!", "en": "Two for one!" },
+    { "id": "double-dhamaal", "moment": "doubleKill", "tier": "spicy", "hi": "धमाल!", "hiLatin": "Dhamaal!", "en": "Double trouble!" },
+    { "id": "revenge-hisaab", "moment": "revenge", "tier": "clean", "hi": "हिसाब बराबर।", "hiLatin": "Hisaab barabar.", "en": "Now we're even." },
+
+    { "id": "respawn-wapas", "moment": "respawn", "tier": "clean", "hi": "वापस आ गया!", "hiLatin": "Wapas aa gaya!", "en": "I'm back!" },
+    { "id": "respawn-picture", "moment": "respawn", "tier": "spicy", "hi": "पिक्चर अभी बाक़ी है, मेरे दोस्त!", "hiLatin": "Picture abhi baaki hai, mere dost!", "en": "The show's not over yet!" }
+  ]
+}

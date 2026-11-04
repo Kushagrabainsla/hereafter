@@ -1,4 +1,5 @@
 import { type WeaponKind } from "./combatRules";
+import voiceCatalog from "./voiceLines.json";
 import { type Material } from "../world/materials";
 
 // Sound effects for the local player, other players and the HUD. Recorded CC0 samples
@@ -104,6 +105,11 @@ export class GameAudio {
   private nextSiren = 0;
   private musicStep = 0;
   private musicAt = 0;
+  // Players' voices by path under audio/voice, loaded after the world; and the player's own
+  // breathing, which quickens and deepens with exertion.
+  private voices = new Map<string, Sample>();
+  private breathAt = 0;
+  private breathIn = true;
   occlusion: (from: Vec3, to: Vec3) => boolean = () => false;
 
   constructor() {
@@ -525,6 +531,71 @@ export class GameAudio {
     tone.stop(at + length + 0.02);
   }
 
+  // Voices ------------------------------------------------------------------------------
+
+  // Fetches and decodes voice clips by path ("en/kill-gaya", "effort/jump-1"), a few at a time.
+  async loadVoices(paths: string[]): Promise<void> {
+    await this.loading;
+    const OfflineContext = window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+    if (!OfflineContext) return;
+    const decoder = new OfflineContext(1, 1, SAMPLE_RATE), base = `${import.meta.env.BASE_URL}audio/voice/`, queue = paths.filter((path) => !this.voices.has(path));
+    await Promise.all(Array.from({ length: 6 }, async () => {
+      for (let path = queue.shift(); path; path = queue.shift()) {
+        try {
+          const response = await fetch(`${base}${path}.mp3`);
+          if (!response.ok) continue;
+          const buffer = await decoder.decodeAudioData(await response.arrayBuffer());
+          this.voices.set(path, { buffer, offset: this.onset(buffer) });
+        } catch {
+          // A clip that fails to load is simply not heard.
+        }
+      }
+    }));
+  }
+
+  // A voice clip: the player's own close and unplaced (at null), or another player's from where
+  // they are, dulled behind walls. Lines carry further than grunts. Returns its length in seconds,
+  // or 0 if it did not play.
+  voice(path: string, at: Vec3 | null, line: boolean): number {
+    const context = this.live(), sample = this.voices.get(path);
+    if (!context || !sample || (at && this.distanceTo(at) > (line ? 45 : 30))) return 0;
+    const rate = 0.97 + Math.random() * 0.06;
+    if (at) this.spatialSample(sample, at, { gain: line ? 0.4 : 0.3, ref: 3, rolloff: 1.2, rate, reverb: line ? 0.15 : 0, priority: line ? "high" : "low" });
+    else {
+      const voice = this.sampleSource(sample, { gain: line ? 0.32 : 0.2, rate });
+      voice?.gain.connect(this.mix);
+    }
+    return (sample.buffer.duration - sample.offset) / rate;
+  }
+
+  // A wordless effort, one of its takes at random: a jump, a climb, a pain cry or a death.
+  effort(kind: keyof typeof voiceCatalog.efforts, at: Vec3 | null): void {
+    this.voice(`effort/${kind}-${1 + Math.floor(Math.random() * voiceCatalog.efforts[kind])}`, at, false);
+  }
+
+  // The player's own breathing, called every frame: nothing at ease, then breaths in and out
+  // that come faster and louder as exertion builds, and slow again as it eases.
+  breathe(exertion: number): void {
+    const context = this.live();
+    if (!context || !this.noise || this.down) return;
+    const effort = (exertion - 0.3) / 0.7;
+    const now = context.currentTime;
+    if (effort <= 0) { this.breathAt = Math.max(this.breathAt, now); return; }
+    if (now < this.breathAt) return;
+    const inhale = this.breathIn, length = inhale ? 0.3 - effort * 0.08 : 0.38 - effort * 0.1;
+    const source = this.noiseSource(now, length + 0.05);
+    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency: inhale ? 1500 : 850, Q: 0.9 });
+    const gain = new GainNode(context, { gain: 0 });
+    const level = 0.025 + effort * 0.07;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(level * (inhale ? 0.7 : 1), now + length * 0.4);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
+    source.connect(filter).connect(gain).connect(this.mix);
+    this.breathIn = !inhale;
+    // One breath, in and out, takes from 2 s down to 0.75 s at full exertion.
+    this.breathAt = now + length + (inhale ? 0.05 : 0.5 - effort * 0.38);
+  }
+
   // Other players -----------------------------------------------------------------------
 
   remoteFire(weapon: WeaponKind, at: Vec3, stab = false): void {
@@ -894,9 +965,13 @@ export class GameAudio {
   }
 
   private source(name: SoundName, options: PlayOptions): { source: AudioBufferSourceNode; gain: GainNode } | null {
-    const context = this.live();
     const sample = this.pick(name);
-    if (!context || !sample) return null;
+    return sample ? this.sampleSource(sample, options) : null;
+  }
+
+  private sampleSource(sample: Sample, options: PlayOptions): { source: AudioBufferSourceNode; gain: GainNode } | null {
+    const context = this.live();
+    if (!context) return null;
     const source = new AudioBufferSourceNode(context, { buffer: sample.buffer, playbackRate: options.rate ?? 1 });
     const gain = new GainNode(context, { gain: options.gain ?? 1 });
     source.connect(gain);
@@ -923,6 +998,11 @@ export class GameAudio {
 
   // Positioned one-shot: air absorption with distance and a low-pass behind cover.
   private spatial(name: SoundName, at: Vec3, options: SpatialOptions = {}): void {
+    const sample = this.pick(name);
+    if (sample) this.spatialSample(sample, at, options);
+  }
+
+  private spatialSample(sample: Sample, at: Vec3, options: SpatialOptions = {}): void {
     const context = this.live();
     if (!context) return;
     const priority = options.priority ?? "low";
@@ -933,7 +1013,7 @@ export class GameAudio {
     }
     const distance = this.distanceTo(at);
     const occluded = options.occluded ?? this.occlusion(this.listenerAt, at);
-    const voice = this.source(name, { ...options, gain: (options.gain ?? 1) * (occluded ? 0.55 : 1) });
+    const voice = this.sampleSource(sample, { ...options, gain: (options.gain ?? 1) * (occluded ? 0.55 : 1) });
     if (!voice) return;
     const air = new BiquadFilterNode(context, { type: "lowpass", frequency: Math.max(2400, 18000 * Math.exp(-distance / 90)), Q: 0.4, channelCount: 1, channelCountMode: "explicit" });
     let chain: AudioNode = voice.gain.connect(air);

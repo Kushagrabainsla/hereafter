@@ -29,6 +29,9 @@ export interface CombatPlayer {
   intent: number;
   // What the player calls themself, as cleanName leaves it; empty until they say.
   name: string;
+  // The voice they speak with: "hi" for Hindi, "en" for English, "grunts" for no words, or
+  // empty until they say, heard as English.
+  voice: string;
 }
 
 // A room plays rounds once two players are in the game: a countdown, then a round of five
@@ -76,7 +79,9 @@ export type CombatIntent =
   // Open or close something the map lets players open, such as a door or a hatch.
   | { kind: "use"; target: string }
   | { kind: "fall"; speed: number }
-  | { kind: "name"; name: string };
+  // The player's name and voice.
+  | { kind: "profile"; name: string; voice: string };
+export const VOICES = ["hi", "en", "grunts"];
 
 export type DamageCause = WeaponKind | "grenade" | "fall";
 
@@ -126,7 +131,7 @@ export interface Drop { id: string; weapon: GunKind; gun: boolean; rounds: numbe
 export interface LiveGrenade { id: number; actor: string; explodeAt: number; position: Vec3; entity?: string; smoke?: boolean }
 
 export interface CombatSnapshot {
-  version: 8;
+  version: 9;
   revision: number;
   eventSeq: number;
   players: Record<string, CombatPlayer>;
@@ -240,7 +245,7 @@ function validDrop(drop: Drop): boolean {
 
 // Every life starts with only the knife and grenades: guns and ammunition are found.
 function freshPlayer(): CombatPlayer {
-  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "" };
+  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "" };
 }
 
 function validPlayer(player: CombatPlayer): boolean {
@@ -256,7 +261,8 @@ function validPlayer(player: CombatPlayer): boolean {
     && Number.isSafeInteger(player.kills) && player.kills >= 0
     && Number.isSafeInteger(player.deaths) && player.deaths >= 0
     && Number.isSafeInteger(player.intent) && player.intent >= 0
-    && typeof player.name === "string" && player.name.length <= 4 * NAME_LENGTH;
+    && typeof player.name === "string" && player.name.length <= 4 * NAME_LENGTH
+    && (player.voice === "" || VOICES.includes(player.voice));
 }
 
 const PLAYER_FIELDS = Object.keys(freshPlayer());
@@ -264,7 +270,7 @@ const PLAYER_FIELDS = Object.keys(freshPlayer());
 const checkEvents = (events: CombatEvent[]): CombatEvent[] => events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
 
 function emptySnapshot(): CombatSnapshot {
-  return { version: 8, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
+  return { version: 9, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
 }
 
 // The fields of value whose text differs from `before`, which is brought up to date; null if none.
@@ -385,7 +391,7 @@ export class MatchState {
   // Takes a coordinator's whole state. With force it replaces this one whatever their
   // revisions, as when a new coordinator takes over.
   adopt(incoming: CombatSnapshot, force = false): boolean {
-    if (!incoming || incoming.version !== 8 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
+    if (!incoming || incoming.version !== 9 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
       || !incoming.players || typeof incoming.players !== "object" || !incoming.entities || SHARED_PARTS.some((key) => !incoming[key]) || !Array.isArray(incoming.events)) return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
     if (!force && (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers))) return false;
@@ -512,17 +518,18 @@ export class MatchState {
     this.now = now;
     const player = this.snapshot.players[actor];
     if (!player) return false;
-    if (intent.kind === "name") {
-      const name = cleanName(String(intent.name));
-      if (name === player.name) return false;
+    if (intent.kind === "profile") {
+      const name = cleanName(String(intent.name)), voice = VOICES.includes(intent.voice) ? intent.voice : player.voice;
+      if (name === player.name && voice === player.voice) return false;
       player.name = name;
+      player.voice = voice;
       this.changed();
       return true;
     }
     if (intent.kind === "respawn") {
       if (player.health > 0 || now < player.respawnAfter) return false;
-      const { kills, deaths, intent: handled, name } = player;
-      Object.assign(player, freshPlayer(), { kills, deaths, intent: handled, name });
+      const { kills, deaths, intent: handled, name, voice } = player;
+      Object.assign(player, freshPlayer(), { kills, deaths, intent: handled, name, voice });
       this.removePose(actor);
       this.emit({ kind: "respawn", actor });
       this.changed();
@@ -962,7 +969,7 @@ export class MatchState {
   private startRound(now: number): void {
     this.snapshot.round = { number: this.snapshot.round.number + 1, phase: "live", until: now + ROUND_MS, winner: "" };
     for (const [id, player] of Object.entries(this.snapshot.players)) {
-      Object.assign(player, freshPlayer(), { intent: player.intent, name: player.name });
+      Object.assign(player, freshPlayer(), { intent: player.intent, name: player.name, voice: player.voice });
       this.removePose(id);
     }
     Object.assign(this.snapshot, { taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {} });

@@ -16,6 +16,7 @@ The game plays recorded CC0 sound for guns, reloads, handling, footsteps and imp
 - **The food truck.** Its doors and hatch latch and swing, and knock when they shut. A tyre bursts with a bang and the hiss of escaping air. A shot propane cylinder roars louder until it bursts.
 - **Brass.** Spent cases ring as they land: a bright ring for 9 mm brass, a duller one for the carbine's lacquered steel, made of four inharmonic partials with a short decay. An empty magazine dropped in a reload clatters. Both are positioned where they land and dulled behind cover.
 - **The market.** The city goes on beyond the walls: a low rumble that slowly breathes, a car passing a street away every 5 to 15 s, and now and then a siren far off. Nearby, each air conditioner's fan whirs and beats with its blades, and each blade sign's neon buzzes with mains hum until it is shot out, or the breaker cuts it, and starts again when the market is rebuilt. Music plays from a speaker high in the bar's back corner: a four-bar loop of kick, clap, hats, a bass line and soft chords, made in code at 92 beats a minute, heard through the walls and windows as a dull thump and clearly inside. Each source sounds only while the listener is in range (9 m for neon, 14 m for fans, 42 m for the music), and like other positioned sounds it goes dull and quieter behind walls. The check stops a metre short of each source, which sits in its own collider or against a wall.
+- **Voices.** Players grunt on some jumps, on every climb and on hard landings, cry out when hit and when they die, and breathe harder the longer they sprint, the breaths quickening from one every 2 s to one every 0.75 s. They also speak, in Hindi or English as each chooses in the room dialog, or not at all: a call as they throw a grenade or smoke, reload or run dry, a shout when a frag lands within 6 m or a round passes within 1.5 m, a taunt after a kill (its own for a headshot, a knife kill, a double kill within 4 s or revenge), a line when hit or down to the last quarter of their health, last words, a word on respawning, and lines as a round starts and ends. Each moment has several lines, picked by a hash of the combat event, so every player hears the same player say the same line; chances keep the chatter down (a kill taunt 60% of the time, a reload call 35%) and a player waits 2.5 s after a line before the next. Lines come in three tiers: clean, spicy and 18+; a listener who has not turned on 18+ lines hears a clean line in place of an 18+ one. A player's own voice plays close and unplaced, others' from where they stand, dulled behind walls. The wordless sounds are recordings; the lines are text-to-speech placeholders until recorded ([recording sheet](voice-lines.md)).
 - **Rounds.** A bell rings twice as a round starts and once, lower and longer, as it ends.
 - **Being hit.** A body blow and low thump with a brief muffling of the whole mix; elimination keeps the mix muffled until you respawn.
 - **Confirmation.** A short high tick for a hit, a metallic ring added for a headshot, and a heavier thunk with a bright ring for an elimination.
@@ -59,6 +60,19 @@ The ambience was recorded the same way, five seconds standing at each spot, with
 | Outside the bar's front window | −26 dBFS | −40 dBFS |
 | Inside the bar | −13.5 dBFS | −30 dBFS |
 
+Voices, one sound at a time:
+
+| Voice | Peak |
+|---|---|
+| Own line, English or Hindi placeholder | −11 dBFS |
+| Own jump grunt | −16 dBFS |
+| Own death cry | −14.5 dBFS |
+| Own breathing at the end of a long sprint | −21 dBFS |
+| Another player's line 4 m away, and 15 m away | −10, −22 dBFS |
+| Another player's pain cry 4 m away | −12 dBFS |
+
+At first other players' lines peaked at −6.4 dBFS 4 m away, near a gunshot, and the player's own at −9; both came down 3 dB.
+
 Everywhere it stays below the player's own walking footsteps, and the bar's music below a reload; at first the music peaked at −5 dBFS inside the bar, as loud as a reload, and passing cars as loud as footsteps, so both came down.
 
 A pistol shot placed 10 m to the screen-right measured 4.6 dB louder in the right channel, and one to the left 4.7 dB louder in the left. Headless checks measure levels, timing and direction, not taste; the mix should still be judged by ear on headphones and laptop speakers.
@@ -67,6 +81,8 @@ A pistol shot placed 10 m to the screen-right measured 4.6 dB louder in the righ
 
 - Snapshots carry only the latest combat event, so when shots arrive faster than snapshots, some of another player's shots can go unheard, as their tracers can go unseen.
 - Sound does not travel with a delay over distance, and there is no voice chat. The ambience and the bar's music are made in code; there are no recorded crowd or street sounds.
+- The spoken lines are text-to-speech placeholders, robotic in Hindi, until recorded. One male voice serves every player whatever their language.
+- Lines a player says when they alone know the moment, such as running dry, are heard only by them. A peer that joins mid-way, or whose own state differs for a moment, can occasionally pick a different line or skip one the others hear.
 - Other players' weapon switches are silent, and remote reloads start when the leader's snapshot arrives.
 - The reload motion is procedural; the view models still have no authored reload clip.
 - Other players' knife strokes are heard when the blade lands, not as their arm starts to move.

@@ -30,4 +30,15 @@ done
 curl -fsSL -A "$UA" https://opengameart.org/sites/default/files/gunreload1.wav -o "$SRC/oga-springyspringo-reloads/gunreload1.wav"
 curl -fsSL -A "$UA" https://opengameart.org/sites/default/files/assaultriflereload1_0.wav -o "$SRC/oga-springyspringo-reloads/assaultriflereload1.wav"
 curl -fsSL -A "$UA" https://opengameart.org/sites/default/files/clipload1.wav -o "$SRC/oga-bmaczero-reloads/clipload1.wav"
+# Voices (scripts/audio/voices.py): HaelDB's "Male Grunt/Yelling sounds" (CC0), and the Piper
+# voice "norman" (MIT, trained on public-domain LibriVox recordings) for English placeholders.
+mkdir -p "$SRC/oga-haeldb-grunts" "$SRC/piper-norman"
+GRUNTS="$SRC/oga-haeldb-grunts/yelling-sounds.zip"
+[ -f "$GRUNTS" ] || curl -fsSL -A "$UA" "https://opengameart.org/sites/default/files/yelling%20sounds.zip" -o "$GRUNTS"
+echo "e9100a4e3b9dcd146993089970dc6097dcf9935fa4683b196040012bad65d67a  $GRUNTS" | shasum -a 256 -c -
+[ -d "$SRC/oga-haeldb-grunts/x" ] || unzip -q -o "$GRUNTS" -d "$SRC/oga-haeldb-grunts/x"
+for f in en_US-norman-medium.onnx en_US-norman-medium.onnx.json MODEL_CARD; do
+  [ -f "$SRC/piper-norman/$f" ] || curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/norman/medium/$f" -o "$SRC/piper-norman/$f"
+done
+echo "b9739443232a80a59c7d18810dd856899bf16a7964725f5ab81ea49b1351cb71  $SRC/piper-norman/en_US-norman-medium.onnx" | shasum -a 256 -c -
 echo "Sources downloaded to $SRC"
