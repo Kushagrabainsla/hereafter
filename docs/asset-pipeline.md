@@ -86,12 +86,26 @@ Phase 1 (lamps and signs), production builds in headless Chrome on an Apple M4, 
 
 Merging plain parts cut a fifth of the draw calls everywhere, the wall kit's included. The extra triangles are the lanterns, signs and lamps. The neon tubes were first six-sided at full curve detail, which put 48,000 triangles into the signs; four-sided tubes at lower detail brought that to 29,500 with no visible difference past arm's length.
 
+Phase 2 (furniture and interiors), at ten spots in the restaurant, the bar, upstairs, the record shop and the market alley. Both builds held the display's 60 FPS cap on a quiet machine, so frame rate could not separate them; draw calls and triangles are exact:
+
+| Spot | Draw calls | Triangles |
+|---|---|---|
+| Restaurant, under the pendants | 186 to 191 | 454,906 to 488,136 (+7.3%) |
+| Restaurant, along the pass | 314 to 319 | 557,342 to 590,908 (+6.0%) |
+| Kitchen shelves | 108 to 114 | 419,536 to 453,438 (+8.1%) |
+| Bar, along the counter | 148 to 151 | 381,006 to 389,210 (+2.2%) |
+| Pool table | 155 to 158 | 452,274 to 459,298 (+1.6%) |
+| Market alley tables | 295 to 299 | 545,040 to 578,234 (+6.1%) |
+| Record shop counter | 167 to 173 | 467,930 to 477,490 (+2.0%) |
+
+Sixteen pieces, 12,400 triangles in all and 159 KB compressed; each draws in one call however many copies stand about, except the backlit bottles' glass.
+
 ## Phases
 
 Each phase replaces one group of shapes drawn in code with modelled pieces, measured as above.
 
 1. **Lights and signs (done):** paper lanterns and their torn versions, string-light bulbs and cables, overhead power lines, the service alley's barn lamps, the restaurant's and record shop's pendants, the stalls' caged lamps, the pool-table lamp, the breaker box, all 19 signs, and the food truck's roof sign and menu board.
-2. **Furniture and interiors:** restaurant chairs, tables, shelves and goods; the bar counter, back shelf, bottles, stools, pool table and sofa; the market alley's tables and stools.
+2. **Furniture and interiors (done):** the restaurant's tables and bentwood chairs, its pass counter and pantry shelves with jars, tins, sacks and bowls; the bar's counter and brass foot rail, leather stools, mirrored back bar and bottles, pool table and the sofa upstairs; the record shop's counter; the market alley's folding tables and plastic stools. The tables, counters, pool table and sofa keep their solid boxes as colliders (`furnish()` in `nightMarket.ts` draws the piece in their place).
 3. **Street dressing:** the dumpster, pallets, manhole cover, rooftop water tanks and antennas, posters and the mural.
 4. **Weapons and items in the world:** pickup stands, spare and dropped magazines, spent cases, frag and smoke grenades. The stand-in guns, hands and players drawn only when a model fails to load are removed.
 5. **Buildings and ground:** walls with depth, cornices, parapets, windows, shopfronts, shutters, shop glass, railings, ladders and stairs, paving, kerbs and floors. This needs the light bake redone (`npm run build:lightmaps`).

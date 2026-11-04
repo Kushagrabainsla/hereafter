@@ -1,0 +1,259 @@
+{
+ "family": "furniture",
+ "pieces": {
+  "dining_table": {
+   "triangles": 588,
+   "budget": 650,
+   "size": [
+    0.8,
+    0.8,
+    0.76
+   ],
+   "materials": [
+    "furn_oak",
+    "furn_walnut"
+   ],
+   "notes": "The restaurant's three tables."
+  },
+  "dining_chair": {
+   "triangles": 684,
+   "budget": 900,
+   "size": [
+    0.41,
+    0.421,
+    0.865
+   ],
+   "materials": [
+    "furn_walnut",
+    "furn_walnut_dark"
+   ],
+   "notes": "Four round each restaurant table, facing it."
+  },
+  "bar_stool": {
+   "triangles": 604,
+   "budget": 800,
+   "size": [
+    0.42,
+    0.42,
+    0.752
+   ],
+   "materials": [
+    "furn_chrome",
+    "furn_leather_red"
+   ],
+   "notes": "Six along the bar."
+  },
+  "cafe_table": {
+   "triangles": 260,
+   "budget": 500,
+   "size": [
+    1.124,
+    1.124,
+    0.761
+   ],
+   "materials": [
+    "furn_alu",
+    "furn_laminate"
+   ],
+   "notes": "The market alley's folding tables, with magazines on top."
+  },
+  "plastic_stool": {
+   "triangles": 384,
+   "budget": 400,
+   "size": [
+    0.38,
+    0.38,
+    0.459
+   ],
+   "materials": [
+    "paint_plastic"
+   ],
+   "notes": "Three round each market table, tinted."
+  },
+  "pass_counter": {
+   "triangles": 1404,
+   "budget": 2600,
+   "size": [
+    8.0,
+    0.85,
+    1.18
+   ],
+   "materials": [
+    "furn_black",
+    "furn_brass",
+    "furn_butcher",
+    "furn_ceramic",
+    "furn_ceramic_blue",
+    "furn_panel",
+    "furn_walnut"
+   ],
+   "notes": "The restaurant's pass, along the kitchen."
+  },
+  "bar_counter": {
+   "triangles": 672,
+   "budget": 1200,
+   "size": [
+    6.0,
+    0.965,
+    1.1
+   ],
+   "materials": [
+    "furn_black",
+    "furn_brass",
+    "furn_panel",
+    "furn_walnut",
+    "furn_walnut_dark"
+   ],
+   "notes": "The bar."
+  },
+  "record_counter": {
+   "triangles": 372,
+   "budget": 700,
+   "size": [
+    2.3,
+    0.75,
+    1.0
+   ],
+   "materials": [
+    "furn_black",
+    "furn_oak",
+    "furn_panel",
+    "furn_walnut"
+   ],
+   "notes": "The record shop's counter, under the turntable."
+  },
+  "pantry_shelf": {
+   "triangles": 312,
+   "budget": 350,
+   "size": [
+    1.875,
+    0.35,
+    0.85
+   ],
+   "materials": [
+    "furn_black",
+    "furn_oak"
+   ],
+   "notes": "Eight lengths make the kitchen's 15 m of shelving."
+  },
+  "goods_jars": {
+   "triangles": 564,
+   "budget": 700,
+   "size": [
+    0.35,
+    0.11,
+    0.25
+   ],
+   "materials": [
+    "furn_beans",
+    "furn_chili",
+    "furn_jar_glass",
+    "furn_jar_lid",
+    "furn_rice"
+   ],
+   "notes": "On the pantry shelves."
+  },
+  "goods_tins": {
+   "triangles": 492,
+   "budget": 500,
+   "size": [
+    0.238,
+    0.115,
+    0.264
+   ],
+   "materials": [
+    "furn_steel",
+    "furn_tin_gold",
+    "furn_tin_green",
+    "furn_tin_red"
+   ],
+   "notes": "On the pantry shelves."
+  },
+  "goods_sacks": {
+   "triangles": 424,
+   "budget": 500,
+   "size": [
+    0.37,
+    0.207,
+    0.277
+   ],
+   "materials": [
+    "furn_sack",
+    "furn_sack_print"
+   ],
+   "notes": "On the pantry shelves."
+  },
+  "goods_bowls": {
+   "triangles": 866,
+   "budget": 900,
+   "size": [
+    0.408,
+    0.185,
+    0.15
+   ],
+   "materials": [
+    "furn_ceramic",
+    "furn_ceramic_blue"
+   ],
+   "notes": "On the pantry shelves."
+  },
+  "back_bar": {
+   "triangles": 1484,
+   "budget": 2400,
+   "size": [
+    3.68,
+    0.3,
+    1.5
+   ],
+   "materials": [
+    "furn_black",
+    "furn_bottle_amber",
+    "furn_bottle_clear",
+    "furn_bottle_green",
+    "furn_brass",
+    "furn_mirror",
+    "furn_walnut"
+   ],
+   "notes": "The mirror, shelf and bottles behind the bar."
+  },
+  "pool_table": {
+   "triangles": 2084,
+   "budget": 2400,
+   "size": [
+    1.4,
+    2.2,
+    0.85
+   ],
+   "materials": [
+    "furn_ball_black",
+    "furn_ball_blue",
+    "furn_ball_red",
+    "furn_ball_white",
+    "furn_ball_yellow",
+    "furn_black",
+    "furn_cue",
+    "furn_felt",
+    "furn_walnut",
+    "furn_walnut_dark"
+   ],
+   "notes": "Under the billiard lamp."
+  },
+  "sofa": {
+   "triangles": 1192,
+   "budget": 1300,
+   "size": [
+    2.4,
+    1.0,
+    0.8
+   ],
+   "materials": [
+    "furn_cushion",
+    "furn_fabric",
+    "furn_walnut_dark"
+   ],
+   "notes": "Upstairs in the bar."
+  }
+ },
+ "triangles": 12386,
+ "bytes": 402632
+}

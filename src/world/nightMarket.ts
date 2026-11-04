@@ -643,9 +643,26 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   ground("floor", 17.3, 23.2, -2, 10, 4.205);
   ground("floor", 23.2, 24.5, 5.32, 10, 4.205);
 
-  // Every solid with a look is drawn as its box.
+  // Furniture that is also a solid is drawn as its modelled piece, standing on the floor under
+  // the solid and turned to face the room; the solid stays as its collider. Counters run along
+  // the solid's longer side.
+  const furnish = (solid: LayoutBox): [string, number] | null => {
+    const [hx, , hz] = solid.half;
+    if (solid.look === "woodTable") return [hx < 0.5 ? "dining_table" : "cafe_table", 0];
+    if (solid.look === "woodDark") return ["pass_counter", Math.PI / 2];
+    if (solid.look === "woodBar") return [hz > 2 ? "bar_counter" : "record_counter", -Math.PI / 2];
+    if (solid.look === "poolTable") return ["pool_table", 0];
+    if (solid.look === "sofa") return ["sofa", -Math.PI / 2];
+    return null;
+  };
+  // Every other solid with a look is drawn as its box.
   for (const solid of solids) {
     if (solid.look === "none" || solid.look === "rail" || solid.look === "stairRail") continue;
+    const piece = furnish(solid);
+    if (piece && kit.has(piece[0])) {
+      placer.place(piece[0], new Matrix4().compose(new Vector3(solid.center.x, solid.center.y - solid.half[1], solid.center.z), new Quaternion().setFromAxisAngle(UP, piece[1]), new Vector3(1, 1, 1)));
+      continue;
+    }
     const [hx, hy, hz] = solid.half, r = solid.rotation ?? IDENTITY;
     statics.add(solid.look, meterBox(hx * 2, hy * 2, hz * 2), new Matrix4().compose(new Vector3(solid.center.x, solid.center.y, solid.center.z), new Quaternion(r.x, r.y, r.z, r.w), new Vector3(1, 1, 1)));
   }
@@ -817,18 +834,23 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // ---------- restaurant and bar interiors ----------
   for (const z of [-2, 2.4, 6.8]) {
-    for (const [dx, dz] of [[-0.75, 0], [0.75, 0], [0, 0.7], [0, -0.7]]) statics.box("woodDark", 0.4, 0.45, 0.4, -10.3 + dx, 0, z + dz);
+    // Four cafe chairs round each table, each facing it.
+    for (const [dx, dz] of [[-0.75, 0], [0.75, 0], [0, 0.7], [0, -0.7]]) placer.place("dining_chair", new Matrix4().compose(new Vector3(-10.3 + dx, 0, z + dz), new Quaternion().setFromAxisAngle(UP, Math.atan2(-dx, -dz)), new Vector3(1, 1, 1)));
   }
   // Pendants over the dining tables and the pass, and a lamp over the pool table.
   const pendants = lampSet("pendant", [...[-2, 2.4, 6.8].map((z) => at(-10.3, 2.86, z)), ...[1, 4.5, 8].map((z) => at(-12.2, 2.9, z, 0.88))], materials.lampGlow);
   [-2, 2.4, 6.8].forEach((z, index) => lamps.add(`lamp:pendant-${index}`, { x: -10.3, y: 2.86, z }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, pendants.slice(index, index + 1), [pendantLights[index]]));
   [1, 4.5, 8].forEach((z, index) => lamps.add(`lamp:pass-${index}`, { x: -12.2, y: 2.9, z }, { type: "box", half: [0.15, 0.11, 0.15] }, 0, pendants.slice(3 + index, 4 + index)));
-  statics.box("woodDark", 0.35, 0.05, 15, -14.8, 1.7, 5.5);
-  statics.box("woodDark", 0.35, 0.05, 15, -14.8, 2.25, 5.5);
-  for (let z = -1.8; z <= 12.8; z += 0.9) statics.box(Math.abs(z) % 1.8 < 0.9 ? "goods0" : "goods3", 0.25, 0.3, 0.3, -14.8, 1.75, z);
-  for (let z = -0.4; z <= 4.8; z += 0.9) statics.cylinder("stool", 0.2, 0.75, 20.0, 0, z, 10);
-  statics.box("woodBar", 0.3, 0.05, 3.6, 24.3, 2.0, 8.0);
-  for (let z = 6.2; z <= 9.6; z += 0.35) statics.box("bottle", 0.08, 0.3, 0.08, 24.25, 2.05, z);
+  // The kitchen's 15 m of twin shelving on the west wall, stocked with jars, tins, sacks and bowls.
+  for (let k = 0; k < 8; k += 1) placer.place("pantry_shelf", wallMatrix("px", -14.975, -2 + 1.875 * (k + 0.5), 0));
+  const GOODS = ["goods_jars", "goods_tins", "goods_sacks"];
+  for (let k = 0, z = -1.8; z <= 12.8; k += 1, z += 0.9) {
+    placer.place(GOODS[k % 3], wallMatrix("px", -14.975, z, 1.725, 0.02));
+    if (k % 2 === 0) placer.place("goods_bowls", wallMatrix("px", -14.975, z + 0.45, 2.275, 0.02));
+  }
+  // Leather stools along the bar, and behind it the mirror, the shelf and its bottles.
+  for (let z = -0.4; z <= 4.8; z += 0.9) placer.place("bar_stool", new Matrix4().makeTranslation(20.0, 0, z));
+  placer.place("back_bar", wallMatrix("nx", 24.5, 8.0, 0));
   lamps.add("lamp:pool-table", { x: 20.1, y: 2.96, z: 8.5 }, { type: "box", half: [0.26, 0.08, 0.26] }, 0, lampSet("billiard_lamp", [at(20.1, 2.96, 8.5)], materials.lampGlow), [barLight]);
 
   // ---------- stalls: wooden counters that break apart ----------
@@ -874,7 +896,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // ---------- market alley dressing ----------
   for (const [x, z] of [[-4, 12.5], [-3.6, -4.5], [-4.2, -15]]) {
-    for (let k = 0; k < 3; k += 1) { const a = k / 3 * Math.PI * 2 + 0.4; statics.cylinder("stool", 0.18, 0.45, x + Math.cos(a) * 0.95, 0, z + Math.sin(a) * 0.95, 12); }
+    // Plastic stools, red, blue and green, round each folding table.
+    for (let k = 0; k < 3; k += 1) { const a = k / 3 * Math.PI * 2 + 0.4; placer.place("plastic_stool", new Matrix4().compose(new Vector3(x + Math.cos(a) * 0.95, 0, z + Math.sin(a) * 0.95), new Quaternion().setFromAxisAngle(UP, a), new Vector3(1, 1, 1)), [0xc9302c, 0x2f6fb5, 0x3c9d6b][k]); }
   }
   // The food truck is a model of its own (foodTruck.ts).
 
