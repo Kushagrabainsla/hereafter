@@ -15,6 +15,8 @@ The game plays recorded CC0 sound for guns, reloads, handling, footsteps and imp
 - **Doors and steam.** A kicked door takes a heavy boot and slams open. A burst steam pipe bangs and roars for about 11 s, then eases off. A shot extinguisher clanks and blasts powder for a few seconds. A smoke grenade pops with a dull thump and hisses for as long as its smoke pours out. A stall's awning rips as it is shot to rags, and a fuel drum roars like a propane cylinder before it bursts.
 - **The food truck.** Its doors and hatch latch and swing, and knock when they shut. A tyre bursts with a bang and the hiss of escaping air. A shot propane cylinder roars louder until it bursts.
 - **Brass.** Spent cases ring as they land: a bright ring for 9 mm brass, a duller one for the carbine's lacquered steel, made of four inharmonic partials with a short decay. An empty magazine dropped in a reload clatters. Both are positioned where they land and dulled behind cover.
+- **The market.** The city goes on beyond the walls: a low rumble that slowly breathes, a car passing a street away every 5 to 15 s, and now and then a siren far off. Nearby, each air conditioner's fan whirs and beats with its blades, and each blade sign's neon buzzes with mains hum until it is shot out, or the breaker cuts it, and starts again when the market is rebuilt. Music plays from a speaker high in the bar's back corner: a four-bar loop of kick, clap, hats, a bass line and soft chords, made in code at 92 beats a minute, heard through the walls and windows as a dull thump and clearly inside. Each source sounds only while the listener is in range (9 m for neon, 14 m for fans, 42 m for the music), and like other positioned sounds it goes dull and quieter behind walls. The check stops a metre short of each source, which sits in its own collider or against a wall.
+- **Rounds.** A bell rings twice as a round starts and once, lower and longer, as it ends.
 - **Being hit.** A body blow and low thump with a brief muffling of the whole mix; elimination keeps the mix muffled until you respawn.
 - **Confirmation.** A short high tick for a hit, a metallic ring added for a headshot, and a heavier thunk with a bright ring for an elimination.
 
@@ -46,12 +48,25 @@ A scripted headless Chrome session played through the real game while recording 
 | Own walking footsteps | −20 dBFS |
 | Other player walking about 9 m away | −24 dBFS |
 
+The ambience was recorded the same way, five seconds standing at each spot, with nothing else making a sound:
+
+| Where | Peak | RMS |
+|---|---|---|
+| West alley, away from everything | −23 dBFS | −37 dBFS |
+| Under an air conditioner | −25 dBFS | −37 dBFS |
+| Under the tattoo parlour's neon sign | −22 dBFS | −33 dBFS |
+| The same, with the sign shot out | −27 dBFS | −40 dBFS |
+| Outside the bar's front window | −26 dBFS | −40 dBFS |
+| Inside the bar | −13.5 dBFS | −30 dBFS |
+
+Everywhere it stays below the player's own walking footsteps, and the bar's music below a reload; at first the music peaked at −5 dBFS inside the bar, as loud as a reload, and passing cars as loud as footsteps, so both came down.
+
 A pistol shot placed 10 m to the screen-right measured 4.6 dB louder in the right channel, and one to the left 4.7 dB louder in the left. Headless checks measure levels, timing and direction, not taste; the mix should still be judged by ear on headphones and laptop speakers.
 
 ## Limits
 
 - Snapshots carry only the latest combat event, so when shots arrive faster than snapshots, some of another player's shots can go unheard, as their tracers can go unseen.
-- Sound does not travel with a delay over distance, and there is no ambient market sound, voice or music.
+- Sound does not travel with a delay over distance, and there is no voice chat. The ambience and the bar's music are made in code; there are no recorded crowd or street sounds.
 - Other players' weapon switches are silent, and remote reloads start when the leader's snapshot arrives.
 - The reload motion is procedural; the view models still have no authored reload clip.
 - Other players' knife strokes are heard when the blade lands, not as their arm starts to move.

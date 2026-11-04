@@ -38,6 +38,12 @@ const CONDENSERS: [Face, number, number, number][] = [
   ["px", 8.5, 21.4, 3.3], ["px", 8.5, -4.0, 6.6], ["px", 8.5, -21.3, 3.0], ["nx", 17, 18.2, 5.5], ["nx", 17, -23.6, 2.8], ["nx", 0.5, 25, 3.25],
 ];
 
+// Where each condenser's fan sits, for its sound: a little out from the wall, mid-height.
+export const CONDENSER_SPOTS = CONDENSERS.map(([face, at, along, y]) => {
+  const [nx, nz] = NORMAL[face];
+  return nx ? { x: at + nx * 0.35, y: y + 0.4, z: along } : { x: along, y: y + 0.4, z: at + nz * 0.35 };
+});
+
 const VENTS: [Face, number, number, number][] = [
   ["px", 8.5, 7.0, 1.7], ["nx", 17, -12.5, 2.4], ["px", 8.5, -14.6, 2.3], ["nx", 0.5, 6.0, 2.6], ["pz", -2, 7.0, 2.2], ["nz", 30, 4.5, 2.6],
 ];

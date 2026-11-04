@@ -19,7 +19,8 @@ import { LootViews } from "../game/loot";
 import { Ejecta } from "../game/ejecta";
 import { WeaponVisuals } from "../game/weaponVisuals";
 import { loadWeaponModels } from "../game/weaponModels";
-import { gameAudio } from "../game/gameAudio";
+import { gameAudio, type AmbientSource } from "../game/gameAudio";
+import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
 import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, KNIFE, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
@@ -520,6 +521,18 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
   });
 
+  // The market's own sounds: the blade signs' neon buzz, the condensers' fans and music from a
+  // speaker high in the bar's back corner. A sign that goes dark stops buzzing.
+  const neonSigns = built.lamps.entities.filter((entity) => entity.id.startsWith("lamp:blade-"));
+  gameAudio.setAmbience([
+    ...neonSigns.map((entity): AmbientSource => ({ id: entity.id, kind: "neon", at: entity.center })),
+    ...CONDENSER_SPOTS.map((at, index): AmbientSource => ({ id: `condenser-${index}`, kind: "condenser", at })),
+    { id: "bar-music", kind: "music", at: { x: 22.8, y: 2.6, z: 8.5 } },
+  ]);
+  const ambienceTimer = window.setInterval(() => {
+    for (const sign of neonSigns) gameAudio.setAmbientOn(sign.id, !built.lamps.dark(sign.id));
+  }, 250);
+
   return {
     arenaData() { return data; },
     setPaused(paused) {
@@ -793,6 +806,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     destroy() {
       renderer.setAnimationLoop(null);
+      window.clearInterval(ambienceTimer);
+      gameAudio.setAmbience([]);
       observer.disconnect();
       gameAudio.occlusion = () => false;
       player.destroy();

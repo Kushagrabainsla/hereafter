@@ -310,9 +310,13 @@ function cueStateChanges(state: CombatSnapshot, fresh: CombatEvent[]): void {
   for (const peerId of previousPlayers.keys()) if (!state.players[peerId]) previousPlayers.delete(peerId);
 }
 
+let lastPhase = "";
 function onMatchChange(state: CombatSnapshot): void {
   const player = state.players[selfId];
   if (!player) return;
+  // A round ending rings the bell once.
+  if (state.round.phase === "over" && lastPhase === "live") gameAudio.roundBell(false);
+  lastPhase = state.round.phase;
   const wasDead = !deathOverlay.hidden;
   healthNumber.textContent = String(player.health);
   healthBar.setAttribute("aria-valuenow", String(player.health));
@@ -396,6 +400,7 @@ function startRound(): void {
   roundBannerTitle.textContent = `Round ${match?.round().number ?? ""}`;
   roundBannerDetail.textContent = `First to ${KILL_LIMIT} kills · ${ROUND_MS / 60_000} minutes`;
   replay(roundBanner);
+  gameAudio.roundBell(true);
 }
 
 // Eliminations in the room, newest first, each for seven seconds.

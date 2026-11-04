@@ -10,6 +10,9 @@ import { type Material } from "../world/materials";
 // and behind walls, and share a synthetic street reverb.
 
 export interface Vec3 { x: number; y: number; z: number }
+// Something in the market that makes a sound of its own while the listener is near: a neon
+// sign's buzz, an air conditioner's fan, or music playing in the bar.
+export interface AmbientSource { id: string; kind: "neon" | "condenser" | "music"; at: Vec3 }
 export type Surface = "hard" | "soft";
 export type Gait = "walk" | "run" | "crouch";
 
@@ -36,6 +39,20 @@ const STORAGE_KEY = "hereafter.muted";
 const SAMPLE_RATE = 48000;
 const MAX_SPATIAL_VOICES = 40;
 const MASTER = 0.85;
+// How near the listener must be to hear each kind of ambient source, in metres.
+const AMBIENT_RANGE: Record<AmbientSource["kind"], number> = { neon: 9, condenser: 14, music: 42 };
+// Each kind's distance fall-off: full level within ref metres, then inverse with rolloff.
+const AMBIENT_FALLOFF: Record<AmbientSource["kind"], [ref: number, rolloff: number]> = { neon: [2.5, 1.2], condenser: [2, 1.5], music: [4, 1.1] };
+// Each kind's level. The bar's music peaked at -5 dBFS inside at full level, as loud as a reload.
+const AMBIENT_LEVEL: Record<AmbientSource["kind"], number> = { neon: 1, condenser: 1, music: 0.35 };
+const AMBIENT_TICK_MS = 200;
+// The bar's music: a four-bar loop at 92 beats a minute, A minor 7, F major 7, C major 7, G.
+const MUSIC_BEAT = 60 / 92;
+const MUSIC_CHORDS = [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55, 59, 62, 65]];
+const MUSIC_BASS = [[45, 0, 45, 52, 0, 45, 55, 52], [41, 0, 41, 48, 0, 41, 45, 48], [36, 0, 36, 43, 0, 36, 40, 43], [43, 0, 43, 50, 0, 43, 47, 38]];
+const midi = (note: number): number => 440 * 2 ** ((note - 69) / 12);
+
+interface AmbientVoice { out: GainNode; cover: BiquadFilterNode; shade: GainNode; nodes: AudioScheduledSourceNode[]; occluded: boolean }
 
 function readMuted(): boolean {
   try { return window.localStorage.getItem(STORAGE_KEY) === "1"; } catch { return false; }
@@ -81,6 +98,12 @@ export class GameAudio {
   private slideVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   private down = false;
   private muted = readMuted();
+  // The market's ambience: the city beyond the walls, and sources that sound only nearby.
+  private ambient: { source: AmbientSource; on: boolean; voice: AmbientVoice | null }[] = [];
+  private nextTraffic = 0;
+  private nextSiren = 0;
+  private musicStep = 0;
+  private musicAt = 0;
   occlusion: (from: Vec3, to: Vec3) => boolean = () => false;
 
   constructor() {
@@ -259,6 +282,247 @@ export class GameAudio {
     this.muffle.frequency.cancelScheduledValues(now);
     this.muffle.frequency.setValueAtTime(this.muffle.frequency.value, now);
     this.muffle.frequency.exponentialRampToValueAtTime(down ? 420 : 20000, now + (down ? 0.4 : 0.25));
+  }
+
+  // A round starting rings a bell twice; one ending rings it once, lower and longer.
+  roundBell(start: boolean): void {
+    if (!this.live()) return;
+    if (start) {
+      this.ring([1320, 2080, 3110], [0.09, 0.05, 0.03], 0.09, 0);
+      this.ring([1320, 2080, 3110], [0.09, 0.05, 0.03], 0.12, 0.22);
+    } else this.ring([880, 1390, 2090, 2950], [0.11, 0.06, 0.04, 0.02], 0.2, 0);
+  }
+
+  // Ambience ----------------------------------------------------------------------------
+
+  // The ambient sources in the map, each sounding while it is on and the listener is near.
+  setAmbience(sources: AmbientSource[]): void {
+    for (const entry of this.ambient) this.stopAmbient(entry);
+    this.ambient = sources.map((source) => ({ source, on: true, voice: null }));
+  }
+
+  // A sign shot out stops buzzing, and buzzes again when the market is rebuilt.
+  setAmbientOn(id: string, on: boolean): void {
+    const entry = this.ambient.find((item) => item.source.id === id);
+    if (!entry || entry.on === on) return;
+    entry.on = on;
+    if (!on) this.stopAmbient(entry);
+  }
+
+  // Every 200 ms: start the sources the listener has come near and stop those it has left,
+  // muffle those behind walls, keep the bar's music playing and send cars past now and then.
+  private tickAmbience(): void {
+    const context = this.live();
+    if (!context) return;
+    const now = context.currentTime;
+    for (const entry of this.ambient) {
+      const distance = this.distanceTo(entry.source.at), range = AMBIENT_RANGE[entry.source.kind];
+      if (!entry.on || distance > range + 3) { this.stopAmbient(entry); continue; }
+      if (!entry.voice && distance <= range) entry.voice = this.startAmbient(context, entry.source);
+      const voice = entry.voice;
+      if (!voice) continue;
+      // A sign or a fan sits in its own collider, or against a wall, so the check stops a metre short.
+      const at = entry.source.at, listener = this.listenerAt, short = Math.max(0, 1 - 1 / Math.max(1, distance));
+      const occluded = this.occlusion(listener, { x: listener.x + (at.x - listener.x) * short, y: listener.y + (at.y - listener.y) * short, z: listener.z + (at.z - listener.z) * short });
+      if (occluded !== voice.occluded) {
+        voice.occluded = occluded;
+        voice.cover.frequency.setTargetAtTime(occluded ? 700 : 18000, now, 0.12);
+        voice.shade.gain.setTargetAtTime(occluded ? 0.5 : 1, now, 0.12);
+      }
+      if (entry.source.kind === "music") this.scheduleMusic(context, voice);
+    }
+    if (now >= this.nextTraffic) { this.passingCar(context, now); this.nextTraffic = now + 5 + Math.random() * 10; }
+    if (now >= this.nextSiren) { this.siren(context, now); this.nextSiren = now + 120 + Math.random() * 150; }
+  }
+
+  // The city beyond the walls: a low, slowly breathing rumble, in stereo.
+  private startBed(context: AudioContext): void {
+    const seconds = 6, buffer = context.createBuffer(2, context.sampleRate * seconds, context.sampleRate);
+    for (let channel = 0; channel < 2; channel += 1) {
+      const data = buffer.getChannelData(channel);
+      let brown = 0;
+      for (let i = 0; i < data.length; i += 1) {
+        brown = (brown + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+        data[i] = brown * 3.2;
+      }
+      // Cross-fade the ends so the loop has no seam.
+      const fade = context.sampleRate * 0.5;
+      for (let i = 0; i < fade; i += 1) {
+        const t = i / fade;
+        data[data.length - fade + i] = data[data.length - fade + i] * (1 - t) + data[i] * t;
+      }
+    }
+    const source = new AudioBufferSourceNode(context, { buffer, loop: true, loopStart: 0.5, loopEnd: seconds });
+    const filter = new BiquadFilterNode(context, { type: "lowpass", frequency: 420, Q: 0.4 });
+    const gain = new GainNode(context, { gain: 0.04 });
+    const breath = new OscillatorNode(context, { type: "sine", frequency: 0.07 });
+    const depth = new GainNode(context, { gain: 0.012 });
+    breath.connect(depth).connect(gain.gain);
+    source.connect(filter).connect(gain).connect(this.mix);
+    source.start();
+    breath.start();
+  }
+
+  // A car passing a street away: a swell of tyre and engine noise crossing from one side.
+  private passingCar(context: AudioContext, now: number): void {
+    if (!this.noise) return;
+    const length = 3.5 + Math.random() * 3, side = Math.random() < 0.5 ? -1 : 1, level = 0.012 + Math.random() * 0.02;
+    const source = new AudioBufferSourceNode(context, { buffer: this.noise, loop: true });
+    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency: 520, Q: 0.6 });
+    filter.frequency.setValueAtTime(620, now);
+    filter.frequency.exponentialRampToValueAtTime(380, now + length);
+    const body = new BiquadFilterNode(context, { type: "lowpass", frequency: 1400 });
+    const gain = new GainNode(context, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(level, now + length * 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
+    const pan = new StereoPannerNode(context, { pan: -0.7 * side });
+    pan.pan.setValueAtTime(-0.7 * side, now);
+    pan.pan.linearRampToValueAtTime(0.7 * side, now + length);
+    source.connect(filter).connect(body).connect(gain).connect(pan).connect(this.mix);
+    gain.connect(new GainNode(context, { gain: 0.5 })).connect(this.reverb);
+    source.start(now, Math.random() * 0.5);
+    source.stop(now + length + 0.1);
+  }
+
+  // A siren far off across the city, wailing up and down for a while.
+  private siren(context: AudioContext, now: number): void {
+    const length = 9 + Math.random() * 5;
+    const tone = new OscillatorNode(context, { type: "triangle", frequency: 700 });
+    for (let t = 0; t < length; t += 3) {
+      tone.frequency.setValueAtTime(700, now + t);
+      tone.frequency.linearRampToValueAtTime(1300, now + t + 1.4);
+      tone.frequency.linearRampToValueAtTime(700, now + t + 3);
+    }
+    const filter = new BiquadFilterNode(context, { type: "lowpass", frequency: 1600 });
+    const gain = new GainNode(context, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(0.006, now + 3);
+    gain.gain.setValueAtTime(0.006, now + length - 3);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
+    const pan = new StereoPannerNode(context, { pan: Math.random() * 1.4 - 0.7 });
+    tone.connect(filter).connect(gain).connect(pan).connect(this.mix);
+    gain.connect(new GainNode(context, { gain: 1.5 })).connect(this.reverb);
+    tone.start(now);
+    tone.stop(now + length + 0.05);
+  }
+
+  // One looping sound at a source: positioned, dulled behind walls and faded in.
+  private startAmbient(context: AudioContext, source: AmbientSource): AmbientVoice | null {
+    if (!this.noise) return null;
+    const now = context.currentTime;
+    const out = new GainNode(context, { gain: 0.0001 });
+    out.gain.exponentialRampToValueAtTime(AMBIENT_LEVEL[source.kind], now + 0.6);
+    // Behind a wall it goes dull and quieter, as positioned one-shots do.
+    const cover = new BiquadFilterNode(context, { type: "lowpass", frequency: 18000, Q: 0.5 });
+    const shade = new GainNode(context, { gain: 1 });
+    const [ref, rolloff] = AMBIENT_FALLOFF[source.kind];
+    out.connect(cover).connect(shade).connect(this.panner(source.at, ref, rolloff)).connect(this.mix);
+    const nodes: AudioScheduledSourceNode[] = [];
+    if (source.kind === "neon") {
+      // Mains hum from the transformer and a thin buzz from the tube, flickering slightly.
+      const hum = new OscillatorNode(context, { type: "sawtooth", frequency: 120 });
+      const band = new BiquadFilterNode(context, { type: "bandpass", frequency: 1500, Q: 1.2 });
+      const low = new OscillatorNode(context, { type: "sine", frequency: 120 });
+      const level = new GainNode(context, { gain: 0.08 });
+      const flicker = new OscillatorNode(context, { type: "sine", frequency: 0.3 + Math.random() * 0.4 });
+      const flickerDepth = new GainNode(context, { gain: 0.02 });
+      flicker.connect(flickerDepth).connect(level.gain);
+      hum.connect(band).connect(level);
+      low.connect(new GainNode(context, { gain: 0.35 })).connect(level);
+      level.connect(out);
+      nodes.push(hum, low, flicker);
+    } else if (source.kind === "condenser") {
+      // A fan's broadband rush, beating with the blades, over a low motor hum.
+      const rush = new AudioBufferSourceNode(context, { buffer: this.noise, loop: true });
+      const band = new BiquadFilterNode(context, { type: "bandpass", frequency: 380, Q: 0.7 });
+      const level = new GainNode(context, { gain: 0.11 });
+      const blades = new OscillatorNode(context, { type: "sine", frequency: 11 + Math.random() * 4 });
+      const bladeDepth = new GainNode(context, { gain: 0.025 });
+      blades.connect(bladeDepth).connect(level.gain);
+      const motor = new OscillatorNode(context, { type: "sawtooth", frequency: 49 + Math.random() * 2 });
+      const motorTone = new BiquadFilterNode(context, { type: "lowpass", frequency: 220 });
+      rush.connect(band).connect(level);
+      motor.connect(motorTone).connect(new GainNode(context, { gain: 0.05 })).connect(level);
+      level.connect(out);
+      rush.start(now, Math.random() * 0.5);
+      nodes.push(rush, blades, motor);
+    } else {
+      this.musicAt = now + 0.1;
+      this.musicStep = 0;
+    }
+    for (const node of nodes) if (!(node instanceof AudioBufferSourceNode)) node.start(now);
+    return { out, cover, shade, nodes, occluded: false };
+  }
+
+  private stopAmbient(entry: { voice: AmbientVoice | null }): void {
+    const voice = entry.voice, context = this.context;
+    entry.voice = null;
+    if (!voice || !context) return;
+    const now = context.currentTime;
+    voice.out.gain.cancelScheduledValues(now);
+    voice.out.gain.setValueAtTime(Math.max(0.0001, voice.out.gain.value), now);
+    voice.out.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+    for (const node of voice.nodes) node.stop(now + 0.45);
+    window.setTimeout(() => voice.out.disconnect(), 600);
+  }
+
+  // The bar's music, scheduled half a second ahead in eighth notes: kick, clap, hats, a bass
+  // line and soft chords, from a speaker in the bar.
+  private scheduleMusic(context: AudioContext, voice: AmbientVoice): void {
+    const eighth = MUSIC_BEAT / 2;
+    if (this.musicAt < context.currentTime) this.musicAt = context.currentTime + 0.05;
+    while (this.musicAt < context.currentTime + 0.5) {
+      const step = this.musicStep % 32, bar = Math.floor(step / 8), beat = step % 8, at = this.musicAt;
+      if (beat === 0 || beat === 4 || (beat === 5 && bar === 3)) this.bassDrum(context, voice.out, at);
+      if (beat === 2 || beat === 6) this.clap(context, voice.out, at);
+      this.hat(context, voice.out, at, beat % 2 ? 0.012 : 0.02);
+      const bass = MUSIC_BASS[bar][beat];
+      if (bass) this.note(context, voice.out, at, midi(bass), eighth * 0.9, "triangle", 0.11, 900);
+      if (beat === 0) for (const note of MUSIC_CHORDS[bar]) this.note(context, voice.out, at, midi(note), MUSIC_BEAT * 3.6, "sawtooth", 0.014, 1300);
+      this.musicStep += 1;
+      this.musicAt += eighth;
+    }
+  }
+
+  private bassDrum(context: AudioContext, out: AudioNode, at: number): void {
+    const body = new OscillatorNode(context, { type: "sine", frequency: 130 });
+    body.frequency.exponentialRampToValueAtTime(48, at + 0.12);
+    const gain = new GainNode(context, { gain: 0 });
+    gain.gain.setValueAtTime(0.32, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.28);
+    body.connect(gain).connect(out);
+    body.start(at);
+    body.stop(at + 0.3);
+  }
+
+  private clap(context: AudioContext, out: AudioNode, at: number): void {
+    const burst = this.noiseSource(at, 0.14);
+    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency: 1700, Q: 1.1 });
+    const gain = new GainNode(context, { gain: 0 });
+    gain.gain.setValueAtTime(0.09, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.13);
+    burst.connect(filter).connect(gain).connect(out);
+  }
+
+  private hat(context: AudioContext, out: AudioNode, at: number, level: number): void {
+    const burst = this.noiseSource(at, 0.04);
+    const filter = new BiquadFilterNode(context, { type: "highpass", frequency: 7000 });
+    const gain = new GainNode(context, { gain: 0 });
+    gain.gain.setValueAtTime(level, at);
+    gain.gain.exponentialRampToValueAtTime(0.0005, at + 0.035);
+    burst.connect(filter).connect(gain).connect(out);
+  }
+
+  private note(context: AudioContext, out: AudioNode, at: number, frequency: number, length: number, type: OscillatorType, level: number, cutoff: number): void {
+    const tone = new OscillatorNode(context, { type, frequency });
+    const filter = new BiquadFilterNode(context, { type: "lowpass", frequency: cutoff, Q: 0.6 });
+    const gain = new GainNode(context, { gain: 0 });
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(level, at + Math.min(0.08, length * 0.2));
+    gain.gain.setValueAtTime(level, at + length * 0.7);
+    gain.gain.linearRampToValueAtTime(0, at + length);
+    tone.connect(filter).connect(gain).connect(out);
+    tone.start(at);
+    tone.stop(at + length + 0.02);
   }
 
   // Other players -----------------------------------------------------------------------
@@ -613,6 +877,10 @@ export class GameAudio {
     const data = noise.getChannelData(0);
     for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
     this.noise = noise;
+    this.startBed(context);
+    this.nextTraffic = context.currentTime + 2;
+    this.nextSiren = context.currentTime + 40 + Math.random() * 60;
+    window.setInterval(() => this.tickAmbience(), AMBIENT_TICK_MS);
   }
 
   private pick(name: SoundName): Sample | null {

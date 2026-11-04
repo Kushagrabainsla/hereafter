@@ -80,6 +80,7 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 - Rendered with Three.js on WebGPU, falling back to WebGL 2. On WebGPU every lamp, bulb string and sign is a real light.
 - Light bouncing off walls and floors is baked offline in Blender's Cycles. Wet paving reflects the lamps.
 - Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
+- A market that sounds alive: traffic beyond the walls, humming neon and air conditioners, and music thumping from the bar.
 
 ## How to play
 
@@ -177,7 +178,7 @@ docs/              design and engineering notes
 - One map. Its layout is written in code, not built in an editor.
 - Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
 - Only the restaurant, the bar and the record shop can be entered.
-- No ambient market sound, voice chat or music yet.
+- No voice chat yet.
 - Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the next round.
 - The view-model animations are generated from a simple motion description. There are no reload, crouch or aim-down-sights clips yet.
 - The first load builds every shader before the first frame, which can hold the page still for a while on slower machines.
