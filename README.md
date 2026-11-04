@@ -1,67 +1,188 @@
+<div align="center">
+
 # Hereafter
 
-*Fight where you stand.*
+**Fight where you stand.**
 
-Hereafter is a browser-based multiplayer FPS prototype for 2–8 players. It is set in the Night Market, a 60 m back-alley market in San Jose's SoFA district at dusk, built by hand for close fights. The current build has first-person movement, peer-to-peer rooms and a full combat loop.
+A multiplayer first-person shooter that runs in your browser.<br>
+Close fights in a hand-built back-alley night market, played peer to peer from a link.<br>
+Nothing to install, no account, no game server.
 
-The [original handoff](docs/REAL_WORLD_FPS_AGENT_HANDOFF.md) describes the first staged plan, built around real city data. The game has since moved to a hand-built map; see the [architecture note](docs/architecture.md).
+[![Play now](https://img.shields.io/badge/Play_now-in_your_browser-e8a33d?style=for-the-badge)](https://kushagrabainsla.github.io/hereafter/)
 
-Open the [live game](https://kushagrabainsla.github.io/hereafter/).
+[![Deploy](https://github.com/Kushagrabainsla/hereafter/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/Kushagrabainsla/hereafter/actions/workflows/deploy-pages.yml)
+![Players](https://img.shields.io/badge/players-2–8-5b8def)
+![Three.js](https://img.shields.io/badge/Three.js-r186-000000?logo=threedotjs)
+![WebGPU](https://img.shields.io/badge/WebGPU-WebGL_2_fallback-6e44ff)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)
 
-## Run locally
+<img src="docs/images/night-market.jpg" alt="The market alley at dusk: string lights and lanterns over wooden stalls, a food truck at the far end, a carbine in hand" width="100%">
 
-Install Node.js 22.12 or newer, then run:
+</div>
+
+## About
+
+Hereafter is set in the **Night Market**, a 60 m back-alley market in San Jose's SoFA district at dusk, built by hand for close fights. Everyone starts with a knife and a couple of grenades. Pistols, carbines and spare magazines lie around the market, and every magazine counts. Rounds punch through stalls, glass and crates. Doors come off their hinges, lights get shot out, and fuel drums explode.
+
+It is a working prototype: the map, movement, combat, destruction, sound and peer-to-peer rooms are all playable.
+
+<table>
+  <tr>
+    <td><img src="docs/images/two-players.jpg" alt="Another player, a soldier with a carbine, standing between the stalls in a two-player room"></td>
+    <td><img src="docs/images/grenade.jpg" alt="A grenade bursting in the middle of the market alley"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Another player across the stalls</sub></td>
+    <td align="center"><sub>A grenade bursting in the alley</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/food-truck.jpg" alt="The Bao and Buns food truck closing the north end of the market, under the SoFA Night Market banner"></td>
+    <td><img src="docs/images/service-alley.jpg" alt="The service alley behind the market, with dumpsters and the bar's neon sign"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>The food truck at the north end</sub></td>
+    <td align="center"><sub>The service alley and the bar</sub></td>
+  </tr>
+</table>
+
+## Features
+
+**Combat**
+- A field knife with two strokes. A slash sweeps across and stops at the first thing it meets. A stab lunges in for 100 to the head, and a stab in the back is fatal.
+- 9 mm pistols (12 rounds) and carbines (30 rounds), found on the map. Each comes with only the magazine in it.
+- Real magazines. A reload swaps in your fullest spare: a part-used one goes back in the pouch, an empty one drops to the ground. When the spares run out, the gun is empty.
+- Frag grenades that bounce, roll and throw players off their feet, and smoke grenades that pour out a 7 m grey wall.
+- Head, body and leg hit zones. Spread grows while moving, jumping or firing long bursts, and the crosshair shows it.
+- Rounds penetrate by material: glass, crates, bins, cardboard, wooden stalls and bodies.
+
+**Movement**
+- Run, crouch, slide, and lean around cover.
+- Climb onto counters, dumpsters and ledges up to 1.6 m. Ladders lead to the fire escape and the bar's balcony.
+- Everything you carry has weight, and guns and magazines slow you down. Falls from height hurt.
+
+**A market that breaks**
+- Stalls tear, then collapse into low cover you can climb.
+- Windows shatter. Doors open, kick in, or come off their hinges.
+- Every lamp and sign can be shot out. One breaker box blacks out the whole service alley.
+- Steam pipes burst into cover. Fuel drums vent and explode. The food truck's propane cylinders go up.
+
+**Multiplayer**
+- Share a link and play together, 2 to 8 players, browser to browser over WebRTC, with no game server.
+- A player opening the link connects while their world is still loading.
+- If the host's tab crashes, play carries on after about 2 seconds. If the host switches tabs, the role moves to another player straight away.
+
+**Look and sound**
+- Rendered with Three.js on WebGPU, falling back to WebGL 2. On WebGPU every lamp, bulb string and sign is a real light.
+- Light bouncing off walls and floors is baked offline in Blender's Cycles. Wet paving reflects the lamps.
+- Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
+
+## How to play
+
+Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop browser with WebGPU or WebGL 2, and click to start the sound. You spawn at one end of an alley with a knife. Find a gun, find magazines, and stay alive.
+
+| Action | Keys |
+|---|---|
+| Move | <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> or arrow keys |
+| Run | hold <kbd>Shift</kbd> |
+| Jump, or climb a ledge you face | <kbd>Space</kbd> |
+| Crouch (while running: slide) | hold <kbd>C</kbd> or <kbd>Ctrl</kbd> |
+| Lean | hold <kbd>Q</kbd> or <kbd>E</kbd> |
+| Look | click and drag, or double-click for mouse look (<kbd>Esc</kbd> releases it) |
+| Attack, or slash with the knife | click or <kbd>F</kbd> |
+| Stab with the knife | right-click or <kbd>V</kbd> |
+| Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
+| Reload | <kbd>R</kbd> |
+| Pick up, open doors and hatches | <kbd>E</kbd> |
+| Frag grenade, smoke grenade | <kbd>G</kbd>, <kbd>T</kbd> |
+| Respawn, three seconds after you fall | <kbd>Enter</kbd> |
+| Mute | <kbd>M</kbd> |
+| Show the controls | <kbd>H</kbd> |
+
+## Play with friends
+
+1. Click **Play together**, then **Create room**.
+2. Copy the invite link and send it to your friends.
+3. They open it and join automatically, or type in the room code.
+
+Rooms are found through public Nostr relays and played over direct WebRTC connections between browsers; the game itself is static files on GitHub Pages. One player's browser checks combat for the room (range, cover, ammo, timing), and that role moves to another player if they leave, crash or switch tabs. Some networks block direct connections and would need a TURN relay, which isn't set up yet. See [multiplayer](docs/multiplayer.md) for how it works and [network benchmarks](docs/network-benchmarks.md) for the measurements behind it.
+
+## Run it yourself
+
+You need [Node.js](https://nodejs.org/) 22.12 or newer and a browser with WebGPU or WebGL 2.
 
 ```sh
+git clone https://github.com/Kushagrabainsla/hereafter.git
+cd hereafter
 npm ci
 npm run dev
 ```
 
-Open the URL printed by Vite. No API key or account is needed; everything the game uses is bundled with the site. The browser needs WebGPU or WebGL 2. Three.js uses WebGPU when available and falls back to WebGL 2. Rapier's WebAssembly module handles character movement and collision.
+Open the URL Vite prints. No API key or account is needed: every asset the game uses is in the repository.
 
-A loading screen shows progress while the map, models and sounds load and the shaders compile. You spawn at one end of an alley with visible first-person hands and a field knife. Press H, or click the control hint, to open the controls; movement pauses while it is open. Use the arrow keys or WASD to walk, hold Shift to run, press Space to jump, and hold C or Ctrl to crouch. Crouch while running to slide, and press Space facing a counter, a dumpster or another ledge up to 1.6 m high to climb onto it. Hold Q or E to lean around cover. Walk into a ladder to climb to the fire escape or the bar balcony, or take the stair inside the bar; falls from height hurt. Click and drag with a trackpad or mouse to look around; a short click attacks. Press F to attack from the keyboard. Double-click for FPS mouse look and press Esc to release it. Everything you carry has weight: the HUD shows the load, and guns and magazines slow your walk, sprint, jump, starting and stopping. Walking into crates, bins, boxes and drums shoves them by your mass, so a box flies while a full drum barely shifts.
+| Command | What it does |
+|---|---|
+| `npm run dev` | Development server with hot reload |
+| `npm run build` | Type-check and build into `dist/` |
+| `npm run build:pages` | Build for GitHub Pages, under `/hereafter/` |
+| `npm run preview:pages` | Serve the Pages build locally |
+| `npm run build:viewmodels` | Rebuild the first-person arms and weapons (needs Blender 4.4+) |
+| `npm run build:lightmaps` | Rebake the market's light after a map change (needs Chrome and Blender) |
+| `npm run build:audio` | Download and rebuild the sound effects |
 
-Every life starts with the knife, two grenades and two smoke grenades: G throws a grenade and T a smoke grenade, which pours out a grey wall about 7 m across for 13 seconds. Pistols and carbines lie at marked spots, shown as the same models you hold, and each comes with the one magazine in it: 12 rounds or 30. Spare magazines lie in pairs on tables, counters, a dumpster, the fire escape and the bar's upper floor. Walk close and press E to take one; guns return after 30 seconds and magazines after 25. E also opens and closes the food truck's doors and serving hatch. Taking a second gun of a kind you carry strips its magazine. Use 1, 2, or 3 to equip the knife, pistol, or carbine, and R to swap in your fullest spare magazine. A magazine with rounds left goes back in the pouch and an empty one drops to the ground; a round already chambered stays there, so a pistol reloaded early holds 13. Once the spares run out, the gun is empty until you find more. The HUD shows the rounds in the gun and in reserve, with a bar for each spare magazine. A fallen player drops their guns and magazines, which tumble to the ground and can be taken for a minute.
+Add `?renderer=webgl` to the URL to force WebGL 2. Pushes to `main` deploy to GitHub Pages through [`deploy-pages.yml`](.github/workflows/deploy-pages.yml).
 
-The knife has two strokes. Click or press F to slash: the blade sweeps across from upper right to lower left and stops at the first thing it meets, catching a head for 45, a body for 30 or legs for 22. Right-click or press V to stab: the arm draws back, you lunge a step and drive the point straight in, for 55 to the body and 100 to the head. A stab in the back is fatal. The blade lands when the swing reaches the target, about 0.13 s into a slash and 0.24 s into a stab, bites briefly into a body, and glances off walls and metal with a ring. Switching lowers the current weapon and raises the next one over about half a second, and you cannot attack until the new weapon is up. Sprinting carries the weapon low across the body; firing drops the sprint and the shot follows as the weapon comes up. Shots spread more while walking, sliding or in the air and less when crouched, and the carbine blooms under sustained fire; the crosshair opens to show it. See [movement notes](docs/movement.md). The HUD shows health, ammo, kills, and deaths. Hits flash a marker around the crosshair: white for a hit, amber for a headshot, and red with an elimination banner for a kill. Damage taken shows a red arc pointing toward the attacker. Press G to throw one of your two fragmentation grenades; it bounces, rolls and bursts 2.6 s later, and a blast in the open throws nearby players off their feet. Rounds penetrate glass, crates, bins, cardboard, stalls and bodies by material. Windows, shop glass, wooden stalls, crates and boxes break once damaged enough, and bins, drums and crates get thrown around by blasts. Eliminated players fall as ragdolls. Spent cases spin out of the ejection port and clink across the paving. After elimination, wait three seconds and press Enter to respawn with the knife. See [physics notes](docs/physics.md).
+## Built with
 
-The game has sound once you click or press a key. Gunshots, reloads, weapon handling and footsteps are recorded CC0 sounds; other players' shots and footsteps come from where they are, are dulled by distance and walls, and close rounds crack past you. Press M to mute or unmute. See [audio notes](docs/audio.md).
+- [Three.js](https://threejs.org/) r186, WebGPU renderer with node materials, falling back to WebGL 2
+- [Rapier](https://rapier.rs/) physics in WebAssembly, for the 60 Hz character controller, collisions, shots and ragdolls
+- [Trystero](https://github.com/dmotz/trystero), for peer-to-peer rooms over WebRTC, found through Nostr relays
+- [Vite](https://vite.dev/) and TypeScript
+- [Blender](https://www.blender.org/), for the view models, the food truck, props and the baked lightmaps
 
-## The Night Market
+```
+src/
+  main.ts          HUD, input, rooms, and the game loop that ties it together
+  game/            player movement, combat rules, match state, weapons, sound, other players
+  network/         peer room: positions, the host's updates, choosing and replacing the host
+  world/           the Night Market's layout, buildings, stalls, lights, physics and renderer
+scripts/           Blender and audio build scripts for the bundled assets
+public/            models, textures, lightmaps and sounds shipped with the game
+docs/              design and engineering notes
+```
 
-The map has three lanes. The market alley in the middle is lined with wooden stalls, lanterns and string lights, and closed at its north end by a food truck you can climb into through its rear doors, serve from through its hatch, and wreck: its glass breaks, its tyres go flat and its propane cylinders vent and explode. Every lamp and sign can be shot out, and a breaker box blacks out the whole service alley. The restaurant, the bar and a record shop through the middle block have real doors that open with E, kick open under the knife and come off their hinges under fire; the record shop's boarded back window can be blown out, and steam pipes on the walls burst into cover when shot. The stalls show their damage, tearing and then collapsing into low cover, extinguishers burst into powder and two red fuel drums explode. A restaurant on the west side is an indoor route beside it, and a service alley runs behind the middle block. A cut-through and passages at both ends join them. A bar on the east side has a stair to an upper room and a balcony, and a fire escape overlooks the stalls. See [the Night Market](docs/night-market.md) for the layout, what breaks and how it is built.
+## Documentation
 
-It is lit at dusk: a painted sky with the last orange glow, stars and lit clouds; real light from every lamp, bulb string, lantern and sign; neon that glows; wet paving that reflects the lights; and windows that show rooms behind them. Light bouncing off walls and floors and the shade in corners, under awnings and in narrow alleys are baked offline with Blender's Cycles into a lightmap; contact shadows, anti-aliasing, a colour grade and fine film grain are added on screen. See [rendering notes](docs/rendering.md).
+| Note | What's in it |
+|---|---|
+| [The Night Market](docs/night-market.md) | The map: lanes, spawns, pickups, what breaks and how |
+| [Movement](docs/movement.md) | Character controller, climbing, leaning, weight, spread |
+| [Physics](docs/physics.md) | Penetration, destruction, grenades, ragdolls |
+| [Rendering](docs/rendering.md) | Lighting, lightmaps, post-processing, performance |
+| [Audio](docs/audio.md) | The mix, positional sound and occlusion |
+| [Multiplayer](docs/multiplayer.md) | Rooms, the host, the protocol and its limits |
+| [Network benchmarks](docs/network-benchmarks.md) | Measured traffic, delays and recovery, step by step |
+| [Architecture](docs/architecture.md) | How the pieces fit |
+| [Asset sources](docs/data-sources.md) | Every model, texture and sound, with its license |
 
-## Play together
+## Known limitations
 
-Click **Play together**, create a room, and share the invite link. Another player can open that link to join automatically, or enter the room code manually. Both browsers render the same market and show each other as animated soldiers with their movement, health, and weapon pickups. Room spawns are spread across the alley ends. The current build has been verified with two browser tabs; the 2–8 player target still needs larger-session testing.
+- One map. Its layout is written in code, not built in an editor.
+- Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
+- Only the restaurant, the bar and the record shop can be entered.
+- No ambient market sound, voice chat or music yet.
+- Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the room resets.
+- The view-model animations are generated from a simple motion description. There are no reload, crouch or aim-down-sights clips yet.
+- The first load builds every shader before the first frame, which can hold the page still for a while on slower machines.
 
-The site remains static on GitHub Pages. [Trystero](https://trystero.dev/) uses public Nostr relays to help browsers find each other, then carries gameplay data over WebRTC data channels. The public relays require no account or project server for this prototype. Some networks cannot establish a direct connection without a TURN relay; one is not configured yet. A room code is a shareable invite secret, not a user identity system. One peer checks attack range, cover, ammo, timing, and pickup distance, then shares health and inventory state. Movement is still client reported, so the prototype is unsuitable for competitive matches. See [multiplayer architecture](docs/multiplayer.md).
+## Credits
 
-Run `npm run build` for a local production build. Run `npm run build:pages` to build with the `/hereafter/` path prefix for GitHub Pages, then `npm run preview:pages` to inspect that build locally.
+- Textures, props, the knife and the pistol: [Poly Haven](https://polyhaven.com/) (CC0)
+- Arms and the third-person soldier: [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT)
+- Carbine: [AKM](https://opengameart.org/content/akm) by LonesomeDucky, OpenGameArt (CC0)
+- Sounds, all CC0: [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), reload packs on OpenGameArt, and [Kenney](https://kenney.nl/)'s Impact Sounds and RPG Audio
 
-## Assets
+Full records, with authors and links, are in [asset sources](docs/data-sources.md).
 
-Walls, paving and asphalt use bundled CC0 photo materials from [Poly Haven](https://polyhaven.com/license), with normal maps; shop interiors use two generated photo textures. The sky, signs, window interiors, posters, the mural, awnings and wood are drawn in code at load.
+## License
 
-The first-person arms and weapons are authored, rigged models: the gloved arms of a Microsoft Rocketbox avatar (MIT) holding a Poly Haven knife and pistol (CC0) and an OpenGameArt AKM (CC0), each with idle, walk, run and fire clips, and slash and stab for the knife. The arms are subdivided to smooth the source's blocky fingers. In the game, the skin and cloth are shaded separately: the gloves and sleeves get a soft fabric sheen, and backlit skin glows red at the edges. The hands are lit by the lamps around the player, with shadows across the fingers and a flash from each shot. The weapon hangs off the hands like a mass on a spring, and breathing deepens after a sprint. They are built from the sources by `npm run build:viewmodels`, which needs Blender 4.4 or newer and downloads the sources on first use. `npm run build:lightmaps` rebakes the market's light after a change to the map; it needs Chrome and Blender. Other players are the same soldier as a rigged third-person character with idle, walk, run, crouch and death clips from the Rocketbox animation library. If a model is missing or fails to load, the procedural gloved hands, weapon or mannequin take its place. See [data sources](docs/data-sources.md) for the asset records.
-
-Render resolution adjusts after sustained slow or fast frame rates. The performance label's hover text shows draw calls, triangles, and resolution. Add `?renderer=webgl` to the URL to test WebGL 2. This repository's software code does not yet have a selected license.
-
-## Current limitations
-
-- There is one map. Its layout is written in code, so a new map means a new module, not a level editor.
-- Rapier runs a fixed 60 Hz capsule controller against the map's walls, floors, counters, stalls, props and the arena edge. It supports wall sliding, ground snapping, low steps, jumping, crouching with a standing-clearance check, sliding, leaning, ladders, stairs and mantling onto ledges up to 1.6 m; there are no moving platforms.
-- Only the restaurant and the bar can be entered; other shopfronts are pictures behind glass, and doors are open doorways.
-- Gunfire traces every surface along the shot through the physics world and penetrates by material. Peer movement still originates on each player's device; distance and arena checks reject implausible pose packets, but a modified client can still cheat. Hits are lag-compensated by rewinding targets up to 350 ms to what the shooter saw. Robust authority handoff and larger-session testing remain future work.
-- The view-model clips are generated in Blender from a small motion description (bob, carry, recoil, knife strokes) rather than captured or hand-keyed; there are no reload, crouch or aim clips yet, and switching reuses the procedural lower-and-raise motion. Other players hold their weapon at the side and swing it with a procedural arm motion when they attack; crouch-walking shows the crouch idle.
-- The hands come from a game avatar with painted textures, so they look much better than before but not photographic.
-- Sound effects are recorded CC0 samples mixed in the browser. There is no ambient market sound, voice or music yet.
-- Ragdolls, spent cases and empty magazines are not synchronised between players, and destroyed objects stay destroyed until the room resets. A player who is not coordinating the room pushes props through the coordinator, so the push follows about a tenth of a second late.
-- On WebGL 2, the market keeps six real lights and paints the rest of its light onto the ground.
-- Baked light covers the static map only. A broken stall leaves its baked shade on the paving, and props, players and stalls get contact shadows from the screen-space pass but no baked bounce light.
-
-## Project status
-
-The map, FPS movement, peer rooms, pickups, health and combat are runnable. Fully trusted movement, robust host migration, ambient sound and larger-session testing remain to be built.
+The code doesn't have a license yet. The bundled assets keep their own licenses, listed in [asset sources](docs/data-sources.md).
