@@ -27,6 +27,40 @@ export interface CombatPlayer {
   // The newest intent the coordinator has handled from this player, by its number, so a new
   // coordinator never handles again one the last already did.
   intent: number;
+  // What the player calls themself, as cleanName leaves it; empty until they say.
+  name: string;
+}
+
+// A room plays rounds once two players are in the game: a countdown, then a round of five
+// minutes or until someone reaches the kill limit, then the scores stand for a while before the
+// next round resets the market and everyone in it. A room with one player warms up.
+export type RoundPhase = "warmup" | "countdown" | "live" | "over";
+export interface RoundState {
+  // Rounds started in this room; 0 before the first.
+  number: number;
+  phase: RoundPhase;
+  // When the countdown, round or wait after it ends, on the coordinator's clock; 0 in warm-up.
+  until: number;
+  // The player who won the round just over; empty for a draw, or before one ends.
+  winner: string;
+}
+export const ROUND_MS = 5 * 60_000;
+export const KILL_LIMIT = 15;
+export const COUNTDOWN_MS = 10_000;
+export const INTERMISSION_MS = 12_000;
+const PHASES: RoundPhase[] = ["warmup", "countdown", "live", "over"];
+export const NAME_LENGTH = 16;
+
+// A name as the game keeps it: no control or formatting characters, single spaces, and at most
+// 16 characters. It is only ever shown as text.
+export function cleanName(name: string): string {
+  return Array.from(name.normalize("NFC").replace(/[\p{C}]/gu, "").replace(/\s+/g, " ").trim()).slice(0, NAME_LENGTH).join("").trim();
+}
+
+// Players in order of the scoreboard: most kills, then fewest deaths.
+export function standings(players: Record<string, CombatPlayer>): (CombatPlayer & { id: string })[] {
+  return Object.entries(players).map(([id, player]) => ({ ...player, id }))
+    .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || (a.id < b.id ? -1 : 1));
 }
 
 export type CombatIntent =
@@ -41,7 +75,8 @@ export type CombatIntent =
   | { kind: "throw"; aim: { heading: number; pitch: number }; smoke?: boolean }
   // Open or close something the map lets players open, such as a door or a hatch.
   | { kind: "use"; target: string }
-  | { kind: "fall"; speed: number };
+  | { kind: "fall"; speed: number }
+  | { kind: "name"; name: string };
 
 export type DamageCause = WeaponKind | "grenade" | "fall";
 
@@ -49,7 +84,8 @@ export interface Impact { x: number; y: number; z: number; nx: number; ny: numbe
 
 export interface CombatEvent {
   id: number;
-  kind: "shot" | "hit" | "pickup" | "death" | "respawn" | "throw" | "explode" | "reload" | "drop" | "use" | "vent" | "smoke";
+  // A "round" event starts a round: every peer then resets its market and its player.
+  kind: "shot" | "hit" | "pickup" | "death" | "respawn" | "throw" | "explode" | "reload" | "drop" | "use" | "vent" | "smoke" | "round";
   actor: string;
   target?: string;
   weapon?: WeaponKind;
@@ -90,7 +126,7 @@ export interface Drop { id: string; weapon: GunKind; gun: boolean; rounds: numbe
 export interface LiveGrenade { id: number; actor: string; explodeAt: number; position: Vec3; entity?: string; smoke?: boolean }
 
 export interface CombatSnapshot {
-  version: 7;
+  version: 8;
   revision: number;
   eventSeq: number;
   players: Record<string, CombatPlayer>;
@@ -102,23 +138,25 @@ export interface CombatSnapshot {
   drops: Drop[];
   // Doors and hatches, open or shut; ones not listed are as the map starts them.
   open: Record<string, boolean>;
+  round: RoundState;
   // The most recent events, oldest first; peers play every event newer than the last they saw.
   events: CombatEvent[];
 }
 
 // The parts of a state other than players, world objects and events, sent whole when they change.
-const SHARED_PARTS = ["taken", "pickupReturns", "grenades", "drops", "open"] as const;
+const SHARED_PARTS = ["taken", "pickupReturns", "grenades", "drops", "open", "round"] as const;
 
 type StateParts = Partial<Pick<CombatSnapshot, (typeof SHARED_PARTS)[number] | "entities">>;
 
 // What a coordinator sends after the whole state: the fields of each player that changed, the
-// world objects whose health changed, those of the shared parts that changed and the new
-// events, to apply on top of the state as of revision `base`.
+// world objects whose health changed, those of the shared parts that changed, the players who
+// have left and the new events, to apply on top of the state as of revision `base`.
 export type CombatDelta = StateParts & {
   base: number;
   revision: number;
   eventSeq: number;
   players?: Record<string, Partial<CombatPlayer>>;
+  gone?: string[];
   events: CombatEvent[];
 };
 
@@ -157,7 +195,7 @@ const FALL_SAFE_SPEED = 9;
 const FALL_DAMAGE_PER_MS = 9;
 const BULLET_IMPULSE = { pistol: 2.5, rifle: 4.5 } as const;
 const MATERIAL_NAMES = Object.keys(MATERIALS);
-const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent", "smoke"];
+const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent", "smoke", "round"];
 // A shot gas cylinder vents burning gas for this long, then bursts like a grenade.
 const VENT_MS = 1600;
 // How far a player can reach to open or close something, from the eyes.
@@ -202,7 +240,7 @@ function validDrop(drop: Drop): boolean {
 
 // Every life starts with only the knife and grenades: guns and ammunition are found.
 function freshPlayer(): CombatPlayer {
-  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0 };
+  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "" };
 }
 
 function validPlayer(player: CombatPlayer): boolean {
@@ -217,7 +255,8 @@ function validPlayer(player: CombatPlayer): boolean {
     && Number.isFinite(player.respawnAfter) && player.respawnAfter >= 0
     && Number.isSafeInteger(player.kills) && player.kills >= 0
     && Number.isSafeInteger(player.deaths) && player.deaths >= 0
-    && Number.isSafeInteger(player.intent) && player.intent >= 0;
+    && Number.isSafeInteger(player.intent) && player.intent >= 0
+    && typeof player.name === "string" && player.name.length <= 4 * NAME_LENGTH;
 }
 
 const PLAYER_FIELDS = Object.keys(freshPlayer());
@@ -225,7 +264,7 @@ const PLAYER_FIELDS = Object.keys(freshPlayer());
 const checkEvents = (events: CombatEvent[]): CombatEvent[] => events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
 
 function emptySnapshot(): CombatSnapshot {
-  return { version: 7, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, events: [] };
+  return { version: 8, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
 }
 
 // The fields of value whose text differs from `before`, which is brought up to date; null if none.
@@ -257,6 +296,8 @@ export class MatchState {
   private bloom = new Map<string, number>();
   private lastStroke = new Map<string, KnifeStroke>();
   private lastUse = new Map<string, number>();
+  // Players whose positions have arrived, so they are in the game rather than loading it.
+  private present = new Set<string>();
   private now = 0;
 
   constructor(private data: ArenaData, private onChange: (snapshot: CombatSnapshot) => void, private world?: CombatWorld) {
@@ -273,6 +314,7 @@ export class MatchState {
     this.bloom.clear();
     this.lastStroke.clear();
     this.equipUntil.clear();
+    this.present.clear();
     this.onChange(this.snapshot);
   }
 
@@ -281,9 +323,14 @@ export class MatchState {
   // hold the earlier ones. Serialise it straight away; it shares the live objects.
   view(since = 0): CombatSnapshot { return { ...this.snapshot, events: this.snapshot.events.filter((event) => event.id > since) }; }
   player(id: string): CombatPlayer | undefined { return this.snapshot.players[id]; }
+  playerIds(): string[] { return Object.keys(this.snapshot.players); }
+  // Every player, live: for reading only.
+  players(): Readonly<Record<string, CombatPlayer>> { return this.snapshot.players; }
+  round(): RoundState { return this.snapshot.round; }
 
   // time is the moment on the sender's own clock; the local player uses this clock.
   setPose(id: string, pose: PlayerPose, time = Date.now()): void {
+    this.present.add(id);
     this.poses.set(id, pose);
     this.poseTimes.set(id, Date.now());
     const history = this.history.get(id) ?? [];
@@ -326,10 +373,19 @@ export class MatchState {
     return true;
   }
 
+  // A player who has left the room; the coordinator's next update tells everyone.
+  removePlayer(id: string): void {
+    this.present.delete(id);
+    this.removePose(id);
+    if (!this.snapshot.players[id]) return;
+    delete this.snapshot.players[id];
+    this.changed();
+  }
+
   // Takes a coordinator's whole state. With force it replaces this one whatever their
   // revisions, as when a new coordinator takes over.
   adopt(incoming: CombatSnapshot, force = false): boolean {
-    if (!incoming || incoming.version !== 7 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
+    if (!incoming || incoming.version !== 8 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
       || !incoming.players || typeof incoming.players !== "object" || !incoming.entities || SHARED_PARTS.some((key) => !incoming[key]) || !Array.isArray(incoming.events)) return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
     if (!force && (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers))) return false;
@@ -349,8 +405,10 @@ export class MatchState {
   // state is older than the one they were made from, or anything in them fails the checks.
   applyDelta(delta: CombatDelta): boolean {
     if (!delta || !Number.isSafeInteger(delta.base) || !Number.isSafeInteger(delta.revision) || delta.revision < delta.base || this.snapshot.revision < delta.base
-      || !Number.isSafeInteger(delta.eventSeq) || !Array.isArray(delta.events) || (delta.players !== undefined && (!delta.players || typeof delta.players !== "object"))) return false;
+      || !Number.isSafeInteger(delta.eventSeq) || !Array.isArray(delta.events) || (delta.players !== undefined && (!delta.players || typeof delta.players !== "object"))
+      || (delta.gone !== undefined && (!Array.isArray(delta.gone) || delta.gone.length > 64 || !delta.gone.every((id) => typeof id === "string")))) return false;
     const players = { ...this.snapshot.players };
+    for (const id of delta.gone ?? []) delete players[id];
     for (const [id, fields] of Object.entries(delta.players ?? {})) {
       if (!fields || typeof fields !== "object" || !Object.keys(fields).every((key) => PLAYER_FIELDS.includes(key))) return false;
       const player = { ...players[id], ...structuredClone(fields) } as CombatPlayer;
@@ -380,6 +438,12 @@ export class MatchState {
     for (const [id, player] of Object.entries(this.snapshot.players)) {
       const fields = changedFields(player, sent.players[id] ??= {});
       if (fields) { (delta.players ??= {})[id] = fields as Partial<CombatPlayer>; changed = true; }
+    }
+    for (const id of Object.keys(sent.players)) {
+      if (this.snapshot.players[id]) continue;
+      (delta.gone ??= []).push(id);
+      delete sent.players[id];
+      changed = true;
     }
     for (const [id, health] of Object.entries(this.snapshot.entities)) {
       if (sent.entities[id] !== health) { (delta.entities ??= {})[id] = sent.entities[id] = health; changed = true; }
@@ -426,6 +490,12 @@ export class MatchState {
       if (!Array.isArray(incoming.drops)) return null;
       parts.drops = structuredClone(incoming.drops.filter(validDrop).slice(-DROPS_KEPT));
     }
+    if (incoming.round !== undefined) {
+      const round = incoming.round;
+      if (!record(round) || !Number.isSafeInteger(round.number) || round.number < 0 || !PHASES.includes(round.phase) || !finite(round.until) || round.until < 0
+        || typeof round.winner !== "string" || round.winner.length > 64) return null;
+      parts.round = { number: round.number, phase: round.phase, until: round.until, winner: round.winner };
+    }
     return parts;
   }
 
@@ -442,10 +512,17 @@ export class MatchState {
     this.now = now;
     const player = this.snapshot.players[actor];
     if (!player) return false;
+    if (intent.kind === "name") {
+      const name = cleanName(String(intent.name));
+      if (name === player.name) return false;
+      player.name = name;
+      this.changed();
+      return true;
+    }
     if (intent.kind === "respawn") {
       if (player.health > 0 || now < player.respawnAfter) return false;
-      const { kills, deaths, intent: handled } = player;
-      Object.assign(player, freshPlayer(), { kills, deaths, intent: handled });
+      const { kills, deaths, intent: handled, name } = player;
+      Object.assign(player, freshPlayer(), { kills, deaths, intent: handled, name });
       this.removePose(actor);
       this.emit({ kind: "respawn", actor });
       this.changed();
@@ -514,6 +591,8 @@ export class MatchState {
       this.changed();
       return true;
     }
+    // The wait after a round is a ceasefire.
+    if ((intent.kind === "throw" || intent.kind === "attack") && this.snapshot.round.phase === "over") return false;
     if (intent.kind === "throw") {
       const aim = intent.aim, smoke = intent.smoke === true, fuse = smoke ? SMOKE_FUSE_MS : GRENADE_FUSE_MS;
       if (!pose || !fresh || (smoke ? player.smokes : player.grenades) <= 0 || now - (this.lastThrow.get(actor) ?? 0) < THROW_COOLDOWN_MS
@@ -743,6 +822,7 @@ export class MatchState {
   }
 
   private hurt(targetId: string, amount: number, event: Omit<CombatEvent, "id">): void {
+    if (this.snapshot.round.phase === "over") return;
     const victim = this.snapshot.players[targetId];
     const damage = Math.min(victim?.health ?? 0, Math.max(0, Math.round(amount)));
     if (!victim || damage <= 0) return;
@@ -845,8 +925,49 @@ export class MatchState {
       for (const grenade of due) this.explode(grenade);
       changed = true;
     }
+    if (this.advanceRound(now)) changed = true;
     if (changed) this.changed();
     return changed;
+  }
+
+  // Moves the round on: warm-up to a countdown once two players are in the game, the countdown
+  // to a round, a round to the wait after it at the time or kill limit, and that wait to the
+  // next round. Fewer than two players in the game puts the room back in warm-up.
+  private advanceRound(now: number): boolean {
+    const round = this.snapshot.round;
+    const playing = Object.keys(this.snapshot.players).filter((id) => this.present.has(id)).length;
+    if (playing < 2) {
+      if (round.phase === "warmup") return false;
+      this.snapshot.round = { ...round, phase: "warmup", until: 0, winner: "" };
+      return true;
+    }
+    if (round.phase === "warmup") {
+      this.snapshot.round = { ...round, phase: "countdown", until: now + COUNTDOWN_MS, winner: "" };
+      return true;
+    }
+    if (round.phase === "live") {
+      const [first, second] = standings(this.snapshot.players);
+      if (now < round.until && (first?.kills ?? 0) < KILL_LIMIT) return false;
+      const draw = !first || (!!second && second.kills === first.kills && second.deaths === first.deaths);
+      this.snapshot.round = { ...round, phase: "over", until: now + INTERMISSION_MS, winner: draw ? "" : first.id };
+      return true;
+    }
+    if (now < round.until) return false;
+    this.startRound(now);
+    return true;
+  }
+
+  // A new round: everyone starts again with nothing found and no score, and the market is as it
+  // was built. Its event tells each peer to reset its own world and player.
+  private startRound(now: number): void {
+    this.snapshot.round = { number: this.snapshot.round.number + 1, phase: "live", until: now + ROUND_MS, winner: "" };
+    for (const [id, player] of Object.entries(this.snapshot.players)) {
+      Object.assign(player, freshPlayer(), { intent: player.intent, name: player.name });
+      this.removePose(id);
+    }
+    Object.assign(this.snapshot, { taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {} });
+    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.lastStroke, this.equipUntil, this.lastUse]) map.clear();
+    this.emit({ kind: "round", actor: "" });
   }
 
   private emit(event: Omit<CombatEvent, "id">): number {

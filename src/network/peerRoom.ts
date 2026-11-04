@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 15;
+const PROTOCOL_VERSION = 16;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
@@ -36,8 +36,9 @@ type PosePacket = {
 };
 
 type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
-// The coordinator's whole state, or what has changed since its last update.
-type SnapshotPacket = { version: number; map: string; leader: string; state?: CombatSnapshot; delta?: CombatDelta };
+// The coordinator's whole state, or what has changed since its last update, and the time on its
+// clock as it sent them.
+type SnapshotPacket = { version: number; map: string; leader: string; now?: number; state?: CombatSnapshot; delta?: CombatDelta };
 type SyncPacket = { version: number; map: string };
 // The coordinator a peer follows and the epoch of that choice. A peer still loading the world
 // says so: it cannot coordinate, or be chosen to, until it is in the game.
@@ -180,6 +181,7 @@ function validIntent(value: unknown): value is CombatIntent {
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
   if (intent.kind === "throw") return validAim(intent.aim) && (intent.smoke === undefined || typeof intent.smoke === "boolean");
   if (intent.kind === "fall") return typeof intent.speed === "number" && Number.isFinite(intent.speed);
+  if (intent.kind === "name") return typeof intent.name === "string" && intent.name.length <= 64;
   return intent.kind === "reload" || intent.kind === "respawn";
 }
 
@@ -273,6 +275,10 @@ export class PeerRoom {
   private lastSilenceCheck = performance.now();
   // The coordinator found unheard at the last check, if any.
   private unheard = "";
+  // How far the coordinator's clock is ahead of this one's, from its last 16 updates: the
+  // largest difference, which is the update that spent least time on the way. Round and respawn
+  // times are on the coordinator's clock.
+  private offsets: number[] = [];
   private onVisibility = (): void => this.visibilityChanged();
 
   private reportPeers(): void {
@@ -358,8 +364,13 @@ export class PeerRoom {
         return;
       }
       this.held = peerId;
-      // A respawn teleports the player, so its next pose must not fail the distance check.
-      for (const event of (value.delta ?? value.state)?.events ?? []) if (event?.kind === "respawn") this.lastAcceptedPose.delete(event.actor);
+      if (typeof value.now === "number" && Number.isFinite(value.now)) this.offsets = [...this.offsets.slice(-15), value.now - Date.now()];
+      // A respawn teleports the player, and a new round everyone, so their next poses must not
+      // fail the distance check.
+      for (const event of (value.delta ?? value.state)?.events ?? []) {
+        if (event?.kind === "respawn") this.lastAcceptedPose.delete(event.actor);
+        if (event?.kind === "round") this.lastAcceptedPose.clear();
+      }
       if (this.leaderId === selfId) {
         this.match.ensurePlayer(selfId);
         this.broadcastSnapshot();
@@ -406,8 +417,12 @@ export class PeerRoom {
     this.away.delete(peerId);
     this.events.onPeerLeave(peerId);
     // A coordinator that leaves is succeeded by the lowest id left in the game, at the same epoch.
+    // The coordinator takes the player off the scoreboard.
     if (peerId === this.leaderId) this.setLeader(this.lowest());
-    else this.broadcastSnapshot();
+    if (this.leaderId === selfId) {
+      this.match?.removePlayer(peerId);
+      this.broadcastSnapshot();
+    }
     this.reportPeers();
     this.events.onStatus(this.peers.size ? `${this.peers.size + 1} players connected directly.` : "Waiting for a friend to join…");
   }
@@ -494,10 +509,13 @@ export class PeerRoom {
     this.handoffUntil = Date.now() + 1800;
     this.sent = null;
     this.betterChecks = 0;
+    this.offsets = [];
     if (next === selfId) {
       this.held = "";
       this.leadingSince = performance.now();
       for (const peerId of this.peers) this.match?.ensurePlayer(peerId);
+      // Players this peer is not connected to have left, the last coordinator among them.
+      for (const id of this.match?.playerIds() ?? []) if (id !== selfId && !this.peers.has(id)) this.match?.removePlayer(id);
       // This peer's own intents that the last coordinator may not have handled, it handles now.
       for (const sent of this.unhandledIntents()) if (this.match?.handle(selfId, sent.sequence)) this.match.apply(selfId, sent.intent);
       window.setTimeout(() => this.broadcastSnapshot(), 500);
@@ -650,7 +668,7 @@ export class PeerRoom {
   }
 
   private packet(body: { state: CombatSnapshot } | { delta: CombatDelta }): string {
-    return JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, ...body }, trimNumber);
+    return JSON.stringify({ version: PROTOCOL_VERSION, map: this.expectedMap, leader: selfId, now: Date.now(), ...body }, trimNumber);
   }
 
   // The whole state with its recent events, for a peer joining or catching up. Pending changes
@@ -696,7 +714,7 @@ export class PeerRoom {
   }
 
   sendCombatIntent(intent: CombatIntent): void {
-    if (!this.match) return;
+    if (!this.match || !this.leaderId) return;
     if (this.leaderId === selfId) {
       if (this.match.apply(selfId, intent)) this.broadcastSnapshot();
       return;
@@ -707,8 +725,27 @@ export class PeerRoom {
   }
 
   tickCombat(): void {
-    if (this.leaderId === selfId && this.match?.tick()) this.broadcastSnapshot();
+    if (this.leaderId !== selfId || !this.match) return;
+    const round = this.match.round().number;
+    if (!this.match.tick()) return;
+    // A new round resets the market, which a list of changes cannot carry (it names only objects
+    // whose health changed), so the whole state goes out; and everyone moves to a spawn point.
+    if (this.match.round().number !== round) {
+      this.sent = null;
+      this.lastAcceptedPose.clear();
+    }
+    this.broadcastSnapshot();
   }
+
+  // The time now on the coordinator's clock, as near as this peer can tell.
+  clock(): number {
+    return this.leaderId === selfId || !this.offsets.length ? Date.now() : Date.now() + Math.max(...this.offsets);
+  }
+
+  // This peer's round trip to each other peer in ms, as last measured.
+  pings(): Record<string, number> { return { ...(this.own?.rtt ?? {}) }; }
+
+  leader(): string { return this.leaderId; }
 
   // The world has loaded: this peer joins the game in the room it connected to meanwhile. Its
   // timers ran late while the world loaded, so their record starts again. In a room that has

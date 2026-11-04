@@ -134,4 +134,4 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 - Spent cases and empty magazines are local, so each peer's lie in slightly different places.
 - Ragdolls are not synchronised, so a body may come to rest in slightly different places on different screens.
 - Upper-floor windows break, but only the bar's upper room can be entered; elsewhere the round stops in the wall behind.
-- Destroyed objects stay destroyed until the room resets.
+- Destroyed objects stay destroyed until the next round starts or the room resets.

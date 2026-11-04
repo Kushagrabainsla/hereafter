@@ -4,7 +4,7 @@ import { createMapViewer, type MapViewer, type MapState } from "./world/mapViewe
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
 import { carriedMass, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
-import { MatchState, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
+import { cleanName, standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
 
 function element<T extends HTMLElement>(id: string): T {
@@ -60,6 +60,21 @@ const loaderFill = element<HTMLElement>("loader-fill");
 const loaderStep = element<HTMLElement>("loader-step");
 const loaderPercent = element<HTMLElement>("loader-percent");
 const loaderTip = element<HTMLElement>("loader-tip");
+const playerNameInput = element<HTMLInputElement>("player-name");
+const roundHud = element<HTMLElement>("round-hud");
+const roundClock = element<HTMLElement>("round-clock");
+const roundNote = element<HTMLElement>("round-note");
+const roundBanner = element<HTMLElement>("round-banner");
+const roundBannerTitle = element<HTMLElement>("round-banner-title");
+const roundBannerDetail = element<HTMLElement>("round-banner-detail");
+const killFeed = element<HTMLOListElement>("kill-feed");
+const scoreboard = element<HTMLElement>("scoreboard");
+const scoreboardEyebrow = element<HTMLElement>("scoreboard-eyebrow");
+const scoreboardTitle = element<HTMLElement>("scoreboard-title");
+const scoreboardNote = element<HTMLElement>("scoreboard-note");
+const scoreboardRows = element<HTMLElement>("scoreboard-rows");
+const scoreboardFooter = element<HTMLElement>("scoreboard-footer");
+const deathCause = element<HTMLElement>("death-cause");
 let viewer: MapViewer | null = null;
 let peerRoom: PeerRoom | null = null;
 let match: MatchState | null = null;
@@ -84,6 +99,63 @@ window.setInterval(() => {
 }, 16);
 let toastTimer = 0;
 const arena = MARKET_ARENA;
+
+// The player's name, kept in this browser. A first visit gets a random one, which can be changed
+// in the room dialog.
+const NAME_KEY = "hereafter.name";
+const NAME_WORDS = [
+  ["Quiet", "Neon", "Rusty", "Lucky", "Swift", "Paper", "Midnight", "Copper", "Smoky", "Silver", "Crimson", "Velvet", "Jade", "Amber", "Salty", "Sleepy"],
+  ["Lantern", "Bao", "Dumpling", "Tiger", "Kite", "Comet", "Fox", "Noodle", "Moth", "Sparrow", "Ember", "Crane", "Otter", "Gecko", "Mango", "Raven"],
+];
+function storedName(): string {
+  try {
+    const saved = cleanName(window.localStorage.getItem(NAME_KEY) ?? "");
+    if (saved) return saved;
+  } catch {
+    // Storage is unavailable, as in some private windows; the name lasts this visit.
+  }
+  const pick = (words: string[]): string => words[crypto.getRandomValues(new Uint32Array(1))[0] % words.length];
+  const name = `${pick(NAME_WORDS[0])} ${pick(NAME_WORDS[1])}`;
+  try { window.localStorage.setItem(NAME_KEY, name); } catch { /* as above */ }
+  return name;
+}
+let playerName = storedName();
+let nameSentAt = 0;
+playerNameInput.value = playerName;
+playerNameInput.addEventListener("input", () => {
+  const name = cleanName(playerNameInput.value);
+  if (!name) return;
+  playerName = name;
+  nameSentAt = 0;
+  try { window.localStorage.setItem(NAME_KEY, name); } catch { /* as above */ }
+});
+playerNameInput.addEventListener("change", () => { playerNameInput.value = playerName; });
+
+// Another player's name, or a stand-in made from their id until theirs arrives.
+function nameOf(id: string): string {
+  if (id === selfId) return playerName;
+  return match?.player(id)?.name || `Player ${id.slice(0, 4).toUpperCase()}`;
+}
+
+// Times in the match are on the coordinator's clock.
+const roomClock = (): number => peerRoom?.clock() ?? Date.now();
+const clockText = (ms: number): string => {
+  const seconds = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+};
+const ordinal = (n: number): string => {
+  const suffix = ["th", "st", "nd", "rd"], tens = n % 100;
+  return `${n}${suffix[(tens - 20) % 10] ?? suffix[tens] ?? suffix[0]}`;
+};
+// A player's place: one after everyone with more kills, or as many and fewer deaths, so equal
+// scores share a place.
+const placeOf = (players: Readonly<Record<string, CombatPlayer>>, id: string): number => {
+  const me = players[id];
+  return me ? 1 + Object.values(players).filter((other) => other.kills > me.kills || (other.kills === me.kills && other.deaths < me.deaths)).length : 0;
+};
+// The wait after a round is a ceasefire.
+const ceasefire = (): boolean => match?.round().phase === "over";
+
 const dialogOpen = (): boolean => controlsDialog.open || roomDialog.open;
 
 // The loader's bar never moves backward.
@@ -198,7 +270,7 @@ function showDamageDirection(from: { x: number; z: number }): void {
 
 function showElimination(event: CombatEvent): void {
   const distance = event.from && viewer ? Math.hypot(event.from.x - (viewer.remotePosition(event.target!)?.x ?? event.from.x), event.from.z - (viewer.remotePosition(event.target!)?.z ?? event.from.z)) : 0;
-  const details = [event.zone === "head" ? "Headshot" : "", CAUSE_LABEL[event.cause ?? ""] ?? "", distance >= 0.5 ? `${Math.max(1, Math.round(distance))} m` : ""];
+  const details = [nameOf(event.target!), event.zone === "head" ? "Headshot" : "", CAUSE_LABEL[event.cause ?? ""] ?? "", distance >= 0.5 ? `${Math.max(1, Math.round(distance))} m` : ""];
   killDetail.textContent = details.filter(Boolean).join(" · ");
   replay(killBanner);
   replay(scoreLabel);
@@ -277,6 +349,8 @@ function onMatchChange(state: CombatSnapshot): void {
 }
 
 function playEvent(event: CombatEvent): void {
+  if (event.kind === "round") { startRound(); return; }
+  if (event.kind === "death" && event.target) addToKillFeed(event);
   if (event.kind === "shot" && event.shot) viewer?.showShot(event, event.actor === selfId);
   viewer?.playEvent(event, selfId);
   const damaging = event.kind === "hit" || event.kind === "death";
@@ -305,11 +379,132 @@ function playEvent(event: CombatEvent): void {
     viewer?.flinch(event.damage ?? 0);
     if (event.from && event.cause !== "fall") showDamageDirection(event.from);
   }
-  if (event.kind === "death" && event.target === selfId) toast(event.cause === "fall" ? "You fell too far" : event.cause === "grenade" && event.actor === selfId ? "Caught in your own blast" : "You were eliminated");
+  if (event.kind === "death" && event.target === selfId) {
+    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.actor === selfId ? "Caught in your own blast"
+      : [`By ${nameOf(event.actor)}`, CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "Headshot" : "", event.behind ? "From behind" : ""].filter(Boolean).join(" · ");
+  }
 }
 
+// A new round: the market is rebuilt and everyone starts again at a spawn point.
+function startRound(): void {
+  viewer?.resetWorld();
+  viewer?.respawn();
+  viewer?.cancelReload();
+  sharedProps.clear();
+  playerJoined = true;
+  pendingShot = 0;
+  roundBannerTitle.textContent = `Round ${match?.round().number ?? ""}`;
+  roundBannerDetail.textContent = `First to ${KILL_LIMIT} kills · ${ROUND_MS / 60_000} minutes`;
+  replay(roundBanner);
+}
+
+// Eliminations in the room, newest first, each for seven seconds.
+function addToKillFeed(event: CombatEvent): void {
+  const victim = event.target!;
+  const line = document.createElement("li");
+  line.classList.toggle("mine", event.actor === selfId || victim === selfId);
+  const who = (id: string): HTMLElement => {
+    const name = document.createElement("b");
+    name.textContent = nameOf(id);
+    name.classList.toggle("you", id === selfId);
+    return name;
+  };
+  const how = document.createElement("span");
+  if (event.cause === "fall") {
+    how.textContent = "fell";
+    line.append(who(victim), how);
+  } else if (event.actor === victim || !event.actor) {
+    how.textContent = `${CAUSE_LABEL[event.cause ?? ""] ?? ""} · own blast`;
+    line.append(who(victim), how);
+  } else {
+    how.textContent = [CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "headshot" : "", event.behind ? "from behind" : ""].filter(Boolean).join(" · ");
+    line.append(who(event.actor), how, who(victim));
+  }
+  killFeed.prepend(line);
+  while (killFeed.children.length > 5) killFeed.lastElementChild?.remove();
+  window.setTimeout(() => line.classList.add("fading"), 6400);
+  window.setTimeout(() => line.remove(), 7000);
+}
+
+// The round clock at the top of the screen, in a room.
+function showRound(): void {
+  const round = match?.round();
+  roundHud.hidden = !peerRoom || !round || round.phase === "over";
+  if (roundHud.hidden || !round || !match) return;
+  roundHud.dataset.phase = round.phase;
+  const left = round.until - roomClock();
+  if (round.phase === "warmup") {
+    roundClock.textContent = "Warm-up";
+    roundNote.textContent = "A round starts when another player joins";
+  } else if (round.phase === "countdown") {
+    roundClock.textContent = clockText(left);
+    roundNote.textContent = `Round ${round.number + 1} starts soon`;
+  } else {
+    const place = placeOf(match.players(), selfId);
+    roundClock.textContent = clockText(left);
+    roundNote.textContent = `Round ${round.number} · first to ${KILL_LIMIT}${place ? ` · you're ${ordinal(place)}` : ""}`;
+  }
+}
+
+// The scoreboard shows while Tab is held, and on its own once a round is over.
+let tabHeld = false;
+let scoreboardKey = "";
+function showScoreboard(): void {
+  const round = match?.round();
+  const open = !!match && !!round && (tabHeld || (!!peerRoom && round.phase === "over"));
+  scoreboard.hidden = !open;
+  if (!open || !match || !round) return;
+  const left = clockText(round.until - roomClock());
+  let eyebrow = "Practice", title = "Scoreboard", note = "Create a room under Play together to fight friends.";
+  if (peerRoom && round.phase === "over") {
+    eyebrow = `Round ${round.number}`;
+    title = round.winner === selfId ? "You win the round" : round.winner ? `${nameOf(round.winner)} wins the round` : "The round is a draw";
+    note = `Next round in ${left}`;
+  } else if (peerRoom && round.phase === "live") {
+    eyebrow = `Round ${round.number} · ${left} left`;
+    note = `First to ${KILL_LIMIT} kills wins the round.`;
+  } else if (peerRoom) {
+    eyebrow = "Warm-up";
+    note = round.phase === "countdown" ? `Round ${round.number + 1} starts in ${left}.` : "A round starts when another player joins. Scores here don't count.";
+  }
+  const pings = peerRoom?.pings() ?? {}, host = peerRoom?.leader() ?? selfId;
+  const players = match.players();
+  const rows = standings(players).map((player) => [String(placeOf(players, player.id)), nameOf(player.id), String(player.kills), String(player.deaths),
+    player.id === selfId ? "—" : pings[player.id] === undefined ? "…" : `${pings[player.id]} ms`, player.id === selfId ? "you" : "", player.id === host && peerRoom ? "host" : ""]);
+  const footer = `Change your name with the ${peerRoom ? "Room" : "Play together"} button at the top right.`;
+  const key = JSON.stringify([eyebrow, title, note, rows, footer]);
+  if (key === scoreboardKey) return;
+  scoreboardKey = key;
+  scoreboardFooter.textContent = footer;
+  scoreboardEyebrow.textContent = eyebrow;
+  scoreboardTitle.textContent = title;
+  scoreboardNote.textContent = note;
+  scoreboardRows.replaceChildren(...rows.map(([place, name, kills, deaths, ping, you, hostTag]) => {
+    const row = document.createElement("tr");
+    row.classList.toggle("you", !!you);
+    const cell = (text: string): HTMLElement => Object.assign(document.createElement("td"), { textContent: text });
+    const nameCell = cell(name);
+    for (const tag of [you, hostTag]) if (tag) nameCell.append(Object.assign(document.createElement("em"), { textContent: tag }));
+    row.append(cell(place), nameCell, cell(kills), cell(deaths), cell(ping));
+    return row;
+  }));
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Tab" || event.altKey || event.metaKey || event.ctrlKey || dialogOpen()) return;
+  event.preventDefault();
+  if (tabHeld) return;
+  tabHeld = true;
+  showScoreboard();
+});
+document.addEventListener("keyup", (event) => {
+  if (event.key !== "Tab") return;
+  tabHeld = false;
+  showScoreboard();
+});
+window.addEventListener("blur", () => { tabHeld = false; showScoreboard(); });
+
 function throwGrenade(smoke = false): void {
-  if (!viewer || !match || dialogOpen()) return;
+  if (!viewer || !match || dialogOpen() || ceasefire()) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   if ((smoke ? player.smokes : player.grenades) <= 0) { toast(smoke ? "No smoke grenades left" : "No grenades left"); return; }
@@ -352,7 +547,7 @@ function nearestPickup(): { id: string; label: string; full: boolean } | null {
 }
 
 function attack(stroke: KnifeStroke = "slash"): void {
-  if (!viewer || !match || dialogOpen()) return;
+  if (!viewer || !match || dialogOpen() || ceasefire()) return;
   const player = match.player(selfId);
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   const weapon = player.active;
@@ -434,6 +629,8 @@ function enterRoom(rawCode: string): void {
     viewer?.resetWorld();
     lastEventId = 0;
     sharedProps.clear();
+    killFeed.replaceChildren();
+    nameSentAt = 0;
     roomSize = 1;
     peerRoom = new PeerRoom(code, arena, {
       onPeers(count, spawnSlot) {
@@ -480,6 +677,8 @@ async function leaveRoom(): Promise<void> {
   viewer?.resetWorld();
   viewer?.setAuthority(true);
   lastEventId = 0;
+  killFeed.replaceChildren();
+  nameSentAt = 0;
   roomEntry.hidden = false;
   roomActive.hidden = true;
   roomStatus.textContent = "Room left. You can still explore on your own.";
@@ -590,9 +789,16 @@ window.setInterval(() => {
   else if (usable) pickupHint.textContent = `Press E to ${usable.open ? "close" : "open"} ${usable.label}`;
   const player = match.player(selfId);
   if (player?.health === 0) {
-    const seconds = Math.max(0, Math.ceil((player.respawnAfter - Date.now()) / 1000));
+    const seconds = Math.max(0, Math.ceil((player.respawnAfter - roomClock()) / 1000));
     respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : "Press Enter to respawn";
   }
+  // The coordinator keeps everyone's name; this player's goes again until it shows there.
+  if (player && player.name !== playerName && Date.now() - nameSentAt > 1500) {
+    nameSentAt = Date.now();
+    submit({ kind: "name", name: playerName });
+  }
+  showRound();
+  showScoreboard();
 }, 100);
 // Mobile browsers often skip beforeunload when a page goes away; pagehide comes in either case.
 for (const event of ["beforeunload", "pagehide"]) window.addEventListener(event, () => { void peerRoom?.leave(); });

@@ -24,7 +24,7 @@ Nothing to install, no account, no game server.
 
 Hereafter is set in the **Night Market**, a 60 m back-alley market in San Jose's SoFA district at dusk, built by hand for close fights. Everyone starts with a knife and a couple of grenades. Pistols, carbines and spare magazines lie around the market, and every magazine counts. Rounds punch through stalls, glass and crates. Doors come off their hinges, lights get shot out, and fuel drums explode.
 
-It is a working prototype: the map, movement, combat, destruction, sound and peer-to-peer rooms are all playable.
+It is a working prototype: the map, movement, combat, destruction, sound, rounds and peer-to-peer rooms are all playable.
 
 <table>
   <tr>
@@ -66,6 +66,11 @@ It is a working prototype: the map, movement, combat, destruction, sound and pee
 - Every lamp and sign can be shot out. One breaker box blacks out the whole service alley.
 - Steam pipes burst into cover. Fuel drums vent and explode. The food truck's propane cylinders go up.
 
+**Matches**
+- Five-minute rounds, or first to 15 kills. The winner is shown on the scoreboard, and the next round starts 12 seconds later with the market rebuilt.
+- A scoreboard on <kbd>Tab</kbd> with kills, deaths and ping, a round clock, and a kill feed naming who got whom.
+- Pick your name in the room dialog; it's saved in your browser.
+
 **Multiplayer**
 - Share a link and play together, 2 to 8 players, browser to browser over WebRTC, with no game server.
 - A player opening the link connects while their world is still loading.
@@ -95,6 +100,7 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 | Pick up, open doors and hatches | <kbd>E</kbd> |
 | Frag grenade, smoke grenade | <kbd>G</kbd>, <kbd>T</kbd> |
 | Respawn, three seconds after you fall | <kbd>Enter</kbd> |
+| Scoreboard | hold <kbd>Tab</kbd> |
 | Mute | <kbd>M</kbd> |
 | Show the controls | <kbd>H</kbd> |
 
@@ -103,6 +109,8 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 1. Click **Play together**, then **Create room**.
 2. Copy the invite link and send it to your friends.
 3. They open it and join automatically, or type in the room code.
+
+Once two players are in, a ten-second countdown starts the first round. Change your name under **Play together** at any time.
 
 Rooms are found through public Nostr relays and played over direct WebRTC connections between browsers; the game itself is static files on GitHub Pages. One player's browser checks combat for the room (range, cover, ammo, timing), and that role moves to another player if they leave, crash or switch tabs. Some networks block direct connections and would need a TURN relay, which isn't set up yet. See [multiplayer](docs/multiplayer.md) for how it works and [network benchmarks](docs/network-benchmarks.md) for the measurements behind it.
 
@@ -170,7 +178,7 @@ docs/              design and engineering notes
 - Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
 - Only the restaurant, the bar and the record shop can be entered.
 - No ambient market sound, voice chat or music yet.
-- Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the room resets.
+- Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the next round.
 - The view-model animations are generated from a simple motion description. There are no reload, crouch or aim-down-sights clips yet.
 - The first load builds every shader before the first frame, which can hold the page still for a while on slower machines.
 

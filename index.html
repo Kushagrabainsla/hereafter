@@ -14,6 +14,9 @@
       <div id="damage-direction" class="damage-direction" aria-hidden="true"></div>
       <div id="kill-banner" class="kill-banner" role="status" aria-live="polite"><strong>ELIMINATED</strong><span id="kill-detail"></span></div>
       <div id="damage-flash" class="damage-flash" aria-hidden="true"></div>
+      <div id="round-banner" class="round-banner" role="status" aria-live="polite"><strong id="round-banner-title"></strong><span id="round-banner-detail"></span></div>
+      <div id="round-hud" class="round-hud" hidden><strong id="round-clock"></strong><span id="round-note"></span></div>
+      <ol id="kill-feed" class="kill-feed" aria-label="Eliminations" aria-live="polite"></ol>
 
       <div class="brand" aria-label="Hereafter, Night Market"><strong>Hereafter<span>.</span></strong><small>Night Market</small></div>
       <div class="top-actions">
@@ -46,6 +49,7 @@
           <div><dt>Weapons</dt><dd><kbd>1</kbd> knife · <kbd>2</kbd> pistol · <kbd>3</kbd> rifle</dd></div>
           <div><dt>Reload</dt><dd><kbd>R</kbd> swaps in a spare magazine</dd></div>
           <div><dt>Respawn</dt><dd><kbd>Enter</kbd> after elimination</dd></div>
+          <div><dt>Scoreboard</dt><dd>Hold <kbd>Tab</kbd></dd></div>
           <div><dt>Sound</dt><dd><kbd>M</kbd> mutes or unmutes</dd></div>
           <div><dt>FPS mouse look</dt><dd>Double-click the world; <kbd>Esc</kbd> releases it</dd></div>
         </dl>
@@ -58,6 +62,8 @@
           <button id="close-room" class="close-button" type="button" aria-label="Close room dialog">×</button>
         </div>
         <p class="dialog-intro">Create an invite-only room and share its link. Players connect directly through WebRTC.</p>
+        <label class="room-label" for="player-name">Your name</label>
+        <input id="player-name" class="room-input room-name" type="text" autocomplete="nickname" spellcheck="false" maxlength="32" />
         <div id="room-entry">
           <button id="create-room" class="room-button room-button-primary" type="button">Create room</button>
           <div class="room-divider">or join a friend</div>
@@ -85,7 +91,16 @@
       </div>
       <div id="pickup-hint" class="pickup-hint" hidden></div>
       <div id="combat-toast" class="combat-toast" hidden></div>
-      <div id="death-overlay" class="death-overlay" hidden><strong>ELIMINATED</strong><span id="respawn-hint">Respawn available shortly</span></div>
+      <div id="death-overlay" class="death-overlay" hidden><strong>ELIMINATED</strong><small id="death-cause"></small><span id="respawn-hint">Respawn available shortly</span></div>
+
+      <section id="scoreboard" class="scoreboard" aria-labelledby="scoreboard-title" hidden>
+        <header><span id="scoreboard-eyebrow" class="dialog-eyebrow"></span><h2 id="scoreboard-title">Scoreboard</h2><p id="scoreboard-note"></p></header>
+        <table>
+          <thead><tr><th scope="col">#</th><th scope="col">Player</th><th scope="col">Kills</th><th scope="col">Deaths</th><th scope="col">Ping</th></tr></thead>
+          <tbody id="scoreboard-rows"></tbody>
+        </table>
+        <footer id="scoreboard-footer"></footer>
+      </section>
 
       <div id="loader" class="loader" role="status" aria-live="polite">
         <div class="loader-card">
