@@ -91,8 +91,8 @@ const crosshair = document.querySelector<HTMLElement>(".crosshair");
 const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: number; health: number }>();
 // Browsers only start audio from a user gesture; every gesture retries until it runs.
 for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(type, () => gameAudio.unlock(), { capture: true, passive: true });
-window.addEventListener("pointerup", () => { triggerHeld = false; });
-window.addEventListener("blur", () => { triggerHeld = false; });
+window.addEventListener("pointerup", (event) => { triggerHeld = false; if (event.button === 2) viewer?.setAiming(false); });
+window.addEventListener("blur", () => { triggerHeld = false; viewer?.setAiming(false); });
 document.addEventListener("pointerlockchange", () => { triggerHeld = false; });
 window.setInterval(() => {
   if (triggerHeld && document.pointerLockElement && match?.player(selfId)?.active === "rifle") attack();
@@ -816,9 +816,11 @@ void createMapViewer(element("map"), arena, {
   onStatus: setStatus,
   onProgress: showProgress,
   onHardLanding(speed) { submit({ kind: "fall", speed }); },
-  onAim(spreadPixels, melee) {
+  onAim(spreadPixels, melee, aiming) {
     crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
     crosshair?.classList.toggle("melee", melee);
+    // Looking down the sights, the sights are the crosshair.
+    crosshair?.classList.toggle("aiming", aiming);
   },
   onMetrics(metrics) {
     performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
@@ -831,10 +833,14 @@ void createMapViewer(element("map"), arena, {
   const canvas = element("map").querySelector("canvas");
   if (canvas) {
     let pointerDown: { x: number; y: number; time: number } | null = null;
-    // The right button stabs with the knife.
+    // The right button stabs with the knife, and with a gun aims down its sights while held.
     canvas.addEventListener("contextmenu", (event) => event.preventDefault());
     canvas.addEventListener("pointerdown", (event) => {
-      if (event.button === 2) { attack("stab"); return; }
+      if (event.button === 2) {
+        if (match?.player(selfId)?.active === "knife") attack("stab");
+        else viewer?.setAiming(true);
+        return;
+      }
       if (event.button !== 0) return;
       if (document.pointerLockElement === canvas) { triggerHeld = true; attack(); }
       else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };

@@ -52,7 +52,7 @@ export interface MapViewerEvents {
   onStatus: (state: MapState, message: string) => void;
   onMetrics: (metrics: MapMetrics) => void;
   // Current hip-fire spread as a crosshair gap in CSS pixels; melee is true for the knife.
-  onAim?: (spreadPixels: number, melee: boolean) => void;
+  onAim?: (spreadPixels: number, melee: boolean, aiming: boolean) => void;
   // Loading progress from 0 to 1, with the step under way when it changes.
   onProgress?: (fraction: number, step?: string) => void;
   // A landing at this speed (m/s), fast enough that it may hurt.
@@ -68,6 +68,8 @@ export interface MapViewer {
   showShot: (event: CombatEvent, local: boolean) => void;
   setSpawnSlot: (slot: number) => void;
   respawn: () => void;
+  // Hold to aim down the sights of the gun in hand; false to stop.
+  setAiming: (aiming: boolean) => void;
   setWeapon: (kind: WeaponKind) => void;
   setTakenPickups: (taken: string[]) => void;
   weaponReady: () => boolean;
@@ -410,7 +412,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let readyAt = 0;
   let localBloom = 0;
   let lastLocalShot = 0;
-  let lastSpread = -1;
+  let lastSpread = -1, lastAiming = false;
+  // Whether the aim button is held, and how much each gun's sights magnify the view.
+  let aimWanted = false;
+  const AIM_ZOOM: Record<WeaponKind, number> = { knife: 1, pistol: 1.25, rifle: 1.5 };
   renderer.setAnimationLoop((time) => {
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     const steps = physics.steps;
@@ -463,15 +468,19 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const pose = player.pose();
     // The spring sway works in world terms: the eyes' acceleration along the camera's own axes.
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch, eye, axes);
-    authoredViewModel.update(delta, player.motion(), weaponVisuals.dynamics());
+    // The sights come up only with a gun ready in hand, and drop for a reload or a switch.
+    const dynamics = weaponVisuals.dynamics();
+    player.setAiming(aimWanted && dynamics.active !== "knife" && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
+    authoredViewModel.update(delta, player.motion(), dynamics);
     weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
     // The crosshair opens with the same spread the leader applies to this player's shots.
     const motion = player.motion(), active = weaponVisuals.dynamics().active;
     const spread = spreadDegrees(active, motion, currentBloom(active, localBloom, (performance.now() - lastLocalShot) / 1000));
     const spreadPixels = Math.tan(spread * Math.PI / 180) * (container.clientHeight / 2) / Math.tan(camera.fov * Math.PI / 360);
-    if (Math.abs(spreadPixels - lastSpread) > 0.25) {
+    if (Math.abs(spreadPixels - lastSpread) > 0.25 || motion.aiming !== lastAiming) {
       lastSpread = spreadPixels;
-      events.onAim?.(spreadPixels, active === "knife");
+      lastAiming = motion.aiming;
+      events.onAim?.(spreadPixels, active === "knife", motion.aiming);
     }
     built.update(time / 1000);
     hazeLevel += (built.pipes.fogAt(camera.position) - hazeLevel) * Math.min(1, delta * 6);
@@ -485,7 +494,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     truck.update(Math.min(delta, 0.1));
     previousFrame = time;
     viewCamera.aspect = camera.aspect;
-    viewCamera.fov = camera.fov;
+    // The weapon in hand is drawn without the sights' magnification.
+    viewCamera.fov = player.handFov();
     viewCamera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     viewLighting.update(Math.min(delta, 0.1), camera);
@@ -552,6 +562,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     respawn() {
       player.reset(arena);
     },
+    setAiming(aiming) { aimWanted = aiming; },
     setWeapon(kind) {
       weaponVisuals.setActive(kind);
     },

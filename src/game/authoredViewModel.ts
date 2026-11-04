@@ -8,12 +8,15 @@ import { type KnifeStroke, type WeaponKind } from "./combatRules";
 import { type PlayerMotion } from "./playerController";
 import { type ViewDynamics } from "./weaponVisuals";
 
-interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null }
+interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null; aim: Vector3 }
 
 // The knife's slash and stab clips are authored at 1/ATTACK_RATE speed so the fast arcs get
 // more keyframes, and play back at ATTACK_RATE (see scripts/viewmodels/build.py).
 const ATTACK_RATE = 2.5;
 const ATTACKS = ["fire", "slash", "stab"];
+// Aiming down the sights: how far the sights stand above the bore, so they rather than the
+// barrel line up on the view's centre, and how far the gun comes back toward the eye, in metres.
+const SIGHTS: Record<WeaponKind, { height: number; back: number }> = { knife: { height: 0, back: 0 }, pistol: { height: 0.051, back: 0.02 }, rifle: { height: 0.07, back: 0.02 } };
 
 // Skin and cloth from the one arm texture. Skin is told apart by colour: it is redder than
 // it is green, where the gloves, sleeves and watch strap are grey or grey-green. Cloth gets
@@ -103,8 +106,9 @@ export class AuthoredViewModel {
         const rig = new Group();
         rig.add(root);
         camera.add(rig);
-        if (kind !== "knife") this.straighten(root, rig, mixer, clips);
-        this.models.set(kind, { root, rig, mixer, clips, muzzle: root.getObjectByName("muzzle") ?? null });
+        const muzzle = root.getObjectByName("muzzle") ?? null;
+        const aim = kind !== "knife" ? this.straighten(root, rig, mixer, clips, muzzle, SIGHTS[kind]) : new Vector3();
+        this.models.set(kind, { root, rig, mixer, clips, muzzle, aim });
         this.locomotion = "";
       }).catch((error: unknown) => console.warn(`Could not load ${kind} view model; using fallback.`, error));
     }
@@ -113,9 +117,11 @@ export class AuthoredViewModel {
   // whole arms-and-weapon rig about the grip so the barrel runs parallel to the view
   // makes it point at the crosshair from any range (parallel lines meet at the centre on
   // screen), and tracers from the muzzle then leave along the barrel.
-  private straighten(root: Group, rig: Group, mixer: AnimationMixer, clips: Map<string, AnimationAction>): void {
+  // Returns how far to move the gun, in the camera's frame, to bring its sights onto the view's
+  // centre: the barrel then runs along the line of sight, under the sights.
+  private straighten(root: Group, rig: Group, mixer: AnimationMixer, clips: Map<string, AnimationAction>, muzzle: Object3D | null, sights: { height: number; back: number }): Vector3 {
     const weapon = root.getObjectByName("weapon");
-    if (!weapon) return;
+    if (!weapon) return new Vector3();
     const idle = clips.get("idle");
     idle?.play();
     mixer.update(0);
@@ -124,7 +130,13 @@ export class AuthoredViewModel {
     new Matrix4().copy(root.matrixWorld).invert().multiply(weapon.matrixWorld).decompose(grip, turn, scale);
     rig.quaternion.copy(turn).invert();
     rig.position.copy(grip).sub(grip.clone().applyQuaternion(rig.quaternion));
+    rig.updateMatrix();
+    const end = muzzle ? new Matrix4().copy(root.matrixWorld).invert().multiply(muzzle.matrixWorld) : null;
     idle?.stop();
+    if (!end) return new Vector3();
+    // The muzzle in the camera's frame, through the straightened rig.
+    const at = new Vector3().setFromMatrixPosition(end).applyMatrix4(rig.matrix);
+    return new Vector3(-at.x, -at.y - sights.height, sights.back);
   }
 
   hasModel(): boolean { return this.models.has(this.active); }
@@ -156,7 +168,8 @@ export class AuthoredViewModel {
     for (const [kind, model] of this.models) model.root.visible = kind === this.active;
     const model = this.models.get(this.active);
     if (!model) return;
-    const desired = motion.moving && !motion.airborne && !motion.sliding && !motion.mantling && !motion.climbing ? motion.running ? "run" : "walk" : "idle";
+    // Looking down the sights the gun is held still, without the walk's swing.
+    const desired = motion.moving && !motion.airborne && !motion.sliding && !motion.mantling && !motion.climbing && motion.aim < 0.5 ? motion.running ? "run" : "walk" : "idle";
     const next = model.clips.has(desired) ? desired : "idle";
     if (next !== this.locomotion) {
       model.clips.get(this.locomotion)?.fadeOut(0.15);
@@ -175,8 +188,11 @@ export class AuthoredViewModel {
     // authored and fallback weapons behave the same way. A reload cants the weapon and tips
     // the muzzle up, with a small kick as the magazine seats and the action closes; the
     // root pivots at the camera, so offsets keep it low.
-    const lower = dynamics.lower, reload = dynamics.reload, jolt = dynamics.jolt, sway = dynamics.sway, kick = this.recoil;
-    model.root.position.set(sway.x + lower * 0.05 - reload * 0.06, sway.y - lower * 0.55 - reload * 0.1 + jolt * 0.012 - kick * 0.01, sway.z + lower * 0.06 + kick * 0.035);
+    const lower = dynamics.lower, reload = dynamics.reload, jolt = dynamics.jolt, kick = this.recoil;
+    // Aiming steadies the sway to a quarter and brings the sights to the centre of the view.
+    const aim = motion.aim, steady = 1 - 0.75 * aim, raw = dynamics.sway;
+    const sway = { x: raw.x * steady, y: raw.y * steady, z: raw.z * steady, pitch: raw.pitch * steady, yaw: raw.yaw * steady, roll: raw.roll * steady };
+    model.root.position.set(sway.x + lower * 0.05 - reload * 0.06 + model.aim.x * aim, sway.y - lower * 0.55 - reload * 0.1 + jolt * 0.012 - kick * 0.01 + model.aim.y * aim, sway.z + lower * 0.06 + kick * 0.035 + model.aim.z * aim);
     model.root.rotation.set(sway.pitch - lower * 0.6 + reload * 0.1 + jolt * 0.03 + kick * 0.12, sway.yaw + lower * 0.25 - kick * 0.05, sway.roll - lower * 0.3 + reload * 0.32 + kick * 0.08);
   }
   private release(root: Group): void {

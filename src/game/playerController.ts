@@ -14,6 +14,9 @@ export interface PlayerMotion {
   mantling: boolean;
   climbing: boolean;
   speed: number;
+  // Looking down the sights, and how far the view has gone in, 0 to 1.
+  aiming: boolean;
+  aim: number;
   // How hard the player has been working, from 0 at rest to 1 after a long sprint. It
   // builds faster with a heavy load and shows as heavier breathing in the hands.
   exertion: number;
@@ -46,6 +49,8 @@ export interface PlayerPose {
   airborne?: boolean;
   // -1 leaning fully left to 1 fully right.
   lean?: number;
+  // Looking down the sights of a gun.
+  aiming?: boolean;
 }
 
 const EYE_HEIGHT = 1.72;
@@ -126,6 +131,11 @@ export class PlayerController {
   private speed = 0;
   private moving = false;
   private running = false;
+  // Aiming down the sights: whether the button is held, how far the view has gone in (0 to 1),
+  // and how much the weapon in hand magnifies.
+  private aimHeld = false;
+  private aim = 0;
+  private zoom = 1;
   private crouching = false;
   private paused = false;
   private keys = new Set<string>();
@@ -198,7 +208,7 @@ export class PlayerController {
   }
 
   motion(): PlayerMotion {
-    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed, exertion: this.exertion };
+    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed, aiming: this.aim > 0.5, aim: this.aim, exertion: this.exertion };
   }
 
   // The mass of everything carried, in kilograms (see loadEffects).
@@ -253,8 +263,21 @@ export class PlayerController {
       sliding: this.sliding,
       airborne: !this.grounded && !this.mantle,
       lean: Math.round(this.lean * 100) / 100,
+      aiming: this.aim > 0.5,
     };
   }
+
+  // Hold to aim down the sights of a weapon that magnifies by zoom; false to stop.
+  setAiming(aiming: boolean, zoom = 1): void {
+    this.aimHeld = aiming;
+    if (aiming) this.zoom = zoom;
+  }
+
+  // How far into the sights the view is, 0 to 1.
+  aimAmount(): number { return this.aim; }
+
+  // The field of view without the sights' magnification, for drawing the weapon in hand.
+  handFov(): number { return this.camera.fov * (1 + this.aim * (this.zoom - 1)); }
 
   setSpawnSlot(slot: number): void {
     if (slot === this.spawnSlot) return;
@@ -278,6 +301,7 @@ export class PlayerController {
       this.running = false;
       this.crouching = false;
       this.sliding = false;
+      this.aimHeld = false;
       if (document.pointerLockElement === this.canvas) document.exitPointerLock();
     }
   }
@@ -303,7 +327,12 @@ export class PlayerController {
     const working = this.running ? 0.11 : this.climbing ? 0.08 : this.moving ? -0.03 : -0.07;
     this.exertion = Math.max(0, Math.min(1, this.exertion + delta * (working > 0 ? working * this.load.inertia ** 2 : working)));
     this.tagged = Math.max(0, this.tagged - delta);
-    const targetFov = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
+    // Aiming brings the sights up in about a sixth of a second and magnifies the view.
+    const aiming = this.aimHeld && !this.sliding && !this.climbing && !this.mantle;
+    this.aim += (Number(aiming) - this.aim) * Math.min(1, delta * 14);
+    if (Math.abs(this.aim - Number(aiming)) < 0.002) this.aim = Number(aiming);
+    const baseFov = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
+    const targetFov = baseFov / (1 + this.aim * (this.zoom - 1));
     if (Math.abs(this.camera.fov - targetFov) > 0.01) {
       this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 7);
       this.camera.updateProjectionMatrix();
@@ -345,7 +374,7 @@ export class PlayerController {
       if (!crouchKey || !this.grounded || this.slideSpeed < SLIDE_END_SPEED || this.slideTime > SLIDE_LONGEST || jumpFromSlide) this.endSlide();
     }
     this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
-    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0;
+    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld;
     // Q and E lean while walking or standing; a wall at the side limits how far.
     const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.keys.has("e")) - Number(this.keys.has("q"));
     this.lean += (leanInput - this.lean) * Math.min(1, delta * 8);
@@ -363,7 +392,8 @@ export class PlayerController {
       this.velocityEast = this.slideEast * this.slideSpeed - Math.cos(heading) * strafe * 1.2;
       this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
     } else if (!jumpFromSlide) {
-      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow;
+      // Looking down the sights, a player walks at little over half pace.
+      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1);
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;
@@ -520,9 +550,10 @@ export class PlayerController {
   }
 
   private turn(dx: number, dy: number, mode: "drag" | "locked"): void {
-    const direction = mode === "drag" ? 1 : -1;
-    this.heading = (this.heading + dx * 0.18 * direction + 360) % 360;
-    this.pitch = Math.max(-80, Math.min(80, this.pitch + dy * 0.18 * direction));
+    // Looking down magnifying sights, the view turns slower in proportion.
+    const direction = mode === "drag" ? 1 : -1, rate = 0.18 / (1 + this.aim * (this.zoom - 1));
+    this.heading = (this.heading + dx * rate * direction + 360) % 360;
+    this.pitch = Math.max(-80, Math.min(80, this.pitch + dy * rate * direction));
     this.applyPose();
   }
 

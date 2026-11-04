@@ -5,7 +5,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 16;
+const PROTOCOL_VERSION = 17;
 const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
@@ -33,6 +33,8 @@ type PosePacket = {
   lean?: number;
   // The player's tab is in the background, where its timers run once a second at most.
   away?: boolean;
+  // Looking down the sights, which halves the spread of their shots.
+  aiming?: boolean;
 };
 
 type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
@@ -93,14 +95,14 @@ const LANE_BACKLOG_BYTES = 8192;
 const POSITION_BYTES = 25;
 // A single byte, the protocol, on the lane: the sender is leaving the room.
 const GOODBYE = Uint8Array.of(PROTOCOL_VERSION);
-const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32 } as const;
+const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32, aiming: 64 } as const;
 // A player whose position has not changed sends it this often instead of every 33 ms: often
 // enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
 const STILL_INTERVAL_MS = 250;
 // Intents sent this recently go again to a new coordinator: one that reached the last as it
 // handed over, or never reached it because it had gone, was lost.
 const RESEND_MS = 300;
-const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away"] as const;
+const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away", "aiming"] as const;
 // Standing on the ground, the height above it wavers by a centimetre from one frame to the
 // next, so a change of under 1.5 cm counts as none.
 const samePose = (a: PosePacket, b: PosePacket): boolean => POSE_FIELDS.every((key) => a[key] === b[key]) && Math.abs(a.jumpHeight - b.jumpHeight) < 0.015;
@@ -117,7 +119,7 @@ function encodePosition(packet: PosePacket): ArrayBuffer {
   view.setInt16(21, Math.round(packet.pitch * 100), true);
   view.setInt8(23, Math.round(Math.max(-1.27, Math.min(1.27, packet.lean ?? 0)) * 100));
   view.setUint8(24, (packet.moving ? FLAG.moving : 0) | (packet.running ? FLAG.running : 0) | (packet.crouching ? FLAG.crouching : 0)
-    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0) | (packet.away ? FLAG.away : 0));
+    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0) | (packet.away ? FLAG.away : 0) | (packet.aiming ? FLAG.aiming : 0));
   return view.buffer;
 }
 
@@ -131,7 +133,7 @@ function decodePosition(data: ArrayBuffer, map: string): PosePacket | null {
     east: view.getInt16(13, true) / 100, north: view.getInt16(15, true) / 100, jumpHeight: view.getInt16(17, true) / 100,
     heading: view.getUint16(19, true) / 100, pitch: view.getInt16(21, true) / 100, lean: view.getInt8(23) / 100,
     moving: (flags & FLAG.moving) !== 0, running: (flags & FLAG.running) !== 0, crouching: (flags & FLAG.crouching) !== 0,
-    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0, away: (flags & FLAG.away) !== 0,
+    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0, away: (flags & FLAG.away) !== 0, aiming: (flags & FLAG.aiming) !== 0,
   };
 }
 
@@ -158,7 +160,7 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean"
     && (packet.sliding === undefined || typeof packet.sliding === "boolean") && (packet.airborne === undefined || typeof packet.airborne === "boolean")
     && (packet.lean === undefined || (Number.isFinite(packet.lean) && Math.abs(packet.lean) <= 1))
-    && (packet.away === undefined || typeof packet.away === "boolean");
+    && (packet.away === undefined || typeof packet.away === "boolean") && (packet.aiming === undefined || typeof packet.aiming === "boolean");
 }
 
 function validAim(aim: unknown): boolean {
@@ -462,6 +464,7 @@ export class PeerRoom {
       sliding: value.sliding === true,
       airborne: value.airborne === true,
       lean: value.lean ?? 0,
+      aiming: value.aiming === true,
     };
     this.match.setPose(peerId, pose, value.sentAt);
     this.events.onPose(peerId, pose, value.sentAt);
@@ -800,6 +803,7 @@ export class PeerRoom {
       airborne: pose.airborne === true,
       lean: round(pose.lean ?? 0),
       away: document.hidden,
+      aiming: pose.aiming === true,
     };
     // Standing still, a player sends the same position only every quarter second. When they
     // move again, the position they held goes out first, stamped at the moment before, so

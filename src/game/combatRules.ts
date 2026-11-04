@@ -81,7 +81,9 @@ export function loadEffects(mass: number): { walk: number; sprint: number; jump:
 
 // Hip-fire spread, as the half-angle of the cone in degrees. Moving, jumping and sliding
 // widen it, crouching steadies it, and sustained fire blooms it until the trigger rests.
-export interface AimState { moving: boolean; crouching: boolean; airborne: boolean; sliding: boolean }
+// Aiming down the sights halves it.
+export interface AimState { moving: boolean; crouching: boolean; airborne: boolean; sliding: boolean; aiming?: boolean }
+export const AIM_SPREAD = 0.5;
 
 const SPREAD: Record<Exclude<WeaponKind, "knife">, { base: number; moving: number; airborne: number; sliding: number; crouched: number; bloom: number; bloomMax: number; recovery: number }> = {
   pistol: { base: 0.3, moving: 2.2, airborne: 5, sliding: 3, crouched: 0.6, bloom: 0.35, bloomMax: 1.2, recovery: 3.5 },
@@ -93,7 +95,7 @@ export function spreadDegrees(weapon: WeaponKind, state: AimState, bloom: number
   if (weapon === "knife") return 0;
   const s = SPREAD[weapon];
   const factor = state.airborne ? s.airborne : state.sliding ? s.sliding : state.moving ? s.moving * (state.crouching ? 0.6 : 1) : state.crouching ? s.crouched : 1;
-  return s.base * factor + bloom;
+  return (s.base * factor + bloom) * (state.aiming ? AIM_SPREAD : 1);
 }
 
 // Bloom left from earlier shots once the trigger has rested for this many seconds.

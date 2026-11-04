@@ -43,6 +43,8 @@ Shots leave inside a cone around the aim. The coordinating peer applies it when 
 
 Sustained fire blooms on top of that. Each shot adds 0.35° for the pistol and 0.2° for the carbine, up to 1.2° and 1.6°. After a 0.12 s rest, bloom recovers at 3.5° and 2.8° per second. The knife has no spread.
 
+Aiming down the sights, by holding the right button with a gun, halves the whole cone, bloom included. The sights come up in about a sixth of a second, magnifying the view 1.25 times for the pistol and 1.5 times for the carbine, with the look slowed in proportion and the weapon in hand drawn without the magnification. The gun moves so its sights sit on the centre of the view, its sway drops to a quarter and the walk's swing stops. The player walks at 55% of their pace and cannot sprint, and the sights drop for a reload or a weapon switch. Pose packets carry an `aiming` flag, protocol 17, which the coordinator applies to the cone. The crosshair hides while aiming.
+
 The crosshair's four ticks open to the same spread every frame, converted to pixels from the camera's field of view, with a 3 px minimum. Pose packets carry new `sliding` and `airborne` flags for this. Older peers omit them, and those flags then count as false.
 
 ## Leaning, hit reactions and climbing
@@ -74,6 +76,5 @@ Headless Chrome checks drove the running game and stepped the controller directl
 ## Limits
 
 - Slides ignore slopes; the market is flat.
-- There is no aim-down-sights, so the standing spread is the tightest available.
-- Spread depends on movement flags each client reports about itself, so a modified client can fire as if standing still, as it can already misreport its position.
+- Spread depends on movement and aiming flags each client reports about itself, so a modified client can fire as if standing still and aiming, as it can already misreport its position.
 - Other players' slides show as a crouch gliding along, since the third-person character has no slide clip.

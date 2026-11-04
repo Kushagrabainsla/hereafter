@@ -53,6 +53,7 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 - Real magazines. A reload swaps in your fullest spare: a part-used one goes back in the pouch, an empty one drops to the ground. When the spares run out, the gun is empty.
 - Frag grenades that bounce, roll and throw players off their feet, and smoke grenades that pour out a 7 m grey wall.
 - Head, body and leg hit zones. Spread grows while moving, jumping or firing long bursts, and the crosshair shows it.
+- Aim down the sights with right-click: the view zooms in, the gun steadies and spread halves, but you walk at half pace.
 - Rounds penetrate by material: glass, crates, bins, cardboard, wooden stalls and bodies.
 
 **Movement**
@@ -96,6 +97,7 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 | Look | click and drag, or double-click for mouse look (<kbd>Esc</kbd> releases it) |
 | Attack, or slash with the knife | click or <kbd>F</kbd> |
 | Stab with the knife | right-click or <kbd>V</kbd> |
+| Aim down the sights, with a gun | hold right-click |
 | Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
 | Reload | <kbd>R</kbd> |
 | Pick up, open doors and hatches | <kbd>E</kbd> |

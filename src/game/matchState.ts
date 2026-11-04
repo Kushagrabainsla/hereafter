@@ -633,7 +633,7 @@ export class MatchState {
       // Spread follows how the shooter was moving and how fast they have been firing.
       const sinceLast = (now - last) / 1000;
       const bloom = currentBloom(weapon, this.bloom.get(actor) ?? 0, sinceLast);
-      const spread = spreadDegrees(weapon, { moving: pose.moving, crouching: pose.crouching, airborne: !!pose.airborne, sliding: !!pose.sliding }, bloom);
+      const spread = spreadDegrees(weapon, { moving: pose.moving, crouching: pose.crouching, airborne: !!pose.airborne, sliding: !!pose.sliding, aiming: !!pose.aiming }, bloom);
       this.bloom.set(actor, bloomAfterShot(weapon, this.bloom.get(actor) ?? 0, sinceLast));
       const origin = { ...pose, ...deviateAim(aim ?? pose, spread) };
       this.lastAttack.set(actor, now);
