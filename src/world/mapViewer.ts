@@ -138,6 +138,8 @@ function paint(): Promise<void> {
   return new Promise((resolve) => { requestAnimationFrame(() => setTimeout(resolve, 0)); setTimeout(resolve, 60); });
 }
 
+// The tone mapping's exposure, which SMAA's edge detection also uses.
+const EXPOSURE = 1.25;
 // The first frames reveal the market in this many slices, building each slice's shaders.
 const WARM_SLICES = 16;
 
@@ -236,13 +238,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Retina screen or an external display would otherwise multiply the cost of every lit
   // pixel. Changing the drawing size rebuilds every shader (the clustered lights fit their
   // grid to it), which can stall the page for seconds, so the size is chosen when the window
-  // settles and lowered at most twice during play, never raised again.
+  // settles and lowered at most twice during play, never raised again. It never goes below the
+  // CSS resolution: under it every edge turns to visible blocks of pixels.
   let budget = 4.2e6;
-  const ratioFor = (width: number, height: number): number => Math.max(0.6, Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (width * height))));
+  const floorRatio = Math.min(1, window.devicePixelRatio);
+  const ratioFor = (width: number, height: number): number => Math.max(floorRatio, Math.min(window.devicePixelRatio, 2, Math.sqrt(budget / (width * height))));
   let pixelRatio = ratioFor(Math.max(1, container.clientWidth), Math.max(1, container.clientHeight));
   renderer.setPixelRatio(pixelRatio);
   renderer.toneMapping = ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMappingExposure = EXPOSURE;
   renderer.shadowMap.type = PCFShadowMap;
   renderer.shadowMap.enabled = true;
   await renderer.init();
@@ -333,10 +337,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   occlusionPass.radius.value = 0.8;
   occlusionPass.samples.value = 12;
   const occlusion = mix(float(1), occlusionPass.getTextureNode().r, 0.85);
-  const sharp = smaa(vec4(world.rgb.mul(occlusion), 1)).getTextureNode().rgb;
+  // SMAA finds edges by differences in colour, and in linear light the night market is so dark
+  // that a dim door frame against a dark wall differs by less than its threshold, so most edges
+  // went unsmoothed. It sees the world at the game's exposure and gamma-encoded, as the eye
+  // does, and the result is decoded back to linear light. (After tone mapping would be simpler,
+  // but the passes it reads would then render inside SMAA's own pass and clear to black.)
+  const shaded = smaa(vec4(world.rgb.mul(occlusion).mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE);
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
   const clouds = pass(cloudScene, camera).getTextureNode("output");
-  const lit = sharp.mul(float(1).sub(clouds.a)).add(clouds.rgb);
+  const lit = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
   const held = pass(viewScene, viewCamera, { samples: 4 }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
   const glow = picture.add(bloom(vec4(picture, 1), 0.75, 0.55, 0.9).rgb);
@@ -539,7 +548,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       // Four seconds under 40 FPS, once the first frames' shader builds are past: render a
       // little over half the pixels, in one step.
       slowSamples = !document.hidden && readyAt && time - readyAt > 6000 && fps < 40 ? slowSamples + 1 : 0;
-      if (slowSamples >= 8 && downgrades < 2 && pixelRatio > 0.6) {
+      if (slowSamples >= 8 && downgrades < 2 && pixelRatio > floorRatio) {
         budget *= 0.55;
         downgrades += 1;
         slowSamples = 0;
