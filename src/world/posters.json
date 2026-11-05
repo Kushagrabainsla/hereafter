@@ -1,0 +1,13 @@
+{
+  "about": "Paper posters pasted on the market's walls. scripts/assets/families/street.py models one piece per entry (poster_<id>); src/world/nightMarket.ts places each on the wall facing `face`, at `at` along that wall's axis, `along` the other and `y` the poster's middle. Text is Bebas Neue: the first line large, the rest small, over an accent disc.",
+  "posters": [
+    { "id": "live", "face": "px", "at": 8.5, "along": 14.2, "y": 1.7, "lines": ["LIVE", "FRI · SAT", "THE LANTERN"], "paper": "#f2e3c4", "ink": "#2a1a14", "accent": "#ff6b4a" },
+    { "id": "lost_cat", "face": "px", "at": 8.5, "along": 22.6, "y": 1.6, "lines": ["LOST", "ORANGE CAT", "CALL 408"], "paper": "#fbf7ee", "ink": "#1e1e1e", "accent": "#ffb347" },
+    { "id": "art_walk", "face": "nx", "at": 17, "along": -14.0, "y": 1.7, "lines": ["ART", "WALK", "1ST FRIDAY"], "paper": "#1f2a44", "ink": "#fff2d0", "accent": "#3fd0c9" },
+    { "id": "street_food", "face": "px", "at": 8.5, "along": -15.6, "y": 1.6, "lines": ["SOFA", "STREET FOOD", "EVERY NIGHT"], "paper": "#2b1420", "ink": "#ffd8a8", "accent": "#ff4f7d" },
+    { "id": "noods", "face": "px", "at": -8.5, "along": -13.4, "y": 1.7, "lines": ["NOODS", "OPEN LATE", "2 FOR $9"], "paper": "#ffe36e", "ink": "#2a1a14", "accent": "#e2453c" },
+    { "id": "new_arrivals", "face": "nz", "at": -6.6, "along": 7.4, "y": 1.7, "lines": ["NEW", "ARRIVALS", "VINYL"], "paper": "#151515", "ink": "#f4e9d0", "accent": "#ff5a3c" },
+    { "id": "live_dj", "face": "nx", "at": 8.2, "along": -13.2, "y": 1.8, "lines": ["LIVE DJ", "SAT 9PM", "NO COVER"], "paper": "#2b1d4a", "ink": "#ffe9c2", "accent": "#57e6ff" },
+    { "id": "crate_diggers", "face": "pz", "at": -14.4, "along": 5.6, "y": 1.8, "lines": ["CRATE", "DIGGERS", "WELCOME"], "paper": "#f2d64b", "ink": "#1e1e1e", "accent": "#d94f3d" }
+  ]
+}

@@ -16,7 +16,7 @@ import os
 
 from mathutils import Matrix
 
-from lib import ROOT, Piece, box, join, material, move, rounded_rect, text_mesh, tube
+from lib import ROOT, Piece, box, fit, join, material, move, rounded_rect, text_mesh, tube
 
 SIGNS = json.load(open(os.path.join(ROOT, "src", "world", "signs.json"), encoding="utf-8"))["signs"]
 # Bebas Neue's capitals stand about 0.7 of the type size.
@@ -35,15 +35,6 @@ def materials():
         material(f"glow_ink_{sign['id']}", hex_color(sign["ink"]), 0.0, 0.3)
         if sign["style"] == "lightbox":
             material(f"glow_face_{sign['id']}", hex_color(sign["board"]), 0.0, 0.5)
-
-
-def fit(obj, width):
-    """Narrows text that would run wider than `width`."""
-    xs = [v.co.x for v in obj.data.vertices]
-    span = max(xs) - min(xs)
-    if span > width:
-        obj.data.transform(Matrix.Diagonal((width / span, 1, 1, 1)))
-    return obj
 
 
 def neon(sign):

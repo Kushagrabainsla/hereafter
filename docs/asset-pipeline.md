@@ -43,7 +43,7 @@ PIECES = [Piece("pendant", pendant, budget=1100, size=(0.33, 0.33, 1.24), origin
 
 Model in metres with Z up. The exporter turns that into the game's Y up: Blender's -Y becomes three.js +Z, the way a piece faces out of its wall.
 
-`scripts/assets/lib.py` holds the shared helpers: `box`, `turned_box`, `cylinder`, `sphere`, `tube` (a tube along a polyline), `ring`, `arc`, `prism` (an extruded profile), `lathe` (a turned shape, optionally ribbed), `cut` (a boolean), `join`, `move`, `smooth`, `mirror_x`, `text_mesh` (letters as solid shapes, or as neon tubes along their outlines), `rounded_rect`, `jitter` and `tear` (for crumpled or torn versions), and `triangles`.
+`scripts/assets/lib.py` holds the shared helpers: `box`, `turned_box`, `cylinder`, `sphere`, `tube` (a tube along a polyline), `ring`, `arc`, `prism` (an extruded profile), `hull` (the convex hull of some points, for tapered and sloped shapes), `lathe` (a turned shape, optionally ribbed), `cut` (a boolean), `join`, `move`, `smooth`, `mirror_x`, `text_mesh` (letters as solid or flat shapes, as neon tubes along their outlines, or fattened by an offset for a painted outline), `fit` (narrows text to a width), `paint` (a single flat face, for paint and decals on a wall), `ellipse` and `clip` (outlines, cut to a rectangle), `rounded_rect`, `jitter` and `tear` (for crumpled or torn versions), and `triangles`.
 
 ## Rules the game relies on
 
@@ -68,6 +68,10 @@ Physics, cover and breakage do not change when a code shape becomes a model. Col
 ## Signs
 
 Every sign's text, look, colours and size live in `src/world/signs.json`. The signs family builds one piece per entry (`sign_<id>`), and the game places it and lights it at the entry's intensity. `neon` signs are glass tubes along the letters' outlines and a rounded border on a dark backer. `lightbox` signs are steel boxes with a lit face and raised letters. `blade` signs are double-sided neon boxes on wall brackets. To add or change a sign, edit the JSON, place it in `nightMarket.ts` with `sign(id, x, y, z, face)`, and rebuild the family. The lettering uses Bebas Neue (SIL Open Font License); the food truck's roof sign and menu board use it too.
+
+## Posters
+
+Every paper poster's wall, place, lines and colours live in `src/world/posters.json`. The street family builds one piece per entry (`poster_<id>`): a sheet of paper with a little thickness, taped at three corners, the fourth peeling off the wall, a slight tilt, and its lines in Bebas Neue over an accent disc. The game places every entry on its wall itself, so adding a poster is an edit to the JSON and a rebuild of the family. The mural is one piece of flat paint layers a couple of millimetres apart: the ground, four blobs, the word with its outline and offset line, spray mist and drips.
 
 ## Performance
 
@@ -100,13 +104,27 @@ Phase 2 (furniture and interiors), at ten spots in the restaurant, the bar, upst
 
 Sixteen pieces, 12,400 triangles in all and 159 KB compressed; each draws in one call however many copies stand about, except the backlit bottles' glass.
 
+Phase 3 (street dressing), at eight spots in the service alley, the market alley and on the roofs. Frame rates matched within the machine's swings; draw calls and triangles are exact:
+
+| Spot | Draw calls | Triangles |
+|---|---|---|
+| Service alley, dumpsters | 179 to 178 | 480,024 to 498,858 (+3.9%) |
+| Pallets and mural | 97 to 96 | 340,872 to 361,387 (+6.0%) |
+| Service alley, south posters | 232 to 231 | 525,680 to 545,319 (+3.7%) |
+| Market alley poster | 123 to 123 | 461,354 to 473,150 (+2.6%) |
+| Manhole | 245 to 245 | 524,416 to 545,805 (+4.1%) |
+| Over the rooftops | 137 to 138 | 433,406 to 461,017 (+6.4%) |
+| Beside a water tank | 84 to 84 | 334,648 to 345,716 (+3.3%) |
+
+Fourteen pieces, 12,700 triangles in all and 159 KB compressed. The five water tanks are most of it (2,120 triangles each); every copy of a piece draws in the one call.
+
 ## Phases
 
 Each phase replaces one group of shapes drawn in code with modelled pieces, measured as above.
 
 1. **Lights and signs (done):** paper lanterns and their torn versions, string-light bulbs and cables, overhead power lines, the service alley's barn lamps, the restaurant's and record shop's pendants, the stalls' caged lamps, the pool-table lamp, the breaker box, all 19 signs, and the food truck's roof sign and menu board.
 2. **Furniture and interiors (done):** the restaurant's tables and bentwood chairs, its pass counter and pantry shelves with jars, tins, sacks and bowls; the bar's counter and brass foot rail, leather stools, mirrored back bar and bottles, pool table and the sofa upstairs; the record shop's counter; the market alley's folding tables and plastic stools. The tables, counters, pool table and sofa keep their solid boxes as colliders (`furnish()` in `nightMarket.ts` draws the piece in their place).
-3. **Street dressing:** the dumpster, pallets, manhole cover, rooftop water tanks and antennas, posters and the mural.
+3. **Street dressing (done):** the service alley's dumpsters (lids, casters, stencilling and rust), the stacked pallets and the manhole cover; the cedar water tanks on their steel stands and the TV antennas on the roofs, each antenna stretched to its mast's height; the eight posters and the SOFA mural. The dumpsters keep their solid boxes as colliders.
 4. **Weapons and items in the world:** pickup stands, spare and dropped magazines, spent cases, frag and smoke grenades. The stand-in guns, hands and players drawn only when a model fails to load are removed.
 5. **Buildings and ground:** walls with depth, cornices, parapets, windows, shopfronts, shutters, shop glass, railings, ladders and stairs, paving, kerbs and floors. This needs the light bake redone (`npm run build:lightmaps`).
 6. **Effects:** debris, bullet holes, the muzzle flash, the code-drawn textures (awning stripes, planks, tiles) and the pickup markers. Tracers, smoke, steam, fire and haze stay particle effects.

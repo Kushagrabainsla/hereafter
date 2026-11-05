@@ -269,11 +269,12 @@ def font(file="BebasNeue-Regular.ttf"):
     return FONTS[file]
 
 
-def text_mesh(name, body, size, mat, neon=0.0, extrude=0.0, align="CENTER", spacing=1.0, resolution=3, font_file="BebasNeue-Regular.ttf", tube_sides=6):
+def text_mesh(name, body, size, mat, neon=0.0, extrude=0.0, align="CENTER", spacing=1.0, resolution=3, font_file="BebasNeue-Regular.ttf", tube_sides=6, offset=0.0):
     """Text as a mesh in the XZ plane, centred on the origin, reading along +X with its face
     toward -Y (out of a wall in the kit's frame) and its top toward +Z. With neon, a glass tube
     of that radius follows each letter's outline; otherwise the letters are solid, extruded
-    by `extrude` toward -Y from y = 0."""
+    by `extrude` toward -Y from y = 0. A positive offset fattens every letter's outline by that
+    much, for a painted outline behind the letters."""
     cu = bpy.data.curves.new(name, "FONT")
     cu.body = body
     cu.font = font(font_file)
@@ -282,6 +283,7 @@ def text_mesh(name, body, size, mat, neon=0.0, extrude=0.0, align="CENTER", spac
     cu.align_x = align
     cu.align_y = "CENTER"
     cu.resolution_u = resolution
+    cu.offset = offset
     if neon:
         cu.fill_mode = "NONE"
         cu.bevel_depth = neon
@@ -305,6 +307,58 @@ def text_mesh(name, body, size, mat, neon=0.0, extrude=0.0, align="CENTER", spac
     obj.data.materials.append(MATERIALS[mat])
     obj.name = name
     return obj
+
+
+def fit(obj, width):
+    """Narrows text (or anything) that would run wider than `width` along X, about x = 0."""
+    xs = [v.co.x for v in obj.data.vertices]
+    span = max(xs) - min(xs)
+    if span > width:
+        obj.data.transform(Matrix.Diagonal((width / span, 1, 1, 1)))
+    return obj
+
+
+def paint(name, points, y, mat):
+    """A single flat face from (x, z) points at depth y, facing -Y: paint or a decal on a wall,
+    with nothing behind it to draw."""
+    bm = bmesh.new()
+    face = bm.faces.new([bm.verts.new((x, y, z)) for x, z in points])
+    face.normal_update()
+    if face.normal.y > 0:
+        face.normal_flip()
+    return mesh_object(name, bm, mat)
+
+
+def hull(name, points, mat, bev=0.0, segments=2):
+    """The convex hull of some points: a tapered bin, a wedge, a sloped lid."""
+    bm = bmesh.new()
+    for p in points:
+        bm.verts.new(p)
+    bmesh.ops.convex_hull(bm, input=bm.verts[:])
+    return bevel(mesh_object(name, bm, mat), bev, segments)
+
+
+def ellipse(cx, cz, rx, rz, turn=0.0, steps=24):
+    """(x, z) points round an ellipse, turned by `turn` radians (anticlockwise)."""
+    c, s = math.cos(turn), math.sin(turn)
+    return [(cx + rx * math.cos(a) * c - rz * math.sin(a) * s, cz + rx * math.cos(a) * s + rz * math.sin(a) * c)
+            for a in (2 * math.pi * k / steps for k in range(steps))]
+
+
+def clip(points, x0, x1, z0, z1):
+    """An (x, z) polygon cut to a rectangle (Sutherland-Hodgman), as paint stops at a wall's edge."""
+    for axis, bound, above in ((0, x0, True), (0, x1, False), (1, z0, True), (1, z1, False)):
+        inside = (lambda p: p[axis] >= bound) if above else (lambda p: p[axis] <= bound)
+        out = []
+        for i, p in enumerate(points):
+            q = points[i - 1]
+            if inside(p) != inside(q):
+                t = (bound - q[axis]) / (p[axis] - q[axis])
+                out.append((q[0] + (p[0] - q[0]) * t, q[1] + (p[1] - q[1]) * t))
+            if inside(p):
+                out.append(p)
+        points = out
+    return points
 
 
 def rounded_rect(width, height, radius, steps=4):

@@ -16,6 +16,7 @@ import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
 import { glowing, instancedParts, kitObject, KitPlacer, splitGlow, type KitPiece } from "./kit";
 import signCatalog from "./signs.json";
+import posterCatalog from "./posters.json";
 import { DOOR_ENTITIES, DOOR_TOGGLES, Doors } from "./doors";
 import { dressFacades, wallMatrix } from "./facades";
 import { PIPE_ENTITIES, placeSteamPipes, POWDER, SteamPipes } from "./steamPipes";
@@ -373,31 +374,6 @@ function windowInterior(kind: number): CanvasTexture {
   });
 }
 
-function poster(lines: string[], background: string, ink: string, accent: string): CanvasTexture {
-  return canvasTexture(192, 272, (g, w, h) => {
-    g.fillStyle = background; g.fillRect(0, 0, w, h);
-    g.fillStyle = accent; g.beginPath(); g.arc(w * 0.72, h * 0.3, w * 0.32, 0, 7); g.fill();
-    g.fillStyle = ink; g.textAlign = "left"; g.textBaseline = "alphabetic";
-    lines.forEach((line, i) => { g.font = `800 ${i === 0 ? 42 : 22}px Helvetica, Arial, sans-serif`; g.fillText(line, 12, h * 0.62 + i * (i === 0 ? 0 : 30) + (i > 0 ? 18 : 0), w - 20); });
-    // Torn, weathered paper.
-    for (let i = 0; i < 40; i += 1) { g.fillStyle = `rgba(0,0,0,${Math.random() * 0.06})`; g.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 20, 1 + Math.random() * 3); }
-    g.fillStyle = "rgba(255,255,255,0.08)"; g.fillRect(0, 0, w, 6);
-  });
-}
-
-function mural(): CanvasTexture {
-  return canvasTexture(768, 384, (g, w, h) => {
-    g.fillStyle = "#1d2433"; g.fillRect(0, 0, w, h);
-    const blobs: [number, number, number, string][] = [[0.15, 0.6, 0.28, "#ff5f7a"], [0.42, 0.35, 0.24, "#ffb347"], [0.7, 0.62, 0.3, "#3fd0c9"], [0.9, 0.3, 0.2, "#9b6bff"]];
-    for (const [x, y, r, c] of blobs) { g.fillStyle = c; g.beginPath(); g.ellipse(x * w, y * h, r * w * 0.6, r * h * 0.9, 0.4, 0, 7); g.fill(); }
-    g.font = `900 ${Math.round(h * 0.55)}px "Arial Black", Helvetica, Arial, sans-serif`;
-    g.textAlign = "center"; g.textBaseline = "middle";
-    g.lineWidth = 14; g.strokeStyle = "#111318"; g.strokeText("SOFA", w / 2, h * 0.52);
-    g.fillStyle = "#fff4d6"; g.fillText("SOFA", w / 2, h * 0.52);
-    g.lineWidth = 4; g.strokeStyle = "#ff5f7a"; g.strokeText("SOFA", w / 2 + 6, h * 0.52 + 6);
-    for (let i = 0; i < 24; i += 1) { const x = Math.random() * w; g.fillStyle = blobs[i % 4][3]; g.fillRect(x, h * 0.75, 3, 20 + Math.random() * 60); }
-  });
-}
 
 // Box geometry whose texture coordinates are in metres, so tiled materials keep their scale.
 function meterBox(w: number, h: number, d: number): BoxGeometry {
@@ -471,17 +447,6 @@ const cables: [number, number, number, number, number, number][] = [
 ];
 // Water tanks on the roofs that line the alleys, seen against the sky: [x, roof height, z].
 const tanks: [number, number, number][] = [[-11.6, 12, 24], [-12.2, 11, -24], [20.4, 14, 22], [20.2, 13, -18], [4.5, 12, 18]];
-const posters: [number, number, number, Face, string[], string, string, string][] = [
-  [8.5, 14.2, 1.7, "px", ["LIVE", "FRI · SAT", "THE LANTERN"], "#f2e3c4", "#2a1a14", "#ff6b4a"],
-  [8.5, 22.6, 1.6, "px", ["LOST", "ORANGE CAT", "CALL 408"], "#fbf7ee", "#1e1e1e", "#ffb347"],
-  [17, -14.0, 1.7, "nx", ["ART", "WALK", "1ST FRIDAY"], "#1f2a44", "#fff2d0", "#3fd0c9"],
-  [8.5, -15.6, 1.6, "px", ["SOFA", "STREET FOOD", "EVERY NIGHT"], "#2b1420", "#ffd8a8", "#ff4f7d"],
-  [-8.5, -13.4, 1.7, "px", ["NOODS", "OPEN LATE", "2 FOR $9"], "#ffe36e", "#2a1a14", "#e2453c"],
-  // Inside the record shop.
-  [-6.6, 7.4, 1.7, "nz", ["NEW", "ARRIVALS", "VINYL"], "#151515", "#f4e9d0", "#ff5a3c"],
-  [8.2, -13.2, 1.8, "nx", ["LIVE DJ", "SAT 9PM", "NO COVER"], "#2b1d4a", "#ffe9c2", "#57e6ff"],
-  [-14.4, 5.6, 1.8, "pz", ["CRATE", "DIGGERS", "WELCOME"], "#f2d64b", "#1e1e1e", "#d94f3d"],
-];
 
 export interface BuiltMap {
   refs: Map<string, InstanceRef[]>;
@@ -543,9 +508,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     plasterCream: plaster(0xe6cfaa), plasterTeal: plaster(0xa8c0b9), plasterSand: plaster(0xd9b98f), plasterOchre: plaster(0xc9a46a), plasterInside: plaster(0xe8dcc6),
     concreteCap: concrete(0xb7b2aa), slab: concrete(0xbdb8b0),
     shopGreen: wall({ color: 0x1d3b36, metalness: 0.1, roughness: 0.55 }), barRed: wall({ color: 0x5a1a1f, metalness: 0.1, roughness: 0.55 }), tile: std({ map: own(tiles()), roughness: 0.3 }),
-    woodDark: wood("#5e3b22"), woodBar: wood("#4a2a18"), woodTable: wood("#6e4a2c"), woodStall: wood("#8a5a35"), floor: wood("#7a5232"), pallet: wood("#9a7a52"), tank: wood("#5a4030"),
+    woodDark: wood("#5e3b22"), woodBar: wood("#4a2a18"), woodTable: wood("#6e4a2c"), woodStall: wood("#8a5a35"), floor: wood("#7a5232"),
     poolTable: paint(0x1f6b3a, 0, 0.9), sofa: paint(0x6b2430, 0, 0.85),
-    steel: paint(0x9aa3a8, 0.8, 0.3), steelDark: paint(0x3a3f44, 0.6, 0.45), dumpster: paint(0x2f5d3a, 0.4, 0.55), dumpsterLid: paint(0x1f3a26, 0.3, 0.6),
+    steel: paint(0x9aa3a8, 0.8, 0.3), steelDark: paint(0x3a3f44, 0.6, 0.45),
     grating: paint(0x3d4447, 0.7, 0.5), rail: paint(0x22262a, 0.5, 0.6), stairRail: paint(0x22262a, 0.5, 0.6),
     frame: paint(0xcfc6b4, 0, 0.7), mullion: paint(0x2a2622, 0.2, 0.6), sill: concrete(0xd8d0c0), recess: paint(0x07090c, 0, 1), door: paint(0x3a2a22, 0.1, 0.7), trim: concrete(0xcfc8ba),
     shutter: std({ map: own(corrugated("#7d8287")), metalness: 0.5, roughness: 0.5 }),
@@ -653,6 +618,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     if (solid.look === "woodBar") return [hz > 2 ? "bar_counter" : "record_counter", -Math.PI / 2];
     if (solid.look === "poolTable") return ["pool_table", 0];
     if (solid.look === "sofa") return ["sofa", -Math.PI / 2];
+    // Dumpsters stand with their backs to the nearer wall of the service alley.
+    if (solid.look === "dumpster") return ["dumpster", solid.center.x < 12.75 ? Math.PI / 2 : -Math.PI / 2];
     return null;
   };
   // Every other solid with a look is drawn as its box.
@@ -793,23 +760,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     statics.plane("shutter", 6, 3.6, x, 1.8, z, face);
     statics.box("trim", 6.6, 0.4, 0.3, x, 3.6, z);
   }
-  // Posters and a mural at street level.
-  const posterMaterials: MeshStandardMaterial[] = [];
-  for (const [at, along, y, face, lines, background, ink, accent] of posters) {
-    const [nx, nz] = FACE_NORMAL[face];
-    const material = std({ map: own(poster(lines, background, ink, accent)), roughness: 0.85 });
-    posterMaterials.push(material);
-    const mesh = new Mesh(new PlaneGeometry(0.62, 0.88), material);
-    mesh.position.set(nx ? at + nx * 0.03 : along, y, nz ? at + nz * 0.03 : along);
-    mesh.rotation.y = FACE_YAW[face];
-    mesh.receiveShadow = true;
-    root.add(mesh);
-  }
-  const muralMesh = new Mesh(new PlaneGeometry(5.6, 2.8), std({ map: own(mural()), roughness: 0.75 }));
-  muralMesh.position.set(16.97, 1.6, 21);
-  muralMesh.rotation.y = FACE_YAW.nx;
-  muralMesh.receiveShadow = true;
-  root.add(muralMesh);
+  // Paper posters on the walls (posters.json) and the SOFA mural in the service alley.
+  for (const poster of posterCatalog.posters) placer.place(`poster_${poster.id}`, wallMatrix(poster.face as Face, poster.at, poster.along, poster.y, 0.004));
+  placer.place("mural", wallMatrix("nx", 17, 21, 1.6, 0.002));
 
   // ---------- the record shop ----------
   ground("floor", 0.8, 8.2, -14.4, -6.6, 0.012);
@@ -902,10 +855,10 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // The food truck is a model of its own (foodTruck.ts).
 
   // ---------- service alley dressing ----------
-  for (const solid of solids.filter((item) => item.look === "dumpster")) statics.box("dumpsterLid", solid.half[0] * 2 + 0.1, 0.08, solid.half[2] * 2 + 0.1, solid.center.x, solid.center.y + solid.half[1], solid.center.z);
-  statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0, 18);
-  statics.box("pallet", 1.2, 0.15, 1.0, 15.8, 0.15, 18.1);
-  statics.cylinder("steelDark", 0.35, 0.03, 12.75, 0, -6, 20);
+  // Two pallets stacked by the door, the top one askew, and a manhole cover.
+  placer.place("pallet", new Matrix4().makeTranslation(15.8, 0, 18));
+  placer.place("pallet", new Matrix4().compose(new Vector3(15.8, 0.144, 18.1), new Quaternion().setFromAxisAngle(UP, 0.07), new Vector3(1, 1, 1)));
+  placer.place("manhole", new Matrix4().makeTranslation(12.75, 0, -6));
   // Barn lamps on the service alley walls, their shades 0.36 m out: lit and dark glass, so a
   // broken one goes dark on its own.
   const sconceParts = lampSet("sconce", sconces.map((sconce) => sconce.x < 12 ? wallMatrix("px", 8.5, sconce.z, 3.6) : wallMatrix("nx", 17, sconce.z, 3.6)), materials.sconce);
@@ -922,14 +875,10 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   root.add(breaker);
 
   // ---------- rooftops against the sky ----------
-  for (const [x, roof, z] of tanks) {
-    for (const [dx, dz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) statics.box("steelDark", 0.12, 1.6, 0.12, x + dx, roof, z + dz);
-    statics.cylinder("tank", 1.15, 2.0, x, roof + 1.6, z, 16);
-    statics.cylinder("steelDark", 1.25, 0.7, x, roof + 3.6, z, 16, 0.08);
-  }
+  tanks.forEach(([x, roof, z], index) => placer.place("water_tank", new Matrix4().compose(new Vector3(x, roof, z), new Quaternion().setFromAxisAngle(UP, index * 1.9 + 0.4), new Vector3(1, 1, 1))));
+  // TV antennas, all aimed the same way at the same far transmitter; the model's mast is 4 m.
   for (const [x, roof, z, height] of [[-20, 16, -33, 4.5], [10, 16, -34, 3.2], [-15, 15, 33, 3.8], [21, 15, 34, 5], [-24, 12, 18, 3]]) {
-    statics.box("steelDark", 0.08, height, 0.08, x, roof, z);
-    statics.box("steelDark", 1.2, 0.04, 0.04, x, roof + height * 0.8, z);
+    placer.place("antenna", new Matrix4().compose(new Vector3(x, roof, z), new Quaternion().setFromAxisAngle(UP, 0.6), new Vector3(1, height / 4, 1)));
   }
 
   // ---------- string lights, lanterns and cables ----------

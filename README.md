@@ -137,7 +137,7 @@ Open the URL Vite prints. No API key or account is needed: every asset the game 
 | `npm run build` | Type-check and build into `dist/` |
 | `npm run build:pages` | Build for GitHub Pages, under `/hereafter/` |
 | `npm run preview:pages` | Serve the Pages build locally |
-| `npm run build:assets` | Rebuild the modelled lamps, signs and furniture, checked and compressed (needs Blender 4.4+) |
+| `npm run build:assets` | Rebuild the modelled lamps, signs, furniture and street dressing, checked and compressed (needs Blender 4.4+) |
 | `npm run build:viewmodels` | Rebuild the first-person arms and weapons (needs Blender 4.4+) |
 | `npm run build:lightmaps` | Rebake the market's light after a map change (needs Chrome and Blender) |
 | `npm run build:audio` | Download and rebuild the sound effects |
@@ -151,7 +151,7 @@ Add `?renderer=webgl` to the URL to force WebGL 2. Pushes to `main` deploy to Gi
 - [Rapier](https://rapier.rs/) physics in WebAssembly, for the 60 Hz character controller, collisions, shots and ragdolls
 - [Trystero](https://github.com/dmotz/trystero), for peer-to-peer rooms over WebRTC, found through Nostr relays
 - [Vite](https://vite.dev/) and TypeScript
-- [Blender](https://www.blender.org/), for the view models, the food truck, the wall kit, the lamps, signs and furniture (through the [asset pipeline](docs/asset-pipeline.md)) and the baked lightmaps
+- [Blender](https://www.blender.org/), for the view models, the food truck, the wall kit, the lamps, signs, furniture and street dressing (through the [asset pipeline](docs/asset-pipeline.md)) and the baked lightmaps
 
 ```
 src/
@@ -182,7 +182,7 @@ docs/              design and engineering notes
 
 ## Known limitations
 
-- One map. Its layout is written in code, not built in an editor. The buildings, ground and some street dressing are still simple shapes; they are being rebuilt as models in phases (see the [asset pipeline](docs/asset-pipeline.md)).
+- One map. Its layout is written in code, not built in an editor. The buildings, the ground, the items lying about and some effects are still simple shapes; they are being rebuilt as models in phases (see the [asset pipeline](docs/asset-pipeline.md)).
 - Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
 - Only the restaurant, the bar and the record shop can be entered.
 - No voice chat yet.

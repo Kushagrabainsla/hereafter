@@ -1,0 +1,231 @@
+{
+ "family": "street",
+ "pieces": {
+  "dumpster": {
+   "triangles": 1658,
+   "budget": 2600,
+   "size": [
+    2.1,
+    1.255,
+    1.352
+   ],
+   "materials": [
+    "street_dumpster",
+    "street_lid",
+    "street_rubber",
+    "street_rust",
+    "street_steel",
+    "street_stencil"
+   ],
+   "notes": "Four in the service alley, backs to the wall; the map's box stays as the collider."
+  },
+  "pallet": {
+   "triangles": 572,
+   "budget": 900,
+   "size": [
+    1.22,
+    1.002,
+    0.144
+   ],
+   "materials": [
+    "street_pallet",
+    "street_pallet_old"
+   ],
+   "notes": "A stack of two by the service alley door."
+  },
+  "manhole": {
+   "triangles": 1212,
+   "budget": 1400,
+   "size": [
+    0.86,
+    0.86,
+    0.02
+   ],
+   "materials": [
+    "street_cable",
+    "street_iron",
+    "street_iron_worn"
+   ],
+   "notes": "In the service alley."
+  },
+  "water_tank": {
+   "triangles": 2120,
+   "budget": 2800,
+   "size": [
+    2.5,
+    2.6,
+    4.375
+   ],
+   "materials": [
+    "street_cedar",
+    "street_cedar_dark",
+    "street_hoop",
+    "street_steel"
+   ],
+   "notes": "Five on the roofs along the alleys."
+  },
+  "antenna": {
+   "triangles": 312,
+   "budget": 700,
+   "size": [
+    1.153,
+    1.763,
+    4.01
+   ],
+   "materials": [
+    "street_cable",
+    "street_galv"
+   ],
+   "notes": "Five on the roofs, stretched to each mast's height."
+  },
+  "poster_live": {
+   "triangles": 540,
+   "budget": 2400,
+   "size": [
+    0.671,
+    0.037,
+    0.922
+   ],
+   "materials": [
+    "poster_live_accent",
+    "poster_live_ink",
+    "poster_live_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_lost_cat": {
+   "triangles": 694,
+   "budget": 2400,
+   "size": [
+    0.664,
+    0.037,
+    0.933
+   ],
+   "materials": [
+    "poster_lost_cat_accent",
+    "poster_lost_cat_ink",
+    "poster_lost_cat_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_art_walk": {
+   "triangles": 540,
+   "budget": 2400,
+   "size": [
+    0.664,
+    0.037,
+    0.925
+   ],
+   "materials": [
+    "poster_art_walk_accent",
+    "poster_art_walk_ink",
+    "poster_art_walk_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_street_food": {
+   "triangles": 723,
+   "budget": 2400,
+   "size": [
+    0.67,
+    0.037,
+    0.922
+   ],
+   "materials": [
+    "poster_street_food_accent",
+    "poster_street_food_ink",
+    "poster_street_food_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_noods": {
+   "triangles": 730,
+   "budget": 2400,
+   "size": [
+    0.667,
+    0.037,
+    0.938
+   ],
+   "materials": [
+    "poster_noods_accent",
+    "poster_noods_ink",
+    "poster_noods_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_new_arrivals": {
+   "triangles": 509,
+   "budget": 2400,
+   "size": [
+    0.664,
+    0.036,
+    0.923
+   ],
+   "materials": [
+    "poster_new_arrivals_accent",
+    "poster_new_arrivals_ink",
+    "poster_new_arrivals_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_live_dj": {
+   "triangles": 638,
+   "budget": 2400,
+   "size": [
+    0.664,
+    0.037,
+    0.924
+   ],
+   "materials": [
+    "poster_live_dj_accent",
+    "poster_live_dj_ink",
+    "poster_live_dj_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "poster_crate_diggers": {
+   "triangles": 680,
+   "budget": 2400,
+   "size": [
+    0.695,
+    0.037,
+    0.922
+   ],
+   "materials": [
+    "poster_crate_diggers_accent",
+    "poster_crate_diggers_ink",
+    "poster_crate_diggers_paper",
+    "poster_tape"
+   ],
+   "notes": "Pasted on a wall."
+  },
+  "mural": {
+   "triangles": 1793,
+   "budget": 7000,
+   "size": [
+    5.622,
+    0.021,
+    2.817
+   ],
+   "materials": [
+    "mural_amber",
+    "mural_cream",
+    "mural_ground",
+    "mural_ink",
+    "mural_pink",
+    "mural_teal",
+    "mural_violet"
+   ],
+   "notes": "The SOFA mural in the service alley."
+  }
+ },
+ "triangles": 12721,
+ "bytes": 473612
+}
