@@ -82,7 +82,7 @@ The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse 
 | Look | move the mouse: it locks when you deploy. <kbd>Esc</kbd> frees it, a click locks it again; unlocked, drag to look |
 | Attack, or slash with the knife | click or <kbd>F</kbd> |
 | Stab with the knife | right-click or <kbd>V</kbd> |
-| Aim down the sights, with a gun | hold right-click |
+| Aim down the sights, with a gun: a red dot marks where shots go | hold right-click (on a Mac trackpad, press and hold with two fingers) |
 | Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
 | Reload | <kbd>R</kbd> |
 | Pick up, open doors and hatches | <kbd>E</kbd> |
