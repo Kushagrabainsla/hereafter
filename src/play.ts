@@ -100,7 +100,8 @@ const crosshair = document.querySelector<HTMLElement>(".crosshair");
 const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: number; health: number }>();
 // Browsers only start audio from a user gesture; every gesture retries until it runs.
 for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(type, () => gameAudio.unlock(), { capture: true, passive: true });
-window.addEventListener("pointerup", (event) => { triggerHeld = false; if (event.button === 2) viewer?.setAiming(false); });
+// Letting go of every button ends firing and aiming, whichever came up last.
+window.addEventListener("pointerup", (event) => { if (event.buttons === 0) { triggerHeld = false; viewer?.setAiming(false); } });
 window.addEventListener("blur", () => { triggerHeld = false; viewer?.setAiming(false); });
 document.addEventListener("pointerlockchange", () => { triggerHeld = false; });
 window.setInterval(() => {
@@ -911,16 +912,30 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
       let pointerDown: { x: number; y: number; time: number } | null = null;
       // The right button stabs with the knife, and with a gun aims down its sights while held.
       canvas.addEventListener("contextmenu", (event) => event.preventDefault());
-      canvas.addEventListener("pointerdown", (event) => {
+      const press = (event: PointerEvent): void => {
+        if (!launched) return;
         if (event.button === 2) {
-          if (!launched) return;
           if (match?.player(selfId)?.active === "knife") attack("stab");
           else viewer?.setAiming(true);
           return;
         }
-        if (!launched || event.button !== 0) return;
+        if (event.button !== 0) return;
         if (document.pointerLockElement === canvas) { triggerHeld = true; attack(); }
         else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
+      };
+      const release = (event: PointerEvent): void => {
+        if (event.button === 0) triggerHeld = false;
+        else if (event.button === 2) viewer?.setAiming(false);
+      };
+      canvas.addEventListener("pointerdown", press);
+      // Browsers send pointerdown only for the first mouse button held and pointerup only for
+      // the last let go; a button pressed or released while another is held, such as firing
+      // while aiming, comes as a pointermove naming that button.
+      const BUTTON_BIT = [1, 4, 2];
+      canvas.addEventListener("pointermove", (event) => {
+        if (event.button < 0 || event.button > 2) return;
+        if (event.buttons & BUTTON_BIT[event.button]) press(event);
+        else release(event);
       });
       canvas.addEventListener("pointerup", (event) => {
         if (!pointerDown || document.pointerLockElement === canvas) return;
