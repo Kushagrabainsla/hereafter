@@ -110,7 +110,7 @@ export class AuthoredViewModel {
         const aim = kind !== "knife" ? this.straighten(root, rig, mixer, clips, muzzle, SIGHTS[kind]) : new Vector3();
         this.models.set(kind, { root, rig, mixer, clips, muzzle, aim });
         this.locomotion = "";
-      }).catch((error: unknown) => console.warn(`Could not load ${kind} view model; using fallback.`, error));
+      }).catch((error: unknown) => console.warn(`Could not load the ${kind} view model; it will not be drawn.`, error));
     }
   }
   // The authored files hold guns yawed and canted toward the screen centre. Turning the
@@ -184,10 +184,10 @@ export class AuthoredViewModel {
     // A critically damped kick: out fast, back without overshoot.
     this.recoilSpeed += (-140 * this.recoil - 2 * Math.sqrt(140) * this.recoilSpeed) * seconds;
     this.recoil += this.recoilSpeed * seconds;
-    // Switching, the spring sway and breathing come from the shared procedural state so
-    // authored and fallback weapons behave the same way. A reload cants the weapon and tips
-    // the muzzle up, with a small kick as the magazine seats and the action closes; the
-    // root pivots at the camera, so offsets keep it low.
+    // Switching, the spring sway and breathing come from the procedural state in
+    // weaponVisuals.ts. A reload cants the weapon and tips the muzzle up, with a small kick
+    // as the magazine seats and the action closes; the root pivots at the camera, so offsets
+    // keep it low.
     const lower = dynamics.lower, reload = dynamics.reload, jolt = dynamics.jolt, kick = this.recoil;
     // Aiming steadies the sway to a quarter and brings the sights to the centre of the view.
     const aim = motion.aim, steady = 1 - 0.75 * aim, raw = dynamics.sway;

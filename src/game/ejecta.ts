@@ -1,6 +1,7 @@
-import { CylinderGeometry, Group, InstancedMesh, Matrix4, MeshStandardMaterial, Quaternion, Scene, Vector3, Color, Euler } from "three/webgpu";
+import { Group, InstancedMesh, Matrix4, Quaternion, Scene, Vector3, Euler } from "three/webgpu";
 import { type GunKind } from "./combatRules";
 import { magazineModel } from "./loot";
+import { instancedParts, type KitPiece } from "../world/kit";
 import { gameAudio } from "./gameAudio";
 
 export interface Vec3 { x: number; y: number; z: number }
@@ -11,14 +12,15 @@ export type Sweep = (origin: Vec3, direction: Vec3, distance: number) => { dista
 // real size, integrated at 120 Hz against the physics world: it falls, bounces off what it
 // strikes (keeping more of its speed off brass than off a magazine), skids, tumbles and
 // comes to rest lying on its side, clinking as it lands. Pieces are drawn only on this
-// peer and are not shared; they fade after a while.
+// peer and are not shared; they fade after a while. Cases are modelled at real size in
+// items.glb and drawn as one instanced mesh per calibre, holding only the cases in flight or lying.
 const STEP = 1 / 120;
 const CASES_KEPT = 96;
 const MAGAZINES_KEPT = 8;
-// 9x19 mm brass and lacquered steel 7.62x39 mm cases: radius and length in metres.
-const CASE: Record<GunKind, { radius: number; length: number; color: number; restitution: number }> = {
-  pistol: { radius: 0.0049, length: 0.0192, color: 0xd2a650, restitution: 0.42 },
-  rifle: { radius: 0.0057, length: 0.0386, color: 0x77684a, restitution: 0.36 },
+// 9x19 mm brass and lacquered steel 7.62x39 mm cases: radius in metres.
+const CASE: Record<GunKind, { radius: number; restitution: number }> = {
+  pistol: { radius: 0.0049, restitution: 0.42 },
+  rifle: { radius: 0.0057, restitution: 0.36 },
 };
 
 interface Piece {
@@ -39,22 +41,19 @@ interface Piece {
 }
 
 const turn = new Quaternion(), axis = new Vector3(), matrix = new Matrix4(), scale = new Vector3();
+const GUNS: GunKind[] = ["pistol", "rifle"];
 
 export class Ejecta {
   private cases: (Piece | null)[] = new Array(CASES_KEPT).fill(null);
   private nextCase = 0;
   private magazines: Piece[] = [];
-  private mesh: InstancedMesh;
+  private meshes: Record<GunKind, InstancedMesh[]>;
   private accumulator = 0;
   private lastClink = 0;
 
-  constructor(private scene: Scene, private sweep: Sweep) {
-    const material = new MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: 0.34 });
-    this.mesh = new InstancedMesh(new CylinderGeometry(1, 1, 1, 8), material, CASES_KEPT);
-    this.mesh.frustumCulled = false;
-    const hidden = new Matrix4().makeScale(0, 0, 0), color = new Color();
-    for (let index = 0; index < CASES_KEPT; index += 1) { this.mesh.setMatrixAt(index, hidden); this.mesh.setColorAt(index, color.set(0xffffff)); }
-    scene.add(this.mesh);
+  constructor(private scene: Scene, private sweep: Sweep, private pieces: Map<string, KitPiece>) {
+    this.meshes = { pistol: instancedParts(pieces.get("case_pistol"), CASES_KEPT), rifle: instancedParts(pieces.get("case_rifle"), CASES_KEPT) };
+    for (const gun of GUNS) for (const mesh of this.meshes[gun]) { mesh.count = 0; scene.add(mesh); }
   }
 
   // A case leaves the ejection port at `at` toward the gun's right and up, a little back,
@@ -73,14 +72,12 @@ export class Ejecta {
       resting: false, age: 0, life: 40 + Math.random() * 10,
     };
     this.cases[this.nextCase] = piece;
-    this.mesh.setColorAt(this.nextCase, new Color(rule.color));
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
     this.nextCase = (this.nextCase + 1) % CASES_KEPT;
   }
 
   // An empty magazine let go during a reload: it drops from the gun and clatters down.
   dropMagazine(gun: GunKind, at: Vec3, carry: Vec3 = { x: 0, y: 0, z: 0 }): void {
-    const object = magazineModel(gun);
+    const object = magazineModel(gun, this.pieces);
     const holder = new Group();
     holder.add(object);
     this.scene.add(holder);
@@ -139,18 +136,23 @@ export class Ejecta {
     this.accumulator = Math.min(0.1, this.accumulator + seconds);
     const steps = Math.floor(this.accumulator / STEP);
     this.accumulator -= steps * STEP;
-    let touched = false;
+    // Each calibre's mesh draws only the cases there are, packed at its front.
+    const counts: Record<GunKind, number> = { pistol: 0, rifle: 0 };
     this.cases.forEach((piece, index) => {
       if (!piece) return;
-      touched = true;
       piece.age += seconds;
       for (let step = 0; step < steps && !piece.resting; step += 1) this.step(piece, STEP);
-      const rule = CASE[piece.gun];
       const fade = Math.min(1, (piece.life - piece.age) / 3);
-      if (fade <= 0) { this.cases[index] = null; this.mesh.setMatrixAt(index, matrix.makeScale(0, 0, 0)); return; }
-      this.mesh.setMatrixAt(index, matrix.compose(piece.position, piece.rotation, scale.set(rule.radius * fade, rule.length * fade, rule.radius * fade)));
+      if (fade <= 0) { this.cases[index] = null; return; }
+      matrix.compose(piece.position, piece.rotation, scale.setScalar(fade));
+      for (const mesh of this.meshes[piece.gun]) mesh.setMatrixAt(counts[piece.gun], matrix);
+      counts[piece.gun] += 1;
     });
-    if (touched) this.mesh.instanceMatrix.needsUpdate = true;
+    for (const gun of GUNS) for (const mesh of this.meshes[gun]) {
+      if (mesh.count === 0 && counts[gun] === 0) continue;
+      mesh.count = counts[gun];
+      mesh.instanceMatrix.needsUpdate = true;
+    }
     for (const piece of [...this.magazines]) {
       piece.age += seconds;
       for (let step = 0; step < steps && !piece.resting; step += 1) this.step(piece, STEP);
@@ -162,8 +164,7 @@ export class Ejecta {
 
   clear(): void {
     this.cases.fill(null);
-    for (let index = 0; index < CASES_KEPT; index += 1) this.mesh.setMatrixAt(index, matrix.makeScale(0, 0, 0));
-    this.mesh.instanceMatrix.needsUpdate = true;
+    for (const gun of GUNS) for (const mesh of this.meshes[gun]) mesh.count = 0;
     for (const piece of this.magazines) this.scene.remove(piece.object!);
     this.magazines = [];
   }

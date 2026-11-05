@@ -1,11 +1,7 @@
-import {
-  BoxGeometry, CapsuleGeometry, Color, CylinderGeometry, Frustum, Group, Matrix4, Mesh, MeshStandardMaterial,
-  Scene, Sphere, SphereGeometry, Vector3, type Camera, type Object3D,
-} from "three/webgpu";
+import { Color, Frustum, Group, Matrix4, Scene, Sphere, Vector3, type Camera, type Object3D } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
 import { type WeaponKind } from "./combatRules";
-import { makeWeapon } from "./weaponVisuals";
 import { PlayerModelLibrary, type PlayerModelInstance } from "./playerModel";
 import { CharacterRagdoll } from "./ragdoll";
 import { type PhysicsWorld, type Vec3 } from "../world/physics";
@@ -26,22 +22,12 @@ function lerpHeading(a: number, b: number, t: number): number {
   return (a + ((((b - a) % 360) + 540) % 360 - 180) * t + 360) % 360;
 }
 
-// Where each procedural weapon's grip sits, so it can be moved onto the character's hand socket.
-const GRIP_OFFSET: Record<WeaponKind, [number, number, number]> = { knife: [0, 0.065, -0.015], pistol: [0, 0.165, -0.012], rifle: [0, 0.165, -0.012] };
-
 interface RemoteAvatar {
   root: Group;
-  mannequin: Group;
   model: PlayerModelInstance | null;
   tint: Color;
-  head: Group;
-  leftArm: Group;
-  rightArm: Group;
-  leftLeg: Group;
-  rightLeg: Group;
   pose: PlayerPose;
   heading: number;
-  stride: number;
   weapons: Map<WeaponKind, Group>;
   samples: PoseSample[];
   dying: boolean;
@@ -65,67 +51,14 @@ interface RemoteAvatar {
   slot: number;
 }
 
-function addPart(parent: Group, geometry: BoxGeometry | CapsuleGeometry | CylinderGeometry | SphereGeometry, material: MeshStandardMaterial, x: number, y: number, z: number): void {
-  const mesh = new Mesh(geometry, material);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  parent.add(mesh);
-}
-
+// A player's root, placed and turned each frame. It stays empty until the shared character
+// model has loaded, then holds the character and the weapons on its hand.
 function createAvatar(peerId: string): RemoteAvatar {
-  const root = new Group();
-  const mannequin = new Group();
-  root.add(mannequin);
   const hue = [...peerId].reduce((value, character) => value + character.charCodeAt(0), 0) % 360 / 360;
-  const jacket = new MeshStandardMaterial({ color: new Color().setHSL(hue, 0.31, 0.3), roughness: 0.9 });
-  const dark = new MeshStandardMaterial({ color: 0x253038, roughness: 0.9 });
-  const trim = new MeshStandardMaterial({ color: 0x9ec6bf, roughness: 0.68, metalness: 0.2 });
-  const skin = new MeshStandardMaterial({ color: 0xb58c72, roughness: 0.95 });
-  addPart(mannequin, new CapsuleGeometry(0.23, 0.48, 5, 10), jacket, 0, 1.13, 0);
-  addPart(mannequin, new BoxGeometry(0.42, 0.13, 0.07), trim, 0, 1.26, 0.21);
-  addPart(mannequin, new CylinderGeometry(0.16, 0.18, 0.2, 8), dark, 0, 0.73, 0);
-
-  const head = new Group();
-  head.position.set(0, 1.64, 0);
-  addPart(head, new SphereGeometry(0.19, 12, 10), skin, 0, 0, 0);
-  addPart(head, new BoxGeometry(0.3, 0.07, 0.04), dark, 0, 0.025, 0.18);
-  addPart(head, new CapsuleGeometry(0.205, 0.015, 3, 10), dark, 0, 0.17, -0.005);
-  mannequin.add(head);
-
-  const leftArm = new Group();
-  const rightArm = new Group();
-  for (const [arm, side] of [[leftArm, -1], [rightArm, 1]] as const) {
-    arm.position.set(side * 0.3, 1.35, 0);
-    addPart(arm, new CylinderGeometry(0.09, 0.075, 0.62, 8), jacket, side * 0.02, -0.32, 0);
-    addPart(arm, new SphereGeometry(0.09, 8, 7), dark, side * 0.02, -0.65, 0);
-    mannequin.add(arm);
-  }
-
-  const leftLeg = new Group();
-  const rightLeg = new Group();
-  for (const [leg, side] of [[leftLeg, -1], [rightLeg, 1]] as const) {
-    leg.position.set(side * 0.135, 0.73, 0);
-    addPart(leg, new CylinderGeometry(0.105, 0.095, 0.63, 8), dark, 0, -0.32, 0);
-    addPart(leg, new BoxGeometry(0.2, 0.13, 0.31), dark, 0, -0.66, 0.07);
-    mannequin.add(leg);
-  }
-
-  const weapons = new Map<WeaponKind, Group>();
-  for (const kind of ["knife", "pistol", "rifle"] as const) {
-    const model = makeWeapon(kind, false);
-    model.position.set(0.03, -0.69, 0.09);
-    model.rotation.set(kind === "knife" ? 0.2 : -0.08, Math.PI, kind === "knife" ? -0.18 : 0);
-    model.scale.setScalar(kind === "rifle" ? 0.75 : kind === "pistol" ? 0.68 : 0.62);
-    model.visible = kind === "knife";
-    rightArm.add(model);
-    weapons.set(kind, model);
-  }
-
-  return { root, mannequin, model: null, tint: new Color().setHSL(hue, 0.5, 0.78), head, leftArm, rightArm, leftLeg, rightLeg, pose: {
+  return { root: new Group(), model: null, tint: new Color().setHSL(hue, 0.5, 0.78), pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
-  }, heading: 0, stride: 0, weapons, samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
+  }, heading: 0, weapons: new Map(), samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
 }
 
 export class RemotePlayers {
@@ -136,28 +69,19 @@ export class RemotePlayers {
 
   constructor(private scene: Scene, private data: ArenaData, private models: PlayerModelLibrary, private physics?: PhysicsWorld) {}
 
-  // Swap a mannequin for the shared character once the model has loaded.
+  // Puts the shared character on a player once the model has loaded.
   private attachModel(avatar: RemoteAvatar, dead: boolean): void {
     const model = this.models.instantiate(avatar.tint);
     if (!model) return;
     if (dead && !this.physics) model.setDead(true);
     avatar.model = model;
-    avatar.mannequin.visible = false;
-    avatar.root.scale.y = 1;
     avatar.root.add(model.root);
-    for (const [kind, weapon] of avatar.weapons) {
-      const parent = model.weaponSocket ?? avatar.root;
-      parent.add(weapon);
-      weapon.position.set(...GRIP_OFFSET[kind]);
-      weapon.rotation.set(0, 0, 0);
-      weapon.scale.setScalar(1);
-    }
     this.useRealWeapons(avatar);
   }
 
-  // Characters hold the same weapon models the player sees in first person. Those share
-  // the stand-ins' frame (grip at the origin, barrel along -Z), so they sit on the hand
-  // socket unchanged.
+  // Characters hold the same weapon models the player sees in first person, whose grip is at
+  // their origin with the barrel along -Z, so they sit on the hand socket unchanged. Each is
+  // hidden until the next pose shows the one the player has out.
   setWeaponModels(models: Map<WeaponKind, Object3D>): void {
     this.weaponModels = models;
     for (const avatar of this.avatars.values()) if (avatar.model) this.useRealWeapons(avatar);
@@ -165,19 +89,11 @@ export class RemotePlayers {
 
   private useRealWeapons(avatar: RemoteAvatar): void {
     if (!this.weaponModels || !avatar.model?.weaponSocket) return;
-    for (const [kind, old] of avatar.weapons) {
-      const source = this.weaponModels.get(kind);
-      if (!source || old.userData.real) continue;
+    for (const [kind, source] of this.weaponModels) {
+      if (avatar.weapons.has(kind)) continue;
       const copy = source.clone(true) as Group;
-      copy.userData.real = true;
-      copy.visible = old.visible;
+      copy.visible = false;
       avatar.model.weaponSocket.add(copy);
-      old.removeFromParent();
-      old.traverse((object) => {
-        if (!(object instanceof Mesh)) return;
-        object.geometry.dispose();
-        for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
-      });
       avatar.weapons.set(kind, copy);
     }
   }
@@ -284,7 +200,7 @@ export class RemotePlayers {
     if (!avatar) return;
     this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
     // The character falls as a ragdoll (or plays its death clip without physics) and stays
-    // down until respawn; the mannequin simply hides.
+    // down until respawn.
     avatar.root.visible = avatar.model !== null || health > 0;
     // A death waits for the character model if it has not attached yet (a peer that just
     // joined, or a tab that was in the background), so the body still falls when it appears.
@@ -322,12 +238,6 @@ export class RemotePlayers {
     avatar.ragdoll?.remove();
     this.scene.remove(avatar.root);
     if (avatar.model) { avatar.root.remove(avatar.model.root); avatar.model.dispose(); }
-    avatar.root.traverse((object) => {
-      if (!(object instanceof Mesh)) return;
-      object.geometry.dispose();
-      if (Array.isArray(object.material)) object.material.forEach((material) => material.dispose());
-      else object.material.dispose();
-    });
     this.avatars.delete(peerId);
     this.dead.delete(peerId);
     this.equipped.delete(peerId);
@@ -350,7 +260,6 @@ export class RemotePlayers {
 
   update(seconds: number, camera?: Camera): void {
     const delta = Math.min(seconds, 0.1);
-    const blend = 1 - Math.exp(-delta * 12);
     this.frame += 1;
     if (camera) {
       camera.updateMatrixWorld();
@@ -400,14 +309,6 @@ export class RemotePlayers {
         avatar.pendingAnimation = 0;
         continue;
       }
-      root.scale.y += ((pose.crouching ? 0.72 : 1) - root.scale.y) * blend;
-      avatar.head.rotation.x += ((-pose.pitch * Math.PI / 180 * 0.45) - avatar.head.rotation.x) * blend;
-      if (pose.moving) avatar.stride += delta * (pose.running ? 13 : 8);
-      const swing = pose.moving ? Math.sin(avatar.stride) * (pose.running ? 0.48 : 0.27) : 0;
-      avatar.leftArm.rotation.x += (swing - avatar.leftArm.rotation.x) * blend;
-      avatar.rightArm.rotation.x += (-swing - avatar.rightArm.rotation.x) * blend;
-      avatar.leftLeg.rotation.x += (-swing - avatar.leftLeg.rotation.x) * blend;
-      avatar.rightLeg.rotation.x += (swing - avatar.rightLeg.rotation.x) * blend;
     }
   }
 }

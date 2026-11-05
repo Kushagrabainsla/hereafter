@@ -61,7 +61,9 @@ Model in metres with Z up. The exporter turns that into the game's Y up: Blender
 
 - **Many still copies:** `KitPlacer.place(name, matrix)`, drawn as one instanced mesh per piece and part. `splitGlow()` separates a lamp's glass, and the market's `lampSet()` draws the glass once per lamp with a per-copy flag that lights or darkens it. No second, hidden copy is drawn.
 - **Copies that move each frame:** `instancedParts()`, as with the swaying lanterns. Whole and torn lanterns are packed into their own meshes each frame, so only those showing are drawn.
-- **One-offs:** `kitObject()`, as for signs, the breaker box and lamps that hide with their stall.
+- **One-offs:** `kitObject()`, as for signs, the breaker box and lamps that hide with their stall, and for things that come and go during play: the gun stands, magazines and thrown grenades.
+
+The viewer hands the loaded pieces to the code that draws items as well as to the map: `WeaponVisuals` (gun stands), `LootViews` and `Ejecta` (magazines and spent cases, the cases packed into one instanced mesh per calibre each frame) and `WorldEffects` (grenades).
 
 Physics, cover and breakage do not change when a code shape becomes a model. Colliders, entities and lamp hit boxes are still declared in `src/world/nightMarket.ts`, so a model only changes what is drawn.
 
@@ -118,6 +120,18 @@ Phase 3 (street dressing), at eight spots in the service alley, the market alley
 
 Fourteen pieces, 12,700 triangles in all and 159 KB compressed. The five water tanks are most of it (2,120 triangles each); every copy of a piece draws in the one call.
 
+Phase 4 (items in the world), at five spots, including a frag and a smoke grenade, ten spent cases and two dropped magazines lying under the market's lanterns. Each magazine, grenade and stand was several meshes and is now one:
+
+| Spot | Draw calls | Triangles |
+|---|---|---|
+| Carbine stand | 289 to 276 | 576,950 to 578,558 (+0.3%) |
+| Pistol stand | 96 to 95 | 363,040 to 360,924 (-0.6%) |
+| Magazines on the floor | 123 to 118 | 492,258 to 489,738 (-0.5%) |
+| Magazines on a table | 137 to 132 | 510,416 to 507,896 (-0.5%) |
+| Grenades, cases and dropped magazines | 139 to 132 | 490,076 to 490,685 (+0.1%) |
+
+Seven pieces, 3,700 triangles in all and 62 KB compressed.
+
 ## Phases
 
 Each phase replaces one group of shapes drawn in code with modelled pieces, measured as above.
@@ -125,6 +139,6 @@ Each phase replaces one group of shapes drawn in code with modelled pieces, meas
 1. **Lights and signs (done):** paper lanterns and their torn versions, string-light bulbs and cables, overhead power lines, the service alley's barn lamps, the restaurant's and record shop's pendants, the stalls' caged lamps, the pool-table lamp, the breaker box, all 19 signs, and the food truck's roof sign and menu board.
 2. **Furniture and interiors (done):** the restaurant's tables and bentwood chairs, its pass counter and pantry shelves with jars, tins, sacks and bowls; the bar's counter and brass foot rail, leather stools, mirrored back bar and bottles, pool table and the sofa upstairs; the record shop's counter; the market alley's folding tables and plastic stools. The tables, counters, pool table and sofa keep their solid boxes as colliders (`furnish()` in `nightMarket.ts` draws the piece in their place).
 3. **Street dressing (done):** the service alley's dumpsters (lids, casters, stencilling and rust), the stacked pallets and the manhole cover; the cedar water tanks on their steel stands and the TV antennas on the roofs, each antenna stretched to its mast's height; the eight posters and the SOFA mural. The dumpsters keep their solid boxes as colliders.
-4. **Weapons and items in the world:** pickup stands, spare and dropped magazines, spent cases, frag and smoke grenades. The stand-in guns, hands and players drawn only when a model fails to load are removed.
+4. **Weapons and items in the world (done):** the gun stands with their glowing ring, the spare and dropped magazines (the pistol's double stack and the carbine's curved steel magazine, each with its top round showing), spent 9 mm brass and 7.62 mm lacquered steel cases, and the frag and smoke grenades. The stand-in guns, hands and players drawn while a model loaded, or when one failed, are gone: a missing model now leaves its slot empty. The pickup markers (rings and beams) wait for phase 6.
 5. **Buildings and ground:** walls with depth, cornices, parapets, windows, shopfronts, shutters, shop glass, railings, ladders and stairs, paving, kerbs and floors. This needs the light bake redone (`npm run build:lightmaps`).
 6. **Effects:** debris, bullet holes, the muzzle flash, the code-drawn textures (awning stripes, planks, tiles) and the pickup markers. Tracers, smoke, steam, fire and haze stay particle effects.

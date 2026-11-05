@@ -7,8 +7,8 @@ export type PlayerStance = "idle" | "walk" | "run" | "crouch";
 interface Library { scene: Group; clips: AnimationClip[] }
 
 // One rigged character shared by every other player: the GLB is fetched once and each
-// peer gets a skeleton clone that shares geometry and textures. A missing or failed
-// model leaves the primitive mannequin in place.
+// peer gets a skeleton clone that shares geometry and textures. Other players are drawn
+// once it has loaded.
 export class PlayerModelLibrary {
   private library: Library | null = null;
   private failed = false;
@@ -20,7 +20,7 @@ export class PlayerModelLibrary {
     void new GLTFLoader().loadAsync(url.href).then((gltf) => {
       gltf.scene.traverse((object) => { if (object instanceof Mesh) { object.castShadow = true; object.receiveShadow = true; object.frustumCulled = false; } });
       this.library = { scene: gltf.scene, clips: gltf.animations };
-    }).catch((error: unknown) => { this.failed = true; console.warn("Could not load the player model; using mannequins.", error); });
+    }).catch((error: unknown) => { this.failed = true; console.warn("Could not load the player model; other players will not be drawn.", error); });
   }
   ready(): boolean { return this.library !== null; }
   unavailable(): boolean { return this.failed; }

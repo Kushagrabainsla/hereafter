@@ -1,0 +1,116 @@
+{
+ "family": "items",
+ "pieces": {
+  "pickup_stand": {
+   "triangles": 1372,
+   "budget": 1600,
+   "size": [
+    1.212,
+    1.212,
+    0.093
+   ],
+   "materials": [
+    "glow_ring",
+    "items_bolt",
+    "items_rubber",
+    "items_stand",
+    "items_stand_rim"
+   ],
+   "notes": "Under each gun pickup; the ring glows."
+  },
+  "magazine_pistol": {
+   "triangles": 332,
+   "budget": 500,
+   "size": [
+    0.026,
+    0.058,
+    0.138
+   ],
+   "materials": [
+    "items_brass",
+    "items_copper",
+    "items_hole",
+    "items_mag_plate",
+    "items_mag_steel"
+   ],
+   "notes": "Spare and dropped 9 mm magazines."
+  },
+  "magazine_rifle": {
+   "triangles": 620,
+   "budget": 900,
+   "size": [
+    0.033,
+    0.127,
+    0.246
+   ],
+   "materials": [
+    "items_copper",
+    "items_lacquer",
+    "items_mag_plate",
+    "items_mag_steel"
+   ],
+   "notes": "Spare and dropped carbine magazines."
+  },
+  "case_pistol": {
+   "triangles": 216,
+   "budget": 250,
+   "size": [
+    0.01,
+    0.01,
+    0.02
+   ],
+   "materials": [
+    "items_brass",
+    "items_primer"
+   ],
+   "notes": "Spent 9 mm cases."
+  },
+  "case_rifle": {
+   "triangles": 264,
+   "budget": 300,
+   "size": [
+    0.011,
+    0.011,
+    0.039
+   ],
+   "materials": [
+    "items_lacquer",
+    "items_primer"
+   ],
+   "notes": "Spent carbine cases."
+  },
+  "grenade_frag": {
+   "triangles": 436,
+   "budget": 800,
+   "size": [
+    0.095,
+    0.092,
+    0.135
+   ],
+   "materials": [
+    "items_fuze",
+    "items_olive",
+    "items_yellow"
+   ],
+   "notes": "A thrown frag grenade."
+  },
+  "grenade_smoke": {
+   "triangles": 493,
+   "budget": 900,
+   "size": [
+    0.069,
+    0.067,
+    0.158
+   ],
+   "materials": [
+    "items_band",
+    "items_fuze",
+    "items_hole",
+    "items_smoke_can"
+   ],
+   "notes": "A thrown smoke grenade."
+  }
+ },
+ "triangles": 3733,
+ "bytes": 135928
+}

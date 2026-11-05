@@ -336,7 +336,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   pipeline.outputColorTransform = false;
   pipeline.outputNode = film(renderOutput(vec4(graded.mul(vignette), 1)), float(0.06));
   const pickupData = makeWeaponPickups(data);
-  const weaponVisuals = new WeaponVisuals(viewCamera, scene, data, pickupData);
+  const weaponVisuals = new WeaponVisuals(scene, data, pickupData, pieces);
   const authoredViewModel = new AuthoredViewModel(viewCamera);
   // Pickups and other players use the first-person weapon models once they load.
   void loadWeaponModels().then((models) => {
@@ -344,9 +344,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     remotePlayers.setWeaponModels(models);
   });
   const shotEffects = new ShotEffects(scene);
-  const loot = new LootViews(scene, pickupData);
+  const loot = new LootViews(scene, pickupData, pieces);
   void loadWeaponModels().then((models) => loot.setWeaponModels(models));
-  const ejecta = new Ejecta(scene, (origin, direction, distance) => physics.sweep(origin, direction, distance));
+  const ejecta = new Ejecta(scene, (origin, direction, distance) => physics.sweep(origin, direction, distance), pieces);
   const remoteMass = new Map<string, number>();
   let muzzleGlow = 0;
   // Where the camera was and how fast it moved, for what spent cases inherit.
@@ -359,13 +359,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   // A spent case from the local gun's ejection port, behind the muzzle on the right side.
   const ejectLocal = (gun: GunKind): void => {
-    const muzzle = (authoredViewModel.muzzle() ?? weaponVisuals.muzzle())?.applyMatrix4(camera.matrixWorld);
+    const muzzle = authoredViewModel.muzzle()?.applyMatrix4(camera.matrixWorld);
     const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     const forward = new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
     const port = (muzzle ?? camera.position.clone().addScaledVector(forward, 0.6).addScaledVector(up, -0.15)).addScaledVector(forward, gun === "rifle" ? -0.33 : -0.13).addScaledVector(right, 0.02).addScaledVector(up, 0.03);
     ejecta.ejectCase(gun, port, right, forward, eyeVelocity);
   };
-  const effects = new WorldEffects(scene, data, refs, () => camera.position, groups);
+  const effects = new WorldEffects(scene, data, refs, () => camera.position, groups, pieces);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
   const combatWorld: CombatWorld = {
     clearShot: (ray) => physics.clearShot(ray),
@@ -472,7 +472,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const dynamics = weaponVisuals.dynamics();
     player.setAiming(aimWanted && dynamics.active !== "knife" && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
     authoredViewModel.update(delta, player.motion(), dynamics);
-    weaponVisuals.setFallbackVisible(!authoredViewModel.hasModel());
     // The crosshair opens with the same spread the leader applies to this player's shots.
     const motion = player.motion(), active = weaponVisuals.dynamics().active;
     const spread = spreadDegrees(active, motion, currentBloom(active, localBloom, (performance.now() - lastLocalShot) / 1000));
@@ -552,7 +551,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       return player.pose();
     },
     traceShot(ray) { return physics.traceShot(ray); },
-    showShot(event, local) { shotEffects.show(event, local ? (authoredViewModel.muzzle() ?? weaponVisuals.muzzle())?.applyMatrix4(camera.matrixWorld) : undefined); },
+    showShot(event, local) { shotEffects.show(event, local ? authoredViewModel.muzzle()?.applyMatrix4(camera.matrixWorld) : undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
     },
@@ -755,7 +754,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (!dead) deathView = null;
     },
     playAttack(weapon, stroke) {
-      weaponVisuals.attack();
       authoredViewModel.fire(weapon === "knife" ? stroke ?? "slash" : undefined);
       gameAudio.fire(weapon, stroke === "stab");
       if (weapon === "knife") {
@@ -773,7 +771,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       lastLocalShot = now;
       player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
       ejectLocal(weapon);
-      viewLighting.muzzleFlash(authoredViewModel.muzzle() ?? weaponVisuals.muzzle(), weapon === "rifle" ? 1.2 : 1);
+      viewLighting.muzzleFlash(authoredViewModel.muzzle(), weapon === "rifle" ? 1.2 : 1);
       flashAt(camera.position.clone().add(new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-0.8)), 1);
     },
     setLoad(kilograms) { player.setLoad(kilograms); },

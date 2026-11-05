@@ -1,11 +1,12 @@
 import {
-  AdditiveBlending, BoxGeometry, CanvasTexture, Color, CylinderGeometry, Euler, Group, InstancedMesh, Matrix4, Mesh,
-  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, SphereGeometry, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
+  AdditiveBlending, BoxGeometry, CanvasTexture, Color, Euler, InstancedMesh, Matrix4,
+  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "./arena";
 import { type InstanceRef, type WorldEntity, type Vec3 } from "./entities";
 import { MATERIALS, type Material } from "./materials";
 import { type GrenadePath } from "./physics";
+import { kitObject, type KitPiece } from "./kit";
 import { gameAudio } from "../game/gameAudio";
 
 type Style = "dust" | "sparks" | "splinters" | "shards" | "puff" | "blood" | "chunks" | "soil" | "leaves" | "embers";
@@ -136,7 +137,7 @@ function puffTexture(): CanvasTexture {
   }
   return new CanvasTexture(canvas);
 }
-interface FlyingGrenade { mesh: Group; path: GrenadePath; start: number; bounce: number; linger: number }
+interface FlyingGrenade { mesh: Object3D; path: GrenadePath; start: number; bounce: number; linger: number }
 
 // Visual effects of combat on the world: impacts, bullet holes, breaking objects,
 // explosions and grenades in flight. Nothing here affects the game state.
@@ -155,18 +156,12 @@ export class WorldEffects {
   private jets: { sprite: Sprite; follow: () => Vec3 | null; until: number }[] = [];
   private jetMap: CanvasTexture | null = null;
   private grenades = new Map<number, FlyingGrenade>();
-  private grenadeGeometry = { body: new SphereGeometry(0.045, 10, 8), lever: new BoxGeometry(0.012, 0.07, 0.022), cap: new CylinderGeometry(0.018, 0.02, 0.03, 8) };
-  private grenadeMaterial = new MeshStandardMaterial({ color: 0x3f4a33, roughness: 0.55, metalness: 0.3 });
-  private leverMaterial = new MeshStandardMaterial({ color: 0x9a9c94, roughness: 0.4, metalness: 0.8 });
-  private smokeGeometry = { can: new CylinderGeometry(0.032, 0.032, 0.13, 14), band: new CylinderGeometry(0.0325, 0.0325, 0.03, 14) };
-  private smokeMaterial = new MeshStandardMaterial({ color: 0x4a5246, roughness: 0.6, metalness: 0.3 });
-  private bandMaterial = new MeshStandardMaterial({ color: 0xe8e6de, roughness: 0.7 });
   private matrix = new Matrix4();
   private quaternion = new Quaternion();
   shake = 0;
 
   // `groups` holds plain objects drawn for an entity (hand-built maps), hidden while it is destroyed.
-  constructor(private scene: Scene, private data: ArenaData, private refs: Map<string, InstanceRef[]>, private camera: () => Vector3, private groups = new Map<string, Object3D[]>()) {
+  constructor(private scene: Scene, private data: ArenaData, private refs: Map<string, InstanceRef[]>, private camera: () => Vector3, private groups = new Map<string, Object3D[]>(), private pieces = new Map<string, KitPiece>()) {
     scene.add(this.solid.mesh, this.glow.mesh, this.flash);
     this.decals = new InstancedMesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ map: holeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 1 }), 260);
     this.decals.frustumCulled = false;
@@ -334,26 +329,10 @@ export class WorldEffects {
 
   // A thrown grenade follows the path the physics world computed, spinning, and clinks
   // when it bounces. The burst replaces it when the explode event arrives. A smoke grenade
-  // is a can with a white band, and lies where it stopped while its smoke pours out.
+  // is a can with a white band, and lies where it stopped while its smoke pours out. Both are
+  // modelled in items.glb.
   throwGrenade(id: number, path: GrenadePath, smoke = false): void {
-    const mesh = new Group();
-    if (smoke) {
-      const can = new Mesh(this.smokeGeometry.can, this.smokeMaterial);
-      const band = new Mesh(this.smokeGeometry.band, this.bandMaterial);
-      const cap = new Mesh(this.grenadeGeometry.cap, this.leverMaterial);
-      cap.position.y = 0.07;
-      const lever = new Mesh(this.grenadeGeometry.lever, this.leverMaterial);
-      lever.position.set(0.036, 0.035, 0);
-      mesh.add(can, band, cap, lever);
-    } else {
-      const body = new Mesh(this.grenadeGeometry.body, this.grenadeMaterial);
-      body.scale.set(1, 1.25, 1);
-      const cap = new Mesh(this.grenadeGeometry.cap, this.leverMaterial);
-      cap.position.y = 0.062;
-      const lever = new Mesh(this.grenadeGeometry.lever, this.leverMaterial);
-      lever.position.set(0.035, 0.03, 0);
-      mesh.add(body, cap, lever);
-    }
+    const mesh = kitObject(this.pieces.get(smoke ? "grenade_smoke" : "grenade_frag"));
     mesh.position.set(path.points[0].x, path.points[0].y, path.points[0].z);
     this.scene.add(mesh);
     this.grenades.set(id, { mesh, path, start: performance.now(), bounce: 0, linger: smoke ? 20 : 1.5 });
