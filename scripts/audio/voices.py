@@ -12,7 +12,7 @@ pack by HaelDB, vocalist 3, downloaded by scripts/audio/fetch.sh.
 Memes (public/audio/meme/<code>.mp3) come from a clip named after the meme's code, or for a
 sound effect from its file in assets-src/memes/sfx (scripts/audio/memes.sh makes those):
   assets-src/memes/<code>.<wav|mp3|m4a|ogg|flac|aiff>               e.g. H1.m4a, E6a.wav
-A meme without a clip is silent.
+A meme without a clip is silent. A meme's "cut" keeps only that part of a longer clip.
 
 Every voice clip is trimmed of silence, high-passed, peak-normalised to -3 dBFS and written as
 48 kHz mono MP3; memes keep their low end and reverb tails and peak at -4 dBFS. Existing
@@ -64,10 +64,12 @@ def meme_source(meme):
     return first(MEME_SRC, meme["code"]) or (meme.get("sfx") and first(os.path.join(MEME_SRC, "sfx"), meme["sfx"]))
 
 
-def finish_meme(source, target):
-    """Trim silence (keeping quiet tails), peak-normalise to -4 dBFS and encode one meme."""
+def finish_meme(source, target, cut=None):
+    """Cut the meme's part of a longer clip if asked ([start, end] in seconds, with a short fade
+    at the end), trim silence (keeping quiet tails), peak-normalise to -4 dBFS and encode it."""
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    trim = "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.01,areverse,silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.08,areverse"
+    part = f"atrim={cut[0]}:{cut[1]},asetpts=N/SR/TB,afade=t=out:st={max(0, cut[1] - cut[0] - 0.25):.3f}:d=0.25," if cut else ""
+    trim = part + "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.01,areverse,silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.08,areverse"
     probe = run("ffmpeg", "-nostats", "-i", source, "-af", f"aformat=channel_layouts=mono,{trim},volumedetect", "-f", "null", "-").stderr.decode()
     peak = float([l for l in probe.splitlines() if "max_volume" in l][0].split("max_volume:")[1].split("dB")[0])
     run("ffmpeg", "-v", "error", "-y", "-i", source, "-af", f"aformat=channel_layouts=mono,{trim},volume={-4 - peak:.2f}dB,afade=t=in:d=0.003",
@@ -156,7 +158,7 @@ def main():
                 if not source:
                     built["silent"] += 1
                 elif stale(target, source):
-                    finish_meme(source, target); built["meme"] += 1
+                    finish_meme(source, target, meme.get("cut")); built["meme"] += 1
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     print(f"Voices: {built['en']} English, {built['hi']} Hindi, {built['effort']} efforts built ({built['recorded']} from recordings).")

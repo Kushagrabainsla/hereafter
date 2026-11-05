@@ -66,6 +66,8 @@ The gunshot takes start 3 ms before each detected onset and keep a short tail; t
 | S9 fart (`meme/S9`) | [Gastric distress](https://opengameart.org/content/gastric-distress), 4.52 to 5.40 s, declipped | LFA, OpenGameArt | CC0 |
 | E22 sad trombone (`meme/E22`) | Arranged from VS Chamber Orchestra Community Edition trombone sustains and vibrato (E♭, D, C♯, then a held, sagging C), with a plunger-style filter and reverb made in ffmpeg | Versilian Studios | CC0 1.0 |
 
+Hindi meme clips H30 to H37 (`meme/H30` to `meme/H37`: "Aayein?", "America kya kehta tha", "Are baap re, yaad aaya", "Chalti firti cocaine", a meow, "Iss sajjan ko kya takleef hai bhai", a KGF theme edit and "Tudun tadau") were downloaded by the project's owner from [Myinstants](https://www.myinstants.com/en/search/?name=indian), where users upload them. They are not licensed: Myinstants grants personal, non-commercial use only, and the clips' rights stay with whoever made the original recordings, films and music. They ship by the owner's choice, and would come out on a takedown request. The build cuts four of them to their meme part (the `cut` field in `src/game/memes.json`).
+
 The sound effects were picked and prepared from waveforms, spectrograms and level measurements, not by ear; they should still be judged by listening. The air horn is a single-pitch gas horn rather than a chord, the pipe a thin iron bar, and the crickets a single cricket.
 
 ## Setup screen

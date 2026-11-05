@@ -94,6 +94,14 @@ Meme lines and sound effects play on top of the voices, at the moments below ([h
 | H22 | Saala ye dukh kaahe khatam nahi hota hai be | Masaan (2015) | Hindi | Dies a third time without a kill | Spicy | `assets-src/memes/H22.wav` |
 | H23 | Apna Time Aayega | Gully Boy (2019), song | Hindi | Respawns | Clean | `assets-src/memes/H23.wav` |
 | H24 | Hello friends, chai pi lo | Somvati Mahawar video | Hindi | Respawns | Clean | `assets-src/memes/H24.wav` |
+| H30 | Aayein? | Viral clip, via Myinstants | Hindi | A round passes within 1.5 m | Clean | In the game |
+| H31 | America kya kehta tha | Viral clip, via Myinstants | Hindi | Kills whoever last killed them | Clean | In the game |
+| H32 | Are baap re, yaad aaya | Viral clip, via Myinstants | Hindi | A frag lands within 6 m | Clean | In the game |
+| H33 | Chalti firti cocaine | Viral clip, via Myinstants | Hindi | Gets a kill | Spicy | In the game, 0.17 to 3.57 s of the clip |
+| H34 | Meow | Viral clip, via Myinstants | Any (no words) | Jumps | Clean | In the game, 1.78 to 4.28 s of the clip |
+| H35 | Iss sajjan ko kya takleef hai bhai | Viral clip, via Myinstants | Hindi | Hit | Clean | In the game |
+| H36 | KGF theme | KGF (2018), fan edit, via Myinstants | Any (no words) | Wins the round | Clean | In the game, 0.1 to 6.0 s of the clip |
+| H37 | Tudun tadau | Viral clip, via Myinstants | Any (no words) | A round starts | Clean | In the game, 0.4 to 5.3 s of the clip |
 | E1 | Leeroy Jenkins! | 2005 gaming video | English | A round starts | Clean | `assets-src/memes/E1.wav` |
 | E2 | Yeet | Vine | English | Jumps or Throws a frag | Clean | `assets-src/memes/E2.wav` |
 | E3 | Deja Vu | Initial D, song | English | Sprints for 4 s | Clean | `assets-src/memes/E3.wav` |

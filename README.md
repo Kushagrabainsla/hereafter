@@ -122,7 +122,7 @@ The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse 
 
 **▸ COMMS**
 - Players have voices: grunts, cries and sprint breathing, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. English lines are placeholders and Hindi lines are silent until recorded; see the [recording sheet](docs/voice-lines.md).
-- Meme sounds on top: a vine boom on a headshot, an air horn on a double kill, a boing on a jump, a metal pipe on a hard landing, crickets after a round with no kills, and famous meme lines in Hindi and English once their clips are added ([list](docs/voice-lines.md#memes)). At most one per player every 30 seconds, and they can be turned off.
+- Meme sounds on top: a vine boom on a headshot, an air horn on a double kill, a boing on a jump, a metal pipe on a hard landing, crickets after a round with no kills, and Hindi meme clips like "Aayein?", "Are baap re, yaad aaya" and the KGF theme, with more Hindi and English meme lines to come ([list](docs/voice-lines.md#memes)). At most one per player every 30 seconds, and they can be turned off.
 
 **▸ LOOK AND SOUND**
 - Rendered with Three.js on WebGPU, falling back to WebGL 2. On WebGPU every lamp, bulb string and sign is a real light.
