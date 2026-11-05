@@ -144,6 +144,7 @@ Open the URL Vite prints. No API key or account is needed: every asset the game 
 | `npm run build:lightmaps` | Rebake the market's light after a map change (needs Chrome and Blender) |
 | `npm run build:audio` | Download and rebuild the sound effects |
 | `npm run build:voices` | Rebuild the players' voices and memes from any recorded lines and added clips |
+| `npm run build:memes` | Download and rebuild the meme sound effects (after `build:audio`, which fetches one of them) |
 
 Add `?renderer=webgl` to the URL to force WebGL 2. Pushes to `main` deploy to GitHub Pages through [`deploy-pages.yml`](.github/workflows/deploy-pages.yml).
 

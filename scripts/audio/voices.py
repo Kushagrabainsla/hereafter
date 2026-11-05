@@ -10,7 +10,7 @@ Voice lines (public/audio/voice/<hi|en>/<line id>.mp3) come from a recording if 
 Wordless efforts (jump, climb, pain, death) are cut from the CC0 "Male Grunt/Yelling sounds"
 pack by HaelDB, vocalist 3, downloaded by scripts/audio/fetch.sh.
 Memes (public/audio/meme/<code>.mp3) come from a clip named after the meme's code, or for a
-sound effect from its file in assets-src/memes/sfx (scripts/audio/fetch.sh fetches those):
+sound effect from its file in assets-src/memes/sfx (scripts/audio/memes.sh makes those):
   assets-src/memes/<code>.<wav|mp3|m4a|ogg|flac|aiff>               e.g. H1.m4a, E6a.wav
 A meme without a clip is silent.
 

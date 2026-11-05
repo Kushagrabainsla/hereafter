@@ -51,7 +51,7 @@ The gunshot takes start 3 ms before each detected onset and keep a short tail; t
 
 ## Memes
 
-`npm run build:voices` also builds `public/audio/meme/` from `src/game/memes.json`: a clip added as `assets-src/memes/<code>.*` for a meme line, or the sound effect below. Meme lines have no clips in the repository; see the [recording sheet](voice-lines.md#memes).
+`npm run build:voices` also builds `public/audio/meme/` from `src/game/memes.json`: a clip added as `assets-src/memes/<code>.*` for a meme line, or the sound effect below. `npm run build:memes` (`scripts/audio/memes.sh`) downloads the sound effects' originals, checks each against its SHA-256, and makes `assets-src/memes/sfx/<name>.wav` from them with every step it took (pitch shifts, reverbs, the two arrangements), then builds them; run here it reproduced the shipped files byte for byte. Meme lines have no clips in the repository; see the [recording sheet](voice-lines.md#memes).
 
 | Meme | Source | Author | License |
 |---|---|---|---|

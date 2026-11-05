@@ -66,7 +66,7 @@ Record one take per line; the game varies the pitch a little each time it plays.
 
 ## Memes
 
-Meme lines and sound effects play on top of the voices, at the moments below ([how they are picked](audio.md)). The sound effects ship with the game. A meme line plays once its clip is added: put it in `assets-src/memes/`, named after its code (`H1.wav`, `E6a.m4a`; WAV, M4A, MP3, OGG, FLAC and AIFF all work), and run `npm run build:voices`, which trims it, evens out its level and writes `public/audio/meme/<code>.mp3`. A line can be your own recording or the original clip; clips from films, shows and songs belong to their owners, and putting them on the public site risks a copyright takedown. Lines are in the speaker's language; grunts-only players set off only the sound effects. To change a meme's moment, tier or chance, edit `src/game/memes.json`.
+Meme lines and sound effects play on top of the voices, at the moments below ([how they are picked](audio.md)). The sound effects ship with the game (`npm run build:memes` rebuilds them from their sources). A meme line plays once its clip is added: put it in `assets-src/memes/`, named after its code (`H1.wav`, `E6a.m4a`; WAV, M4A, MP3, OGG, FLAC and AIFF all work), and run `npm run build:voices`, which trims it, evens out its level and writes `public/audio/meme/<code>.mp3`. A line can be your own recording or the original clip; clips from films, shows and songs belong to their owners, and putting them on the public site risks a copyright takedown. Lines are in the speaker's language; grunts-only players set off only the sound effects. To change a meme's moment, tier or chance, edit `src/game/memes.json`.
 
 | Code | Meme | From | Language | When | Tier | File |
 |---|---|---|---|---|---|---|
