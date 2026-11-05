@@ -892,11 +892,10 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
     onStep(step) { loading.begin(STEP_OF[step] ?? "world"); },
     onStepProgress(step, fraction) { loading.progress(STEP_OF[step] ?? "world", fraction); },
     onHardLanding(speed) { submit({ kind: "fall", speed }); ownMeme("hardLanding"); },
-    onAim(spreadPixels, melee, aiming) {
+    // The crosshair stays the same down the sights; its gap follows the spread.
+    onAim(spreadPixels, melee) {
       crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
       crosshair?.classList.toggle("melee", melee);
-      // Looking down the sights, the sights are the crosshair.
-      crosshair?.classList.toggle("aiming", aiming);
     },
     onMetrics(metrics) {
       performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;

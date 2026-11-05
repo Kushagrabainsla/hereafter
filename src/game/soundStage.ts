@@ -41,8 +41,8 @@ export class SoundStage {
       if (motion.moving && gait.grounded && !motion.sliding) gameAudio.step(surface(), motion.running ? "run" : motion.crouching ? "crouch" : "walk", index % 2 ? 1 : -1);
       this.stepIndex = index;
     }
-    // The player's own voice: a grunt on some jumps, on every climb and on hard landings, and
-    // breathing that builds with a sprint.
+    // The player's own voice: a grunt on some jumps, on every climb and on hard landings. (The
+    // synthesised breathing after a sprint was taken out: it hissed on for seconds after stopping.)
     if (gait.jumps !== this.jumps) { this.jumps = gait.jumps; gameAudio.jump(surface()); if (Math.random() < 0.45) gameAudio.effort("jump", null); }
     if (gait.landings !== this.landings) { this.landings = gait.landings; gameAudio.land(gait.landingSpeed, surface()); if (gait.landingSpeed > 8) gameAudio.effort("climb", null); }
     if (gait.mantles !== this.mantles) { this.mantles = gait.mantles; gameAudio.mantle(); gameAudio.effort("climb", null); }
@@ -52,7 +52,6 @@ export class SoundStage {
       if (motion.sliding) { gameAudio.slide(surface()); if (Math.random() < 0.5) gameAudio.effort("jump", null); }
       else gameAudio.stopSlide();
     }
-    gameAudio.breathe(motion.exertion);
     const seen = new Set<string>();
     remotes.each((peerId, feet, pose, dead) => {
       seen.add(peerId);

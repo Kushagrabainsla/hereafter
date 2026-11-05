@@ -16,7 +16,7 @@ button { font: inherit; }
    loop as --gap, around a centre dot. The knife shows a closed cross. */
 .crosshair { --gap: 3px; position: absolute; z-index: 2; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
 .crosshair i, .crosshair b { position: absolute; background: #f1fbfc; box-shadow: 0 0 3px rgba(10, 30, 40, .9); border-radius: 1px; }
-.crosshair i { transition: transform .06s linear, opacity .12s; }
+.crosshair i { transition: transform .06s linear; }
 .crosshair i:nth-child(1), .crosshair i:nth-child(2) { top: -1px; width: 7px; height: 2px; }
 .crosshair i:nth-child(3), .crosshair i:nth-child(4) { left: -1px; width: 2px; height: 7px; }
 .crosshair i:nth-child(1) { right: 0; transform: translateX(calc(-1 * var(--gap))); }
@@ -26,11 +26,7 @@ button { font: inherit; }
 .crosshair b { top: -1px; left: -1px; width: 2px; height: 2px; border-radius: 50%; }
 .crosshair.melee i { transform: none; }
 .crosshair { transition: opacity .12s; }
-/* Down the sights the ticks fade and the centre becomes a red dot over the sights: where the
-   shots go, since the iron sights are dark against the night market. */
-.crosshair.aiming i { opacity: 0; }
-.crosshair b { transition: width .12s, height .12s, top .12s, left .12s, background .12s; }
-.crosshair.aiming b { top: -3px; left: -3px; width: 6px; height: 6px; background: #ff3b2f; box-shadow: 0 0 0 1px rgba(0, 0, 0, .85), 0 0 8px 1px rgba(255, 59, 47, .85); }
+/* Down the sights the crosshair stays as it is, tightening with the steadier spread. */
 /* Hit marker: four strokes around the crosshair. White for a hit, amber for a headshot,
    red and larger for an elimination. */
 .hit-marker { --marker: #f6fbff; position: absolute; z-index: 4; top: 50%; left: 50%; width: 38px; height: 38px; transform: translate(-50%, -50%); opacity: 0; pointer-events: none; }

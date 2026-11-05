@@ -82,7 +82,7 @@ The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse 
 | Look | move the mouse: it locks when you deploy. <kbd>Esc</kbd> frees it, a click locks it again; unlocked, drag to look |
 | Attack, or slash with the knife | click or <kbd>F</kbd> |
 | Stab with the knife | right-click or <kbd>V</kbd> |
-| Aim down the sights, with a gun: a red dot marks where shots go | hold right-click (on a Mac trackpad, press and hold with two fingers) |
+| Aim down the sights, with a gun | hold right-click (on a Mac trackpad, press and hold with two fingers) |
 | Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
 | Reload | <kbd>R</kbd> |
 | Pick up, open doors and hatches | <kbd>E</kbd> |
@@ -121,14 +121,14 @@ The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse 
 - A scoreboard on <kbd>Tab</kbd> with kills, deaths and ping, a round clock, and a kill feed naming who got whom.
 
 **▸ COMMS**
-- Players have voices: grunts, cries and sprint breathing, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. English lines are placeholders and Hindi lines are silent until recorded; see the [recording sheet](docs/voice-lines.md).
+- Players have voices: grunts and cries, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. English lines are placeholders and Hindi lines are silent until recorded; see the [recording sheet](docs/voice-lines.md).
 - Meme sounds on top: a vine boom on a headshot, an air horn on a double kill, a boing on a jump, a metal pipe on a hard landing, crickets after a round with no kills, and Hindi meme clips like "Aayein?", "Are baap re, yaad aaya" and the KGF theme, with more Hindi and English meme lines to come ([list](docs/voice-lines.md#memes)). At most one per player every 30 seconds, and they can be turned off.
 
 **▸ LOOK AND SOUND**
 - Rendered with Three.js on WebGPU, falling back to WebGL 2. On WebGPU every lamp, bulb string and sign is a real light.
 - The market's lamps, signs, stalls, windows, furniture and street dressing are modelled in Blender, beside scanned props from Poly Haven. Light bouncing off walls and floors is baked offline in Cycles, and wet paving reflects the lamps.
 - Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
-- A market that sounds alive: traffic beyond the walls, humming neon and air conditioners, and music thumping from the bar.
+- A market that sounds alive: traffic beyond the walls, whirring air conditioners, and music thumping from the bar.
 
 ## 05 · Squad up
 
