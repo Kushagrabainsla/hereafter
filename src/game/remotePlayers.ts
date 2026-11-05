@@ -80,8 +80,10 @@ export class RemotePlayers {
   }
 
   // Characters hold the same weapon models the player sees in first person, whose grip is at
-  // their origin with the barrel along -Z, so they sit on the hand socket unchanged. Each is
-  // hidden until the next pose shows the one the player has out.
+  // their origin with the barrel along -Z. The knife sits on the hand socket and follows the
+  // arm; a gun hangs from the character's root and is held to the shoulder with both hands
+  // (PlayerModelInstance.holdGun). Each is hidden until the next pose shows the one the
+  // player has out.
   setWeaponModels(models: Map<WeaponKind, Object3D>): void {
     this.weaponModels = models;
     for (const avatar of this.avatars.values()) if (avatar.model) this.useRealWeapons(avatar);
@@ -93,7 +95,7 @@ export class RemotePlayers {
       if (avatar.weapons.has(kind)) continue;
       const copy = source.clone(true) as Group;
       copy.visible = false;
-      avatar.model.weaponSocket.add(copy);
+      (kind === "knife" ? avatar.model.weaponSocket : avatar.model.root).add(copy);
       avatar.weapons.set(kind, copy);
     }
   }
@@ -176,7 +178,10 @@ export class RemotePlayers {
     this.equipped.set(peerId, weapon);
     const avatar = this.avatars.get(peerId);
     // A fallen player's guns lie where they dropped, so the body holds nothing.
-    if (avatar) for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && !this.dead.has(peerId);
+    if (!avatar) return;
+    for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && !this.dead.has(peerId);
+    const gun = weapon !== "knife" && !this.dead.has(peerId) ? avatar.weapons.get(weapon) ?? null : null;
+    avatar.model?.holdGun(gun);
   }
 
   // Another player's knife stroke or shot, on their character's arm.
@@ -184,10 +189,18 @@ export class RemotePlayers {
     this.avatars.get(peerId)?.model?.attack(weapon === "knife" ? stroke ?? "slash" : "shot");
   }
 
-  // Where another player's hands hold their weapon, for spent cases.
+  // Where another player's gun's muzzle is, for the tracer and the flash's light, or null.
+  muzzle(peerId: string): Vector3 | null {
+    return this.dead.has(peerId) ? null : this.avatars.get(peerId)?.model?.muzzle() ?? null;
+  }
+
+  // Where another player's hands hold their weapon, for spent cases: the held gun's ejection
+  // port, or a guess from their stance before the model has loaded.
   hands(peerId: string): { position: Vector3; heading: number } | null {
     const avatar = this.avatars.get(peerId);
     if (!avatar || this.dead.has(peerId)) return null;
+    const port = avatar.model?.port();
+    if (port) return { position: port, heading: avatar.heading };
     const yaw = avatar.heading * Math.PI / 180, crouch = avatar.pose.crouching ? 0.45 : 0;
     return { position: avatar.root.position.clone().add(new Vector3(Math.sin(yaw) * 0.35 - Math.cos(yaw) * 0.12, 1.35 - crouch, Math.cos(yaw) * 0.35 + Math.sin(yaw) * 0.12)), heading: avatar.heading };
   }

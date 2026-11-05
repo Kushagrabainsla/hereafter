@@ -4,9 +4,14 @@ import { MAPS } from "./maps";
 // match dialog changes them during play. Storage can be unavailable, as in some private
 // windows, and then the choices last this visit.
 
-export type VoiceChoice = "hi" | "en" | "grunts";
+// What a player's character says: lines in their language, or only grunts and cries when they
+// turn voice lines off. Other players hear it this way too.
+export type Language = "hi" | "en";
+export const LANGUAGES: Language[] = ["hi", "en"];
+export const LANGUAGE_LABEL: Record<Language, string> = { hi: "हिन्दी", en: "English" };
+export type VoiceChoice = Language | "grunts";
 export const VOICE_CHOICES: VoiceChoice[] = ["hi", "en", "grunts"];
-export const VOICE_LABEL: Record<VoiceChoice, string> = { hi: "हिन्दी", en: "English", grunts: "Grunts only" };
+export const voiceOf = (settings: Pick<Settings, "language" | "lines">): VoiceChoice => (settings.lines ? settings.language : "grunts");
 
 export interface Settings {
   // Alone in the market, or in a room with others.
@@ -16,7 +21,9 @@ export interface Settings {
   code: string;
   map: string;
   name: string;
-  voice: VoiceChoice;
+  language: Language;
+  // Whether this player's character speaks calls, taunts and banter; off, only grunts and cries.
+  lines: boolean;
   // Whether this player hears 18+ lines; off, they hear a clean line instead.
   adult: boolean;
   // Whether this player hears meme lines and sound effects.
@@ -41,7 +48,7 @@ export function cleanName(name: string): string {
   return Array.from(name.normalize("NFC").replace(/[\p{C}]/gu, "").replace(/\s+/g, " ").trim()).slice(0, NAME_LENGTH).join("").trim();
 }
 
-const KEYS = { name: "hereafter.name", voice: "hereafter.voice", adult: "hereafter.adult", memes: "hereafter.memes", mode: "hereafter.mode", map: "hereafter.map" };
+const KEYS = { name: "hereafter.name", language: "hereafter.language", lines: "hereafter.lines", oldVoice: "hereafter.voice", adult: "hereafter.adult", memes: "hereafter.memes", mode: "hereafter.mode", map: "hereafter.map" };
 const read = (key: string): string | null => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string): void => { try { window.localStorage.setItem(key, value); } catch { /* unavailable */ } };
 
@@ -65,8 +72,10 @@ export function loadSettings(): Settings {
     code: "",
     map: MAPS.some((entry) => entry.id === map) ? map! : MAPS[0].id,
     name,
-    // English is the default until the Hindi lines are recorded.
-    voice: VOICE_CHOICES.find((choice) => choice === read(KEYS.voice)) ?? "en",
+    // English is the default until the Hindi lines are recorded. Before Language and Voice lines
+    // were split, one Voice choice held Hindi, English or grunts only.
+    language: LANGUAGES.find((language) => language === (read(KEYS.language) ?? read(KEYS.oldVoice))) ?? "en",
+    lines: (read(KEYS.lines) ?? (read(KEYS.oldVoice) === "grunts" ? "0" : "1")) !== "0",
     adult: read(KEYS.adult) === "1",
     memes: read(KEYS.memes) !== "0",
   };
@@ -74,7 +83,8 @@ export function loadSettings(): Settings {
 
 export function saveSettings(settings: Settings): void {
   write(KEYS.name, settings.name);
-  write(KEYS.voice, settings.voice);
+  write(KEYS.language, settings.language);
+  write(KEYS.lines, settings.lines ? "1" : "0");
   write(KEYS.adult, settings.adult ? "1" : "0");
   write(KEYS.memes, settings.memes ? "1" : "0");
   write(KEYS.mode, settings.mode);

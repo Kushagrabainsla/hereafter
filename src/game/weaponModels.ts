@@ -1,5 +1,6 @@
-import { Group, Mesh, type Object3D } from "three/webgpu";
+import { AnimationMixer, Group, Matrix4, Mesh, Vector3, type Object3D } from "three/webgpu";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
+import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { type WeaponKind } from "./combatRules";
 
 const KINDS: WeaponKind[] = ["knife", "pistol", "rifle"];
@@ -21,16 +22,43 @@ export function loadWeaponFile(kind: WeaponKind): Promise<GLTF | null> {
   return load;
 }
 
+// How a gun is held, in the gun's own frame, as the first-person arms hold it at the start of
+// their idle clip: where each hand sits and turns, where the right shoulder is, and the
+// muzzle. Other players' characters copy it, so their hands sit on their guns as the
+// player's own do (src/game/playerModel.ts).
+export interface HeldGrip { right: Matrix4; left: Matrix4; shoulder: Vector3; muzzle: Vector3 }
+
+function gripOf(gltf: GLTF): HeldGrip | null {
+  const scene = cloneSkeleton(gltf.scene);
+  const idle = gltf.animations.find((clip) => clip.name === "idle");
+  if (idle) { const mixer = new AnimationMixer(scene); mixer.clipAction(idle).play(); mixer.update(0); }
+  scene.updateMatrixWorld(true);
+  // GLTFLoader replaces spaces in node names with underscores.
+  const find = (name: string): Object3D | undefined => scene.getObjectByName(name.replace(/\s+/g, "_")) ?? scene.getObjectByName(name);
+  const weapon = find("weapon"), right = find("Bip01 R Hand"), left = find("Bip01 L Hand"), shoulder = find("Bip01 R UpperArm"), muzzle = find("muzzle");
+  if (!weapon || !right || !left || !shoulder) return null;
+  const into = weapon.matrixWorld.clone().invert();
+  return {
+    right: into.clone().multiply(right.matrixWorld),
+    left: into.clone().multiply(left.matrixWorld),
+    shoulder: shoulder.getWorldPosition(new Vector3()).applyMatrix4(into),
+    muzzle: muzzle ? muzzle.getWorldPosition(new Vector3()).applyMatrix4(into) : new Vector3(0, 0, -0.5),
+  };
+}
+
 // Just the weapon from each file, in its own frame: grip at the origin, barrel or blade
-// along -Z, up +Y, real size in metres, without the muzzle flash. Copies share geometry
-// and materials with the first-person model.
+// along -Z, up +Y, real size in metres. Its muzzle flash stays, hidden, for other players'
+// guns to show as they fire; a gun's userData.grip says how it is held. Copies share
+// geometry and materials with the first-person model.
 export async function loadWeaponModels(): Promise<Map<WeaponKind, Object3D>> {
   const models = new Map<WeaponKind, Object3D>();
   await Promise.all(KINDS.map(async (kind) => {
-    const weapon = (await loadWeaponFile(kind))?.scene.getObjectByName("weapon");
-    if (!weapon) return;
+    const gltf = await loadWeaponFile(kind);
+    const weapon = gltf?.scene.getObjectByName("weapon");
+    if (!gltf || !weapon) return;
     const copy = weapon.clone(true);
-    copy.getObjectByName("muzzle")?.removeFromParent();
+    const flash = copy.getObjectByName("muzzle");
+    if (flash) flash.visible = false;
     copy.position.set(0, 0, 0);
     copy.quaternion.identity();
     copy.scale.set(1, 1, 1);
@@ -40,6 +68,7 @@ export async function loadWeaponModels(): Promise<Map<WeaponKind, Object3D>> {
     const holder = new Group();
     holder.name = `${kind}-model`;
     holder.add(copy);
+    if (kind !== "knife") holder.userData.grip = gripOf(gltf);
     models.set(kind, holder);
   }));
   return models;

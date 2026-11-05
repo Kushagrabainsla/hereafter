@@ -583,7 +583,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       return player.pose();
     },
     traceShot(ray) { return physics.traceShot(ray); },
-    showShot(event, local) { shotEffects.show(event, local ? authoredViewModel.muzzle()?.applyMatrix4(camera.matrixWorld) : undefined); },
+    showShot(event, local) { shotEffects.show(event, local ? authoredViewModel.muzzle()?.applyMatrix4(camera.matrixWorld) : remotePlayers.muzzle(event.actor) ?? undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
     },
@@ -681,7 +681,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
               const yaw = hands.heading * Math.PI / 180;
               const right = new Vector3(-Math.cos(yaw), 0, Math.sin(yaw)), forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
               ejecta.ejectCase(event.weapon, hands.position.clone().addScaledVector(right, 0.03), right, forward);
-              flashAt(hands.position.clone().addScaledVector(forward, event.weapon === "rifle" ? 0.7 : 0.35), 1);
+              flashAt(remotePlayers.muzzle(event.actor) ?? hands.position.clone().addScaledVector(forward, event.weapon === "rifle" ? 0.7 : 0.35), 1);
             }
           }
         }

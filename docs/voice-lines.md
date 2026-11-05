@@ -1,6 +1,6 @@
 # Voice lines: recording sheet
 
-Every line a player can say, in the order of the match, and the [memes](#memes) played on top. The game plays the voice each player picks on the setup screen or in the room dialog (Hindi, English or grunts only). The English lines are placeholders made by text-to-speech until they are recorded; the Hindi lines are silent until they are recorded, as no synthesised Hindi is good enough. Recordings drop in by file name. The jump, climb, pain and death sounds are recordings already ([sources](data-sources.md#voices)).
+Every line a player can say, in the order of the match, and the [memes](#memes) played on top. The game plays the language each player picks on the setup screen or in the room dialog, Hindi or English; a player who turns voice lines off makes only the grunts and cries. The English lines are placeholders made by text-to-speech until they are recorded; the Hindi lines are silent until they are recorded, as no synthesised Hindi is good enough. Recordings drop in by file name. The jump, climb, pain and death sounds are recordings already ([sources](data-sources.md#voices)).
 
 **Tiers.** Clean and Spicy lines always play. 18+ lines play only for listeners who turn on "Hear 18+ lines" in the room dialog; everyone else hears a clean line from the same moment instead.
 

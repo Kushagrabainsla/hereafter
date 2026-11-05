@@ -7,7 +7,7 @@ import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type Com
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
 import { Memes, type MemeMoment } from "./game/memes";
-import { cleanName, saveSettings, VOICE_CHOICES, type Settings, type VoiceChoice } from "./settings";
+import { cleanName, LANGUAGES, saveSettings, VOICE_CHOICES, voiceOf, type Language, type Settings, type VoiceChoice } from "./settings";
 import { type Loading, type StepId } from "./loading";
 import { assetUrl, releaseAssets } from "./assetStore";
 import { mapById } from "./maps";
@@ -67,7 +67,8 @@ const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const playerNameInput = element<HTMLInputElement>("player-name");
-const voiceChoiceInput = element<HTMLSelectElement>("voice-choice");
+const voiceLanguageInput = element<HTMLSelectElement>("voice-language");
+const voiceLinesInput = element<HTMLInputElement>("voice-lines");
 const adultVoiceInput = element<HTMLInputElement>("adult-voice");
 const memeSoundsInput = element<HTMLInputElement>("meme-sounds");
 const roundHud = element<HTMLElement>("round-hud");
@@ -116,8 +117,11 @@ let settings: Settings | null = null;
 let launched = false;
 let playerName = "";
 let nameSentAt = 0;
+// The player's language and whether they speak lines, and the voice the two make.
+let language: Language = "en";
+let lines = true;
 let voiceChoice: VoiceChoice = "en";
-const keep = (): void => { if (settings) { Object.assign(settings, { name: playerName, voice: voiceChoice, adult: voices.adult, memes: voices.memes.on }); saveSettings(settings); } };
+const keep = (): void => { if (settings) { Object.assign(settings, { name: playerName, language, lines, adult: voices.adult, memes: voices.memes.on }); saveSettings(settings); } };
 playerNameInput.addEventListener("input", () => {
   const name = cleanName(playerNameInput.value);
   if (!name) return;
@@ -126,12 +130,16 @@ playerNameInput.addEventListener("input", () => {
   keep();
 });
 playerNameInput.addEventListener("change", () => { playerNameInput.value = playerName; });
-voiceChoiceInput.addEventListener("change", () => {
-  voiceChoice = VOICE_CHOICES.find((choice) => choice === voiceChoiceInput.value) ?? "en";
+function changeVoice(): void {
+  language = LANGUAGES.find((choice) => choice === voiceLanguageInput.value) ?? "en";
+  lines = voiceLinesInput.checked;
+  voiceChoice = voiceOf({ language, lines });
   nameSentAt = 0;
   keep();
   void loadVoices();
-});
+}
+voiceLanguageInput.addEventListener("change", changeVoice);
+voiceLinesInput.addEventListener("change", changeVoice);
 // Other players speak with their own choice, heard from where they stand.
 const voices = new PlayerVoices(selfId, (id) => {
   if (id === selfId) return voiceChoice;
@@ -844,11 +852,14 @@ for (const event of ["beforeunload", "pagehide"]) window.addEventListener(event,
 export async function launch(chosen: Settings, loading: Loading): Promise<void> {
   settings = chosen;
   playerName = chosen.name;
-  voiceChoice = chosen.voice;
+  language = chosen.language;
+  lines = chosen.lines;
+  voiceChoice = voiceOf(chosen);
   voices.adult = voices.memes.adult = chosen.adult;
   voices.memes.on = chosen.memes;
   playerNameInput.value = playerName;
-  voiceChoiceInput.value = voiceChoice;
+  voiceLanguageInput.value = language;
+  voiceLinesInput.checked = lines;
   adultVoiceInput.checked = chosen.adult;
   memeSoundsInput.checked = chosen.memes;
   element("map").setAttribute("aria-label", `First-person view of the ${mapById(chosen.map).name}`);

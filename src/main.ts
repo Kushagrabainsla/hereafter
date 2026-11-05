@@ -8,7 +8,7 @@ import "@fontsource/jetbrains-mono/latin-600.css";
 import "./style.css";
 import { MAPS, SHARED_FILES, CHOSEN_FILES, mapById, type GameMap } from "./maps";
 import { bytesOf, filesUnder, prefetch } from "./assetStore";
-import { cleanName, loadSettings, normalizeRoomCode, saveSettings, validRoomCode, VOICE_CHOICES, VOICE_LABEL, type Settings } from "./settings";
+import { cleanName, loadSettings, normalizeRoomCode, saveSettings, validRoomCode, LANGUAGES, LANGUAGE_LABEL, voiceOf, type Settings } from "./settings";
 import { Loading } from "./loading";
 import { lockMouse } from "./mouseLock";
 
@@ -75,7 +75,8 @@ function render(): void {
   for (const input of radios("mode")) input.checked = input.value === settings.mode;
   for (const input of radios("room")) input.checked = input.value === settings.room;
   for (const input of radios("map")) input.checked = input.value === settings.map;
-  for (const input of radios("voice")) input.checked = input.value === settings.voice;
+  for (const input of radios("language")) input.checked = input.value === settings.language;
+  checkbox("lines").checked = settings.lines;
   checkbox("adult").checked = settings.adult;
   checkbox("memes").checked = settings.memes;
   codeInput.value = settings.code;
@@ -91,7 +92,8 @@ form.addEventListener("change", (event) => {
   if (input.name === "mode") settings.mode = input.value === "room" ? "room" : "solo";
   else if (input.name === "room") settings.room = input.value === "join" ? "join" : "create";
   else if (input.name === "map") { settings.map = input.value; startDownload(); }
-  else if (input.name === "voice") settings.voice = VOICE_CHOICES.find((choice) => choice === input.value) ?? "en";
+  else if (input.name === "language") settings.language = LANGUAGES.find((language) => language === input.value) ?? "en";
+  else if (input.name === "lines") settings.lines = input.checked;
   else if (input.name === "adult") settings.adult = input.checked;
   else if (input.name === "memes") settings.memes = input.checked;
   errorLine.textContent = "";
@@ -162,13 +164,13 @@ form.addEventListener("submit", (event) => {
 
 async function deploy(): Promise<void> {
   const map = mapById(settings.map);
-  const voice = settings.voice === "grunts" ? "Grunts" : VOICE_LABEL[settings.voice];
+  const voice = settings.lines ? LANGUAGE_LABEL[settings.language] : "Grunts";
   const sounds = [voice, settings.adult ? "18+" : "", settings.memes ? "Memes" : ""].filter(Boolean).join(" · ");
   const left = download ? Math.max(0, download.total - download.received) : 0;
   const loading = new Loading(
     { map: [`Downloading ${map.name}`, "Map downloaded"], sounds: [`Downloading sounds · ${sounds}`, `Sounds · ${sounds}`] },
     // The downloads' shares are their bytes at the measured speed, plus decoding the sounds.
-    { map: left / speed(), sounds: 60 + bytesOf(filesUnder([`audio/voice/${settings.voice}/`, "audio/voice/effort/", ...(settings.memes ? ["audio/meme/"] : [])])) / speed() },
+    { map: left / speed(), sounds: 60 + bytesOf(filesUnder([`audio/voice/${voiceOf(settings)}/`, "audio/voice/effort/", ...(settings.memes ? ["audio/meme/"] : [])])) / speed() },
     `Deploying to ${map.name}`,
   );
   const match = element<HTMLElement>("loader-match");

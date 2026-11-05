@@ -69,12 +69,12 @@
         <label class="room-label" for="player-name">Your name</label>
         <input id="player-name" class="room-input room-name" type="text" autocomplete="nickname" spellcheck="false" maxlength="32" />
         <div class="voice-settings">
-          <label class="room-label" for="voice-choice">Voice</label>
-          <select id="voice-choice" class="room-input">
+          <label class="room-label" for="voice-language">Language</label>
+          <select id="voice-language" class="room-input">
             <option value="hi">Hindi</option>
             <option value="en">English</option>
-            <option value="grunts">Grunts only</option>
           </select>
+          <label class="room-check"><input id="voice-lines" type="checkbox" /> <span>Speak voice lines: calls, taunts and banter in your language. Off makes only grunts and cries.</span></label>
           <label class="room-check"><input id="adult-voice" type="checkbox" /> <span>Hear 18+ lines: gaalis and swearing. Off plays a clean line instead.</span></label>
           <label class="room-check"><input id="meme-sounds" type="checkbox" /> <span>Hear meme sounds: meme voice lines and sound effects.</span></label>
         </div>
@@ -147,15 +147,15 @@
             <input id="setup-name" class="setup-input" type="text" autocomplete="nickname" spellcheck="false" maxlength="32" />
           </div>
           <fieldset class="setup-section">
-            <legend class="setup-label"><i>04</i>Voice</legend>
-            <div class="seg seg-three">
-              <label class="opt opt-center"><input type="radio" name="voice" value="hi" /><span lang="hi">हिन्दी</span></label>
-              <label class="opt opt-center"><input type="radio" name="voice" value="en" /><span>English</span></label>
-              <label class="opt opt-center"><input type="radio" name="voice" value="grunts" /><span>Grunts</span></label>
+            <legend class="setup-label"><i>04</i>Language</legend>
+            <div class="seg seg-two">
+              <label class="opt opt-center"><input type="radio" name="language" value="hi" /><span lang="hi">हिन्दी</span></label>
+              <label class="opt opt-center"><input type="radio" name="language" value="en" /><span>English</span></label>
             </div>
           </fieldset>
           <fieldset class="setup-section">
             <legend class="setup-label"><i>05</i>Content</legend>
+            <label class="check"><input type="checkbox" name="lines" /><span><b>Voice lines</b><small>Calls, taunts and banter in your language. Off: only grunts and cries.</small></span></label>
             <label class="check"><input type="checkbox" name="adult" /><span><b>18+ lines</b><small>Gaalis and swearing. Off plays a clean line instead.</small></span></label>
             <label class="check"><input type="checkbox" name="memes" /><span><b>Meme sounds</b><small>Meme voice lines and sound effects.</small></span></label>
           </fieldset>

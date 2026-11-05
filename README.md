@@ -54,8 +54,8 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 | **01** | **MODE** | Single player, or a room to create or join |
 | **02** | **MAP** | The Night Market, with more maps to come |
 | **03** | **CALLSIGN** | Your name in the kill feed and on the scoreboard |
-| **04** | **VOICE** | Hindi, English or grunts only |
-| **05** | **CONTENT** | 18+ lines (gaalis and swearing), and meme sounds |
+| **04** | **LANGUAGE** | हिन्दी or English |
+| **05** | **CONTENT** | Voice lines (off: only grunts and cries), 18+ lines (gaalis and swearing), and meme sounds |
 
 The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse look, the loading screen fetches only the sounds you picked and builds the world, and you spawn at one end of an alley with a knife. Find a gun, find magazines, and stay alive. Your choices are saved for next time.
 

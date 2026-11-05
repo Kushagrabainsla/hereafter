@@ -1,4 +1,5 @@
-import { AnimationMixer, Color, Group, LoopOnce, Mesh, MeshStandardMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3, type AnimationAction, type AnimationClip } from "three/webgpu";
+import { AnimationMixer, Color, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3, type AnimationAction, type AnimationClip } from "three/webgpu";
+import { type HeldGrip } from "./weaponModels";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
@@ -45,6 +46,18 @@ const FADE = 0.2;
 const WORLD_RIGHT = new Vector3(1, 0, 0);
 const WORLD_FORWARD = new Vector3(0, 0, 1);
 const WORLD_UP = new Vector3(0, 1, 0);
+// A gun's frame has its barrel along -Z; turned half round it points the character's way (+Z).
+const BARREL_FORWARD = new Quaternion().setFromAxisAngle(WORLD_UP, Math.PI);
+// Running, the gun drops to a low ready: muzzle down and across the body.
+const LOW_READY_PITCH = -38 * Math.PI / 180;
+const LOW_READY_YAW = 18 * Math.PI / 180;
+// A shot kicks the gun back and its muzzle up, settling in about a tenth of a second.
+const KICK_BACK = 0.045;
+const KICK_UP = 7 * Math.PI / 180;
+const FLASH_SECONDS = 0.05;
+
+interface ArmChain { upper: Object3D; fore: Object3D; hand: Object3D }
+interface HeldGun { object: Object3D; grip: HeldGrip; flash: Object3D | null }
 
 export class PlayerModelInstance {
   readonly root: Object3D;
@@ -65,6 +78,14 @@ export class PlayerModelInstance {
   // The right upper arm and forearm, for strokes.
   private arm: Object3D[] = [];
   private stroke: { kind: "slash" | "stab" | "shot"; time: number } | null = null;
+  // Both arms, for holding a gun to the shoulder; the gun held, how far it has dropped to a
+  // low ready, its recoil and how long its flash still shows.
+  private arms: { right: ArmChain; left: ArmChain } | null = null;
+  private gun: HeldGun | null = null;
+  private ready = 0;
+  private recoil = 0;
+  private flashFor = 0;
+  private temp = { a: new Vector3(), b: new Vector3(), c: new Vector3(), d: new Vector3(), q: new Quaternion(), r: new Quaternion(), m: new Matrix4(), n: new Matrix4() };
 
   constructor(library: Library, tint: Color) {
     this.root = cloneSkeleton(library.scene);
@@ -98,15 +119,46 @@ export class PlayerModelInstance {
       const inverse = bone.getWorldQuaternion(new Quaternion()).invert();
       this.spine.push({ bone, axis: WORLD_RIGHT.clone().applyQuaternion(inverse).normalize(), forward: WORLD_FORWARD.clone().applyQuaternion(inverse).normalize() });
     }
+    const boneNamed = (name: string): Object3D | undefined => this.root.getObjectByName(name.replace(/\s+/g, "_")) ?? this.root.getObjectByName(name);
     for (const name of ["Bip01 R UpperArm", "Bip01 R Forearm"]) {
-      const bone = this.root.getObjectByName(name.replace(/\s+/g, "_")) ?? this.root.getObjectByName(name);
+      const bone = boneNamed(name);
       if (bone) this.arm.push(bone);
     }
+    const chain = (side: "R" | "L"): ArmChain | null => {
+      const upper = boneNamed(`Bip01 ${side} UpperArm`), fore = boneNamed(`Bip01 ${side} Forearm`), hand = boneNamed(`Bip01 ${side} Hand`);
+      return upper && fore && hand ? { upper, fore, hand } : null;
+    };
+    const right = chain("R"), left = chain("L");
+    if (right && left) this.arms = { right, left };
     this.play("idle");
   }
 
-  // Plays a knife stroke or a shot's recoil on the right arm over whatever the body is doing.
-  attack(kind: "slash" | "stab" | "shot"): void { this.stroke = { kind, time: 0 }; }
+  // Plays a knife stroke on the right arm over whatever the body is doing, or a shot: the gun
+  // kicks and flashes, or without a gun held the arm kicks.
+  attack(kind: "slash" | "stab" | "shot"): void {
+    if (kind === "shot" && this.gun) { this.recoil = 1; this.flashFor = FLASH_SECONDS; this.ready = 0; return; }
+    this.stroke = { kind, time: 0 };
+  }
+
+  // The gun to hold to the shoulder (it must be a child of root), or null for the knife or
+  // empty hands, which the animation carries on the hand socket.
+  holdGun(object: Object3D | null): void {
+    if ((this.gun?.object ?? null) === object) return;
+    const grip = object?.userData.grip as HeldGrip | null | undefined;
+    if (this.gun?.flash) this.gun.flash.visible = false;
+    this.gun = object && grip && this.arms ? { object, grip, flash: object.getObjectByName("muzzle") ?? null } : null;
+  }
+
+  // Where the held gun's muzzle is in the world, for tracers and the flash's light.
+  muzzle(): Vector3 | null {
+    return this.gun ? this.gun.object.localToWorld(this.gun.grip.muzzle.clone()) : null;
+  }
+
+  // Where spent cases leave the held gun: its ejection port, on the right just ahead of the grip.
+  port(): Vector3 | null {
+    if (!this.gun) return null;
+    return this.gun.object.localToWorld(new Vector3(0.02, 0.05, this.gun.grip.muzzle.z * 0.2));
+  }
 
   setStance(stance: PlayerStance): void {
     if (this.dead || stance === this.stance) return;
@@ -163,6 +215,80 @@ export class PlayerModelInstance {
       if (bend) bone.quaternion.multiply(this.scratch.setFromAxisAngle(forward, bend));
     }
     this.strike(seconds);
+    this.aimGun(seconds);
+  }
+
+  // A gun held to the right shoulder, its barrel along where the player looks (dropping to a
+  // low ready while running), and both hands on it where the first-person arms hold it: the
+  // gun is placed so the right shoulder sits where the first-person shoulder does, then each
+  // arm reaches its hand there with two-bone inverse kinematics.
+  private aimGun(seconds: number): void {
+    const gun = this.gun, arms = this.arms;
+    if (!gun || !arms || this.dead) return;
+    const { a, b, q, r, m, n } = this.temp;
+    this.ready += ((this.stance === "run" ? 1 : 0) - this.ready) * Math.min(1, seconds * 8);
+    this.recoil *= Math.exp(-seconds * 22);
+    this.root.updateWorldMatrix(true, true);
+    // The gun's turn in the character's frame: half round to face forward, the player's
+    // pitch, the low ready, then the kick.
+    const pitch = this.pitch * Math.PI / 180 + LOW_READY_PITCH * this.ready;
+    q.copy(BARREL_FORWARD)
+      .premultiply(r.setFromAxisAngle(WORLD_RIGHT, -pitch))
+      .premultiply(r.setFromAxisAngle(WORLD_UP, LOW_READY_YAW * this.ready))
+      .multiply(r.setFromAxisAngle(WORLD_RIGHT, KICK_UP * this.recoil));
+    const turn = this.root.getWorldQuaternion(r).multiply(q);
+    // The gun's grip, placed from the shoulder, and pushed back by the kick.
+    const shoulder = arms.right.upper.getWorldPosition(a);
+    const grip = b.copy(gun.grip.shoulder).applyQuaternion(turn).negate().add(shoulder);
+    grip.add(this.temp.c.set(0, 0, KICK_BACK * this.recoil).applyQuaternion(turn));
+    m.compose(grip, turn, this.temp.d.set(1, 1, 1));
+    // Into the gun's parent frame (the character's root).
+    n.copy(gun.object.parent!.matrixWorld).invert().multiply(m);
+    n.decompose(gun.object.position, gun.object.quaternion, gun.object.scale);
+    gun.object.updateMatrixWorld(true);
+    // Each hand to its place on the gun, its elbow toward the ground and out from the body.
+    this.reach(arms.right, gun.object.matrixWorld, gun.grip.right, -1);
+    this.reach(arms.left, gun.object.matrixWorld, gun.grip.left, 1);
+    if (gun.flash) {
+      this.flashFor -= seconds;
+      gun.flash.visible = this.flashFor > 0;
+      if (gun.flash.visible) { gun.flash.scale.setScalar(0.85 + Math.random() * 0.3); gun.flash.rotation.z = Math.random() * Math.PI * 2; }
+    }
+  }
+
+  // Two-bone inverse kinematics: turns the upper arm and forearm so the wrist reaches where
+  // the hand belongs on the gun (gunWorld x hold), the elbow bent toward the ground and to
+  // the arm's own side (side: -1 right, 1 left, in the character's frame). The hand keeps its
+  // turn on the forearm: the first-person arms' hand turns do not carry over, as the two
+  // skeletons' hand bones point different ways, and a hand that follows its forearm faces the gun.
+  private reach(arm: ArmChain, gunWorld: Matrix4, hold: Matrix4, side: number): void {
+    const target = new Matrix4().multiplyMatrices(gunWorld, hold);
+    const wrist = new Vector3().setFromMatrixPosition(target);
+    const shoulder = arm.upper.getWorldPosition(new Vector3());
+    const elbowNow = arm.fore.getWorldPosition(new Vector3());
+    const wristNow = arm.hand.getWorldPosition(new Vector3());
+    const upperLength = shoulder.distanceTo(elbowNow), foreLength = elbowNow.distanceTo(wristNow);
+    const toWrist = wrist.clone().sub(shoulder);
+    const reachLength = Math.min(Math.max(toWrist.length(), 0.05), upperLength + foreLength - 0.001);
+    const along = toWrist.normalize();
+    // The bend's direction: down and out to the arm's side, square to the reach.
+    const rootTurn = this.root.getWorldQuaternion(new Quaternion());
+    const pole = new Vector3(side * 0.6, -1, -0.25).applyQuaternion(rootTurn);
+    pole.addScaledVector(along, -pole.dot(along)).normalize();
+    const cosine = (upperLength ** 2 + reachLength ** 2 - foreLength ** 2) / (2 * upperLength * reachLength);
+    const elbow = shoulder.clone().addScaledVector(along, upperLength * cosine).addScaledVector(pole, upperLength * Math.sqrt(Math.max(0, 1 - cosine * cosine)));
+    this.pointBone(arm.upper, elbowNow, elbow);
+    this.pointBone(arm.fore, arm.hand.getWorldPosition(new Vector3()), shoulder.clone().addScaledVector(along, reachLength));
+  }
+
+  // Turns a bone, in the world, so its child moves from where it is toward where it should be.
+  private pointBone(bone: Object3D, childNow: Vector3, childWanted: Vector3): void {
+    const origin = bone.getWorldPosition(new Vector3());
+    const from = childNow.clone().sub(origin).normalize(), to = childWanted.clone().sub(origin).normalize();
+    const swing = new Quaternion().setFromUnitVectors(from, to);
+    const world = bone.getWorldQuaternion(new Quaternion()).premultiply(swing);
+    bone.quaternion.copy(bone.parent!.getWorldQuaternion(new Quaternion()).invert().multiply(world));
+    bone.updateMatrixWorld(true);
   }
 
   // A slash raises the arm forward and sweeps it across the body; a stab draws the arm back
