@@ -52,6 +52,7 @@ Model in metres with Z up. The exporter turns that into the game's Y up: Blender
 - **Materials are flat colours**, no textures, with metalness and roughness. Three prefixes mean something:
   - `glow_*`: lamp glass, neon tubes and lit faces. The game draws them with its own lit material and dims or darkens them when the lamp is shot out.
   - `paint_*`: pale, and tinted per copy by the game, like door colours and awning stripes.
+  - `card_*`: a flat face that keeps texture coordinates from 0 to 1, for the game to draw its own picture or glass on: the rooms behind windows, the storefront photographs and shop glass. Only meshes with a card material carry texture coordinates in the file, and the game flips them to its own pictures' orientation (glTF counts rows from the top).
   - Everything else is plain. The game merges all of a piece's plain parts into one mesh whose vertices carry each part's colour, roughness and metalness, so a piece draws in a single call however many materials it was made with.
 - **Budgets and sizes** are checked on every build. A piece over its triangle budget, more than 10% (or 2 cm) off its declared size, off its declared origin, or using an unregistered material fails the build, and nothing is written.
 
@@ -59,7 +60,7 @@ Model in metres with Z up. The exporter turns that into the game's Y up: Blender
 
 `src/world/kit.ts` loads `market-kit.glb` and every family file (`KIT_FILES`) with the meshopt decoder. `kitPieces()` unpacks the compressed positions to floats, merges plain parts, and keeps `glow_*` and `paint_*` parts apart. Pieces are then used in one of three ways:
 
-- **Many still copies:** `KitPlacer.place(name, matrix)`, drawn as one instanced mesh per piece and part. `splitGlow()` separates a lamp's glass, and the market's `lampSet()` draws the glass once per lamp with a per-copy flag that lights or darkens it. No second, hidden copy is drawn.
+- **Many still copies:** `KitPlacer.place(name, matrix)`, drawn as one instanced mesh per piece and part. A placement may stretch a piece: mouldings, rails and stringers are modelled 1 m long and stretched to fit (`wallMatrix`'s last argument stretches along the wall). `splitGlow()` separates a lamp's glass, and the market's `lampSet()` draws the glass once per lamp with a per-copy flag that lights or darkens it. No second, hidden copy is drawn.
 - **Copies that move each frame:** `instancedParts()`, as with the swaying lanterns. Whole and torn lanterns are packed into their own meshes each frame, so only those showing are drawn.
 - **One-offs:** `kitObject()`, as for signs, the breaker box and lamps that hide with their stall, and for things that come and go during play: the gun stands, magazines and thrown grenades.
 
@@ -132,6 +133,21 @@ Phase 4 (items in the world), at five spots, including a frag and a smoke grenad
 
 Seven pieces, 3,700 triangles in all and 62 KB compressed.
 
+Phase 5 (building dressing), at eight spots on both alleys, at the shopfronts, the fire escape, the bar's balcony and its stair. Most of the added triangles are the 247 window units, 196 triangles each against 62 for the boxes they replace, all drawn in one call:
+
+| Spot | Draw calls | Triangles |
+|---|---|---|
+| Market alley, west facade | 156 to 156 | 508,378 to 547,712 (+7.7%) |
+| Service alley facades | 141 to 141 | 461,068 to 505,202 (+9.6%) |
+| North passage shutter | 86 to 85 | 334,998 to 371,952 (+11.0%) |
+| Fire escape | 146 to 146 | 498,192 to 537,526 (+7.9%) |
+| Bar balcony and ladder | 153 to 153 | 472,518 to 516,652 (+9.3%) |
+| Bar stair | 137 to 137 | 403,505 to 446,379 (+10.6%) |
+| Noodle bar shopfront | 96 to 95 | 389,058 to 426,012 (+9.5%) |
+| Restaurant glass | 141 to 141 | 473,770 to 513,104 (+8.3%) |
+
+Fourteen pieces, 1,300 triangles in all and 39 KB compressed. Frame rates were compared at a MacBook Pro's Retina size (1728 × 1117 at 2×) with production builds in two alternating rounds over six of the spots: the median was 43 FPS before and 43.5 after, and the means 42.8 and 40.1, pulled down by a few one-off stalls in both builds (one before, three after).
+
 ## Phases
 
 Each phase replaces one group of shapes drawn in code with modelled pieces, measured as above.
@@ -140,5 +156,5 @@ Each phase replaces one group of shapes drawn in code with modelled pieces, meas
 2. **Furniture and interiors (done):** the restaurant's tables and bentwood chairs, its pass counter and pantry shelves with jars, tins, sacks and bowls; the bar's counter and brass foot rail, leather stools, mirrored back bar and bottles, pool table and the sofa upstairs; the record shop's counter; the market alley's folding tables and plastic stools. The tables, counters, pool table and sofa keep their solid boxes as colliders (`furnish()` in `nightMarket.ts` draws the piece in their place).
 3. **Street dressing (done):** the service alley's dumpsters (lids, casters, stencilling and rust), the stacked pallets and the manhole cover; the cedar water tanks on their steel stands and the TV antennas on the roofs, each antenna stretched to its mast's height; the eight posters and the SOFA mural. The dumpsters keep their solid boxes as colliders.
 4. **Weapons and items in the world (done):** the gun stands with their glowing ring, the spare and dropped magazines (the pistol's double stack and the carbine's curved steel magazine, each with its top round showing), spent 9 mm brass and 7.62 mm lacquered steel cases, and the frag and smoke grenades. The stand-in guns, hands and players drawn while a model loaded, or when one failed, are gone: a missing model now leaves its slot empty. The pickup markers (rings and beams) wait for phase 6.
-5. **Buildings and ground:** walls with depth, cornices, parapets, windows, shopfronts, shutters, shop glass, railings, ladders and stairs, paving, kerbs and floors. This needs the light bake redone (`npm run build:lightmaps`).
+5. **Buildings (done):** window units with their glass on cards, cornices and string courses, roller shutters, shopfront pilasters and ledges round the storefront photographs, railings, the steel ladders and the bar's open-tread stair with stringers, and the shop glass. The walls and the ground stay the map's own flat surfaces with photographed textures and baked light: a modelled wall would be the same flat face. The light bake was redone.
 6. **Effects:** debris, bullet holes, the muzzle flash, the code-drawn textures (awning stripes, planks, tiles) and the pickup markers. Tracers, smoke, steam, fire and haze stay particle effects.

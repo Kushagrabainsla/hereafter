@@ -14,7 +14,7 @@ import { FUEL_DRUM, propEntity, type PropModel } from "./props";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
-import { glowing, instancedParts, kitObject, KitPlacer, splitGlow, type KitPiece } from "./kit";
+import { cardGeometry, glowing, instancedParts, kitObject, KitPlacer, splitGlow, type KitPiece } from "./kit";
 import signCatalog from "./signs.json";
 import posterCatalog from "./posters.json";
 import { DOOR_ENTITIES, DOOR_TOGGLES, Doors } from "./doors";
@@ -308,15 +308,6 @@ function tiles(): CanvasTexture {
     }
   }, 1);
 }
-function corrugated(color: string): CanvasTexture {
-  return canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = color; g.fillRect(0, 0, w, h);
-    for (let x = 0; x < w; x += 32) { g.fillStyle = "rgba(255,255,255,0.12)"; g.fillRect(x, 0, 8, h); g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(x + 20, 0, 6, h); }
-    const rust = g.createLinearGradient(0, h * 0.6, 0, h);
-    rust.addColorStop(0, "rgba(90,50,30,0)"); rust.addColorStop(1, "rgba(90,50,30,0.45)");
-    g.fillStyle = rust; g.fillRect(0, 0, w, h);
-  }, 1.2);
-}
 function softSpot(): CanvasTexture {
   return canvasTexture(128, 128, (g, w, h) => {
     const gradient = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
@@ -511,9 +502,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     woodDark: wood("#5e3b22"), woodBar: wood("#4a2a18"), woodTable: wood("#6e4a2c"), woodStall: wood("#8a5a35"), floor: wood("#7a5232"),
     poolTable: paint(0x1f6b3a, 0, 0.9), sofa: paint(0x6b2430, 0, 0.85),
     steel: paint(0x9aa3a8, 0.8, 0.3), steelDark: paint(0x3a3f44, 0.6, 0.45),
-    grating: paint(0x3d4447, 0.7, 0.5), rail: paint(0x22262a, 0.5, 0.6), stairRail: paint(0x22262a, 0.5, 0.6),
-    frame: paint(0xcfc6b4, 0, 0.7), mullion: paint(0x2a2622, 0.2, 0.6), sill: concrete(0xd8d0c0), recess: paint(0x07090c, 0, 1), door: paint(0x3a2a22, 0.1, 0.7), trim: concrete(0xcfc8ba),
-    shutter: std({ map: own(corrugated("#7d8287")), metalness: 0.5, roughness: 0.5 }),
+    grating: paint(0x3d4447, 0.7, 0.5),
+    door: paint(0x3a2a22, 0.1, 0.7),
     stool: paint(0xb8432f, 0.1, 0.6),
     awning0: awnings[0], awning1: awnings[1], awning2: awnings[2], awning3: awnings[3],
     goods0: paint(0xe8b04a, 0, 0.8), goods1: paint(0xd3542f, 0, 0.8), goods2: paint(0x7fae4a, 0, 0.8), goods3: paint(0xf2e2c0, 0, 0.8),
@@ -633,29 +623,27 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     const [hx, hy, hz] = solid.half, r = solid.rotation ?? IDENTITY;
     statics.add(solid.look, meterBox(hx * 2, hy * 2, hz * 2), new Matrix4().compose(new Vector3(solid.center.x, solid.center.y, solid.center.z), new Quaternion(r.x, r.y, r.z, r.w), new Vector3(1, 1, 1)));
   }
-  // Railings: a top and middle bar with posts, for the solid railing boxes.
+  // Railings along the solid railing boxes: a top and a middle rail on posts every 1.1 m,
+  // modelled pieces stretched to fit (buildings.glb).
   for (const solid of solids) {
     if (solid.look !== "rail" && solid.look !== "stairRail") continue;
     const [hx, hy, hz] = solid.half, r = solid.rotation ?? IDENTITY, q = new Quaternion(r.x, r.y, r.z, r.w);
     const center = new Vector3(solid.center.x, solid.center.y, solid.center.z);
     const alongX = hx > hz, length = (alongX ? hx : hz) * 2;
-    for (const level of [hy, 0]) {
-      const offset = new Vector3(0, level, 0).applyQuaternion(q);
-      statics.add("rail", meterBox(alongX ? length : 0.05, 0.05, alongX ? 0.05 : length), new Matrix4().compose(center.clone().add(offset), q, new Vector3(1, 1, 1)));
-    }
+    const bar = alongX ? q : q.clone().multiply(new Quaternion().setFromAxisAngle(UP, Math.PI / 2));
+    for (const level of [hy, 0]) placer.place("rail_bar", new Matrix4().compose(center.clone().add(new Vector3(0, level, 0).applyQuaternion(q)), bar, new Vector3(length, 1, 1)));
     for (let a = -length / 2; a <= length / 2 + 0.01; a += 1.1) {
-      const offset = new Vector3(alongX ? a : 0, 0, alongX ? 0 : a).applyQuaternion(q);
-      statics.add("rail", meterBox(0.04, hy * 2, 0.04), new Matrix4().compose(center.clone().add(offset), q, new Vector3(1, 1, 1)));
+      const foot = new Vector3(alongX ? a : 0, -hy, alongX ? 0 : a).applyQuaternion(q);
+      placer.place("rail_post", new Matrix4().compose(center.clone().add(foot), q, new Vector3(1, hy * 2, 1)));
     }
   }
 
-  // Cornices along the top of every alley-facing wall, and a string course under the windows.
+  // A cornice along the top of every alley-facing wall, and a string course under the windows,
+  // each one moulding stretched along the wall.
   for (const facade of facades) {
-    const [nx, nz] = FACE_NORMAL[facade.face], length = facade.to - facade.from, mid = (facade.from + facade.to) / 2;
-    for (const [y, depth, height] of [[facade.y1 + 1.6, 0.35, 0.45], [facade.y0 - 1.55, 0.14, 0.18]]) {
-      if (nx) statics.box("trim", depth, height, length, facade.at + nx * depth / 3, y, mid);
-      else statics.box("trim", length, height, depth, mid, y, facade.at + nz * depth / 3);
-    }
+    const length = facade.to - facade.from, mid = (facade.from + facade.to) / 2;
+    placer.place("cornice", wallMatrix(facade.face, facade.at, mid, facade.y1 + 1.6, 0, length));
+    placer.place("string_course", wallMatrix(facade.face, facade.at, mid, facade.y0 - 1.55, 0, length));
   }
 
   // ---------- windows: breakable glass on every upper floor ----------
@@ -668,7 +656,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     }
   });
   upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: 1 + index }));
-  const windowGeometry = new PlaneGeometry(1.38, 1.76);
+  // Each window is a modelled unit (frame, reveal, sash bars, sill and lintel) with its glass
+  // a card in front of the reveal, drawn in one of these looks.
+  const windowGeometry = cardGeometry(kit, "card_window");
   // Unlit panes are dark glass reflecting the dusk; lit ones show a room.
   const intensities = [0.8, 0.75, 0.8, 0.75, 0.8, 0.75, 0.75, 0.85];
   const glassLooks = [std({ color: 0x0e1318, roughness: 0.04, metalness: 0.9 }), ...intensities.map((intensity, kind) => {
@@ -678,12 +668,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const counts = glassLooks.map(() => 0);
   for (const spot of windowSpots) counts[spot.lit] += 1;
   const glassMeshes = glassLooks.map((material, i) => { const mesh = new InstancedMesh(windowGeometry, material, Math.max(1, counts[i])); mesh.count = counts[i]; return mesh; });
-  const crossGeometry = mergeGeometries([new BoxGeometry(0.05, 1.76, 0.04), new BoxGeometry(1.38, 0.05, 0.04).translate(0, 0.3, 0)], false)!;
-  const frames = new InstancedMesh(new BoxGeometry(1.62, 2.0, 0.08), materials.frame, windowSpots.length);
-  const mullions = new InstancedMesh(crossGeometry, materials.mullion, windowSpots.length);
-  const sills = new InstancedMesh(new BoxGeometry(1.8, 0.09, 0.2), materials.sill, windowSpots.length);
-  const lintels = new InstancedMesh(new BoxGeometry(1.8, 0.16, 0.08), materials.trim, windowSpots.length);
-  const recesses = new InstancedMesh(windowGeometry, materials.recess, windowSpots.length);
   const refs = new Map<string, InstanceRef[]>();
   const entities: WorldEntity[] = [];
   const used = glassLooks.map(() => 0);
@@ -692,18 +676,14 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     const [nx, nz] = FACE_NORMAL[spot.face];
     const at = (out: number, up = 0): Vector3 => new Vector3(spot.x + nx * out, spot.y + up, spot.z + nz * out);
     q.setFromAxisAngle(UP, FACE_YAW[spot.face]);
-    frames.setMatrixAt(index, matrix.compose(at(0), q, one));
-    recesses.setMatrixAt(index, matrix.compose(at(0.045), q, one));
-    mullions.setMatrixAt(index, matrix.compose(at(0.085), q, one));
-    sills.setMatrixAt(index, matrix.compose(at(0.09, -1.05), q, one));
-    lintels.setMatrixAt(index, matrix.compose(at(0.05, 1.08), q, one));
+    placer.place("window_unit", matrix.compose(at(0), q, one));
     const mesh = glassMeshes[spot.lit], slot = used[spot.lit]++;
     mesh.setMatrixAt(slot, matrix.compose(at(0.06), q, one));
     const id = `window:${index}`;
     refs.set(id, [{ mesh, index: slot }]);
     entities.push({ id, kind: "window", material: "glass", maxHealth: 1, yaw: Math.atan2(nx, nz), center: { x: spot.x, y: spot.y, z: spot.z } });
   });
-  for (const mesh of [frames, recesses, mullions, sills, lintels, ...glassMeshes]) { mesh.receiveShadow = true; root.add(mesh); }
+  for (const mesh of glassMeshes) { mesh.receiveShadow = true; root.add(mesh); }
 
   // ---------- shopfronts, signs, doors and shutters ----------
   // Every sign is a kit piece built from signs.json (scripts/assets/families/signs.py): neon
@@ -736,7 +716,12 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   shopfronts.forEach((shop, index) => {
     const [nx, nz] = FACE_NORMAL[shop.face];
     const x = nx ? shop.at + nx * 0.04 : shop.along, z = nz ? shop.at + nz * 0.04 : shop.along;
-    if (!shop.open) statics.plane(shop.photo === "cafe" ? "photoCafe" : "photoStone", shop.width, 3.1, x, 1.6, z, shop.face);
+    if (!shop.open) {
+      // The storefront photograph on a card, framed by pilasters and a ledge under the sign.
+      statics.add(shop.photo === "cafe" ? "photoCafe" : "photoStone", cardGeometry(kit, "card_unit").clone(), new Matrix4().compose(new Vector3(x, 1.6, z), new Quaternion().setFromAxisAngle(UP, FACE_YAW[shop.face]), new Vector3(shop.width, 3.1, 1)));
+      for (const side of [-1, 1]) placer.place("shop_pilaster", wallMatrix(shop.face, shop.at, shop.along + side * shop.width / 2, 0));
+      placer.place("shop_ledge", wallMatrix(shop.face, shop.at, shop.along, 3.16, 0, shop.width + 0.3));
+    }
     sign(`shop-sign-${index}`, x + nx * 0.02, 3.55, z + nz * 0.02, shop.face);
   });
   sign("kitchen-sign", -8.46, 4.05, 4.5, "px");
@@ -757,8 +742,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   }));
   placeSteamPipes(placer);
   for (const [x, z, face] of [[-4, 29.95, "nz"], [12.75, 29.95, "nz"], [-4, -29.95, "pz"], [12.75, -29.95, "pz"]] as [number, number, Face][]) {
-    statics.plane("shutter", 6, 3.6, x, 1.8, z, face);
-    statics.box("trim", 6.6, 0.4, 0.3, x, 3.6, z);
+    placer.place("shutter", wallMatrix(face, Math.sign(z) * 30, x, 0));
   }
   // Paper posters on the walls (posters.json) and the SOFA mural in the service alley.
   for (const poster of posterCatalog.posters) placer.place(`poster_${poster.id}`, wallMatrix(poster.face as Face, poster.at, poster.along, poster.y, 0.004));
@@ -838,8 +822,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // ---------- glass storefronts that shatter and can be climbed through ----------
   const paneMaterial = std({ color: 0xa9c4cf, roughness: 0.03, metalness: 0.4, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide });
   panes.forEach((pane, index) => {
-    const mesh = new Mesh(new PlaneGeometry(pane.z1 - pane.z0, pane.y1 - pane.y0), paneMaterial);
+    const mesh = new Mesh(cardGeometry(kit, "card_unit"), paneMaterial);
     mesh.position.set(pane.x, (pane.y0 + pane.y1) / 2, (pane.z0 + pane.z1) / 2);
+    mesh.scale.set(pane.z1 - pane.z0, pane.y1 - pane.y0, 1);
     mesh.rotation.y = Math.PI / 2;
     root.add(mesh);
     const id = `pane:${index}`;
@@ -990,6 +975,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     return mesh;
   })();
 
+  // Steel ladders and the bar's stair.
+  addClimbing(placer, ladders, [stair]);
   // Only the fire escapes stand high enough in the low sun to throw shadows worth drawing.
   placer.build(root, (name) => name.startsWith("escape"));
   const doors = new Doors(root, kit);
@@ -998,9 +985,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const pipes = new SteamPipes(root);
   for (const item of extinguishers) pipes.addSource(item.id, item.source, item.wall, item.out, POWDER);
 
-  addClimbing(scene, ladders, [stair]);
   const surfaces: Mesh[] = [];
-  statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "shutter", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
+  statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
 
   // Movable props, numbered in a fixed order so ids match on every client.
   const models = new Map([...propModels, FUEL_DRUM].map((model) => [model.name, model]));

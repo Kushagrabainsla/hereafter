@@ -176,10 +176,16 @@ def main():
     for obj in list(bpy.data.objects):
         if obj.name not in built:
             bpy.data.objects.remove(obj)
+    # Texture coordinates go only with card_* faces, which the game draws pictures on; every
+    # other surface is a flat colour and would carry them for nothing.
+    for obj in bpy.data.objects:
+        if obj.type == "MESH" and not any(m and m.name.startswith("card_") for m in obj.data.materials):
+            while obj.data.uv_layers:
+                obj.data.uv_layers.remove(obj.data.uv_layers[0])
     out = os.path.join(lib.ROOT, "public", "models", f"{args.family}.glb")
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.export_scene.gltf(filepath=out, export_format="GLB", use_selection=False, export_apply=True, export_yup=True,
-                              export_materials="EXPORT", export_texcoords=False, export_normals=True, export_animations=False,
+                              export_materials="EXPORT", export_texcoords=True, export_normals=True, export_animations=False,
                               export_lights=False, export_cameras=False, export_extras=False)
     os.makedirs(os.path.join(HERE, "reports"), exist_ok=True)
     with open(os.path.join(HERE, "reports", f"{args.family}.json"), "w") as f:

@@ -9,7 +9,7 @@ import { type InstanceRef } from "./entities";
 // public/models/market-kit.glb (scripts/kit/build.py) and the families built by the asset
 // pipeline (scripts/assets, docs/asset-pipeline.md): lamps, signs and the rest. Every top-level
 // node of every file is one piece, modelled in its own frame with its origin where it is placed.
-const KIT_FILES = ["market-kit", "lights", "signs", "furniture", "street", "items"];
+const KIT_FILES = ["market-kit", "lights", "signs", "furniture", "street", "items", "buildings"];
 
 export function loadKits(): Promise<(GLTF | null)[]> {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
@@ -21,9 +21,11 @@ export function loadKits(): Promise<(GLTF | null)[]> {
 export interface KitPiece { parts: { geometry: BufferGeometry; material: SurfaceMaterial }[] }
 
 // Pale materials named paint_* take each copy's own colour; glow_* materials are lamp glass,
-// neon and lit faces, which the game lights itself and dims when the lamp is shot out.
+// neon and lit faces, which the game lights itself and dims when the lamp is shot out; card_*
+// faces keep their texture coordinates, for the game to draw a picture or glass on.
 const tinted = (material: SurfaceMaterial): boolean => material.name.startsWith("paint_");
 export const glowing = (material: SurfaceMaterial): boolean => material.name.startsWith("glow_");
+const carded = (material: SurfaceMaterial): boolean => material.name.startsWith("card_");
 
 // Plain parts of every piece share this material: each vertex carries its part's colour,
 // roughness and metalness, so a piece of many plain materials draws in one call.
@@ -33,10 +35,10 @@ merged.vertexColors = true;
 merged.roughnessNode = attribute("surface", "vec2").x;
 merged.metalnessNode = attribute("surface", "vec2").y;
 
-// A material that can join the merged one: opaque, unlit, untextured, neither paint nor glow.
+// A material that can join the merged one: opaque, unlit, untextured, not paint, glow or card.
 function plain(material: SurfaceMaterial): material is MeshStandardMaterial {
   const standard = material as MeshStandardMaterial;
-  return !!standard.isMeshStandardMaterial && !tinted(material) && !glowing(material) && !material.transparent && standard.opacity === 1
+  return !!standard.isMeshStandardMaterial && !tinted(material) && !glowing(material) && !carded(material) && !material.transparent && standard.opacity === 1
     && !standard.map && (standard.emissiveIntensity === 0 || standard.emissive.getHex() === 0);
 }
 
@@ -87,6 +89,9 @@ export function kitPieces(gltfs: (GLTF | null)[]): Map<string, KitPiece> {
         const material = mesh.material as SurfaceMaterial;
         const geometry = unpacked(mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
         if (plain(material)) { plainParts.push(painted(bare(geometry), material)); return; }
+        // glTF counts texture rows from the top; the game's own pictures count from the bottom.
+        const uv = geometry.getAttribute("uv");
+        if (carded(material) && uv) for (let i = 0; i < uv.count; i += 1) uv.setY(i, 1 - uv.getY(i));
         const list = byMaterial.get(material) ?? [];
         list.push(geometry);
         byMaterial.set(material, list);
@@ -97,6 +102,11 @@ export function kitPieces(gltfs: (GLTF | null)[]): Map<string, KitPiece> {
     }
   }
   return pieces;
+}
+
+// A card's face, with texture coordinates from 0 to 1 across it, or empty if it is missing.
+export function cardGeometry(pieces: Map<string, KitPiece>, name: string): BufferGeometry {
+  return pieces.get(name)?.parts[0]?.geometry ?? new BufferGeometry();
 }
 
 // A piece's parts split into what stays as it is and what glows, the glowing parts merged.

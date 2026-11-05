@@ -1,4 +1,5 @@
-import { BoxGeometry, CylinderGeometry, InstancedMesh, MeshStandardMaterial, Object3D, Scene, Vector3 } from "three/webgpu";
+import { Matrix4, Quaternion, Vector3 } from "three/webgpu";
+import { type KitPlacer } from "./kit";
 
 export interface Vec3 { x: number; y: number; z: number }
 
@@ -15,53 +16,39 @@ export const STAIR_RISE = 0.18;
 export const STAIR_RUN = 0.28;
 const STAIR_WIDTH = 1.3;
 
-// Steel ladders and stairs: rails and rungs, open-riser steps and posts on the open side.
-// Their solid ramps and railings are colliders in the map layout.
-export function addClimbing(scene: Scene, ladders: Ladder[], stairs: Stair[]): void {
-  const steel = new MeshStandardMaterial({ color: 0x3d4447, roughness: 0.55, metalness: 0.75 });
-  const transform = new Object3D();
-  const rails: [Vector3, Vector3][] = [], rungs: { at: Vector3; along: { x: number; z: number } }[] = [];
+// Steel ladders and stairs from modelled pieces (buildings.glb): flat-bar stiles and welded
+// rungs; open grating treads between channel stringers, with posts on the open side. Their
+// solid ramps and railings are colliders in the map layout.
+export function addClimbing(placer: KitPlacer, ladders: Ladder[], stairs: Stair[]): void {
+  const up = new Vector3(0, 1, 0), one = new Vector3(1, 1, 1);
+  // Turns a piece built along +X to run along (x, z).
+  const toward = (x: number, z: number): Quaternion => new Quaternion().setFromAxisAngle(up, Math.atan2(-z, x));
   for (const ladder of ladders) {
-    const height = ladder.top - ladder.foot.y + 1.0;
+    const height = ladder.top - ladder.foot.y + 1.0, turn = toward(ladder.along.x, ladder.along.z);
     for (const side of [-0.23, 0.23]) {
-      const base = new Vector3(ladder.foot.x + ladder.along.x * side, ladder.foot.y, ladder.foot.z + ladder.along.z * side);
-      rails.push([base, base.clone().add(new Vector3(0, height, 0))]);
+      placer.place("ladder_rail", new Matrix4().compose(new Vector3(ladder.foot.x + ladder.along.x * side, ladder.foot.y, ladder.foot.z + ladder.along.z * side), turn, new Vector3(1, height, 1)));
     }
-    for (let y = 0.3; y < height - 0.1; y += 0.3) rungs.push({ at: new Vector3(ladder.foot.x, ladder.foot.y + y, ladder.foot.z), along: ladder.along });
+    for (let y = 0.3; y < height - 0.1; y += 0.3) placer.place("ladder_rung", new Matrix4().compose(new Vector3(ladder.foot.x, ladder.foot.y + y, ladder.foot.z), turn, one));
   }
-  const steps: { at: Vector3; yaw: number }[] = [], posts: Vector3[] = [];
   for (const stair of stairs) {
     const count = Math.ceil(stair.height / STAIR_RISE);
-    const yaw = Math.atan2(stair.tx, stair.tz);
+    // Treads face down the stair, their nosing toward whoever climbs it.
+    const tread = new Quaternion().setFromAxisAngle(up, Math.atan2(stair.tx, stair.tz) + Math.PI);
     for (let i = 0; i < count; i += 1) {
-      const along = (i + 0.5) * STAIR_RUN;
-      steps.push({ at: new Vector3(stair.start.x + stair.tx * along, stair.ground + (i + 1) * (stair.height / count) - 0.03, stair.start.z + stair.tz * along), yaw });
-      if (i % 4 === 0) posts.push(new Vector3(stair.start.x + stair.tx * along + stair.nx * STAIR_WIDTH / 2, stair.ground + (i + 1) * (stair.height / count), stair.start.z + stair.tz * along + stair.nz * STAIR_WIDTH / 2));
+      const along = (i + 0.5) * STAIR_RUN, y = stair.ground + (i + 1) * (stair.height / count);
+      placer.place("stair_tread", new Matrix4().compose(new Vector3(stair.start.x + stair.tx * along, y - 0.03, stair.start.z + stair.tz * along), tread, one));
+      if (i % 4 === 0) {
+        placer.place("rail_post", new Matrix4().compose(new Vector3(stair.start.x + stair.tx * along + stair.nx * STAIR_WIDTH / 2, y, stair.start.z + stair.tz * along + stair.nz * STAIR_WIDTH / 2), new Quaternion(), new Vector3(1, 1.05, 1)));
+      }
     }
-    steps.push({ at: new Vector3(stair.landing.x, stair.top - 0.04, stair.landing.z), yaw });
-  }
-  if (rails.length) {
-    const mesh = new InstancedMesh(new BoxGeometry(0.05, 1, 0.05), steel, rails.length);
-    rails.forEach(([a, b], index) => { transform.position.copy(a).add(b).multiplyScalar(0.5); transform.rotation.set(0, 0, 0); transform.scale.set(1, a.distanceTo(b), 1); transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix); });
-    mesh.castShadow = true;
-    scene.add(mesh);
-  }
-  if (rungs.length) {
-    const mesh = new InstancedMesh(new CylinderGeometry(0.018, 0.018, 0.46, 6), steel, rungs.length);
-    rungs.forEach(({ at, along }, index) => { transform.position.copy(at); transform.scale.set(1, 1, 1); transform.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), new Vector3(along.x, 0, along.z)); transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix); });
-    scene.add(mesh);
-  }
-  if (steps.length) {
-    const grating = new MeshStandardMaterial({ color: 0x4b5254, roughness: 0.7, metalness: 0.6 });
-    const mesh = new InstancedMesh(new BoxGeometry(STAIR_WIDTH, 0.05, STAIR_RUN + 0.02), grating, steps.length);
-    steps.forEach(({ at, yaw }, index) => { transform.position.copy(at); transform.rotation.set(0, yaw, 0); transform.scale.set(1, 1, 1); transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix); });
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-  }
-  if (posts.length) {
-    const mesh = new InstancedMesh(new BoxGeometry(0.04, 1.05, 0.04), steel, posts.length);
-    posts.forEach((at, index) => { transform.position.set(at.x, at.y + 0.52, at.z); transform.rotation.set(0, 0, 0); transform.scale.set(1, 1, 1); transform.updateMatrix(); mesh.setMatrixAt(index, transform.matrix); });
-    scene.add(mesh);
+    placer.place("stair_tread", new Matrix4().compose(new Vector3(stair.landing.x, stair.top - 0.04, stair.landing.z), tread, one));
+    // A stringer either side, along the slope just under the treads.
+    const slope = Math.atan2(stair.height, stair.run), length = Math.hypot(stair.run, stair.height);
+    const pitch = toward(stair.tx, stair.tz).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), slope));
+    for (const side of [-1, 1]) {
+      const out = side * (STAIR_WIDTH / 2 + 0.02);
+      const middle = new Vector3(stair.start.x + stair.tx * stair.run / 2 + stair.nx * out, stair.ground + stair.height / 2 - 0.14, stair.start.z + stair.tz * stair.run / 2 + stair.nz * out);
+      placer.place("stair_stringer", new Matrix4().compose(middle, pitch, new Vector3(length, 1, 1)));
+    }
   }
 }
