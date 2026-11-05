@@ -1,6 +1,7 @@
 import { type WeaponKind } from "./combatRules";
 import voiceCatalog from "./voiceLines.json";
 import { type Material } from "../world/materials";
+import { assetFetch } from "../assetStore";
 
 // Sound effects for the local player, other players and the HUD. Recorded CC0 samples
 // (public/audio, built by scripts/audio/build.sh) cover guns, reloads, footsteps and
@@ -86,7 +87,7 @@ export class GameAudio {
   private context: AudioContext | null = null;
   private samples = new Map<SoundName, Sample[]>();
   private lastVariant = new Map<SoundName, number>();
-  private loading: Promise<void>;
+  private loading: Promise<void> | null = null;
   private noise: AudioBuffer | null = null;
   private master!: GainNode;
   private muffle!: BiquadFilterNode;
@@ -105,16 +106,15 @@ export class GameAudio {
   private nextSiren = 0;
   private musicStep = 0;
   private musicAt = 0;
-  // Players' voices by path under audio/voice, loaded after the world; and the player's own
-  // breathing, which quickens and deepens with exertion.
+  // Clips loaded by choice, by path under audio/ ("voice/en/kill-gaya", "meme/S1"): players'
+  // voices and memes. And the player's own breathing, which quickens and deepens with exertion.
   private voices = new Map<string, Sample>();
   private breathAt = 0;
   private breathIn = true;
   occlusion: (from: Vec3, to: Vec3) => boolean = () => false;
 
-  constructor() {
-    this.loading = this.load();
-  }
+  // The sound bank loads when a match is launched, from the files downloaded during setup.
+  loadBank(): Promise<void> { return this.loading ??= this.load(); }
 
   isMuted(): boolean { return this.muted; }
 
@@ -138,7 +138,7 @@ export class GameAudio {
   // The master bus, for tests that record the mix.
   output(): AudioNode | null { return this.context ? this.master : null; }
   audioContext(): AudioContext | null { return this.context; }
-  ready(): Promise<void> { return this.loading; }
+  ready(): Promise<void> { return this.loadBank(); }
 
   listen(position: Vec3, forward: Vec3, up: Vec3): void {
     this.listenerAt = { x: position.x, y: position.y, z: position.z };
@@ -533,22 +533,26 @@ export class GameAudio {
 
   // Voices ------------------------------------------------------------------------------
 
-  // Fetches and decodes voice clips by path ("en/kill-gaya", "effort/jump-1"), a few at a time.
-  async loadVoices(paths: string[]): Promise<void> {
-    await this.loading;
+  // Fetches and decodes clips by path under audio/ ("voice/en/kill-gaya", "meme/S1"), a few at
+  // a time, reporting each as it is done.
+  async loadClips(paths: string[], onDone: (path: string) => void = () => undefined): Promise<void> {
+    await this.loadBank();
     const OfflineContext = window.OfflineAudioContext ?? (window as unknown as { webkitOfflineAudioContext?: typeof OfflineAudioContext }).webkitOfflineAudioContext;
     if (!OfflineContext) return;
-    const decoder = new OfflineContext(1, 1, SAMPLE_RATE), base = `${import.meta.env.BASE_URL}audio/voice/`, queue = paths.filter((path) => !this.voices.has(path));
+    const decoder = new OfflineContext(1, 1, SAMPLE_RATE), base = `${import.meta.env.BASE_URL}audio/`, queue = paths.filter((path) => !this.voices.has(path));
+    for (const path of paths) if (this.voices.has(path)) onDone(path);
     await Promise.all(Array.from({ length: 6 }, async () => {
       for (let path = queue.shift(); path; path = queue.shift()) {
         try {
-          const response = await fetch(`${base}${path}.mp3`);
-          if (!response.ok) continue;
-          const buffer = await decoder.decodeAudioData(await response.arrayBuffer());
-          this.voices.set(path, { buffer, offset: this.onset(buffer) });
+          const response = await assetFetch(`${base}${path}.mp3`);
+          if (response.ok) {
+            const buffer = await decoder.decodeAudioData(await response.arrayBuffer());
+            this.voices.set(path, { buffer, offset: this.onset(buffer) });
+          }
         } catch {
           // A clip that fails to load is simply not heard.
         }
+        onDone(path);
       }
     }));
   }
@@ -570,8 +574,17 @@ export class GameAudio {
 
   // A wordless effort, one of its takes at random: a jump, a climb, a pain cry or a death.
   effort(kind: keyof typeof voiceCatalog.efforts, at: Vec3 | null): void {
-    this.voice(`effort/${kind}-${1 + Math.floor(Math.random() * voiceCatalog.efforts[kind])}`, at, false);
+    this.voice(`voice/effort/${kind}-${1 + Math.floor(Math.random() * voiceCatalog.efforts[kind])}`, at, false);
   }
+
+  // How long a loaded clip plays, in seconds, or 0 if it is not loaded.
+  clipLength(path: string): number {
+    const sample = this.voices.get(path);
+    return sample ? sample.buffer.duration - sample.offset : 0;
+  }
+
+  // A meme by its code: the player's own close (at null), or another's from where they are.
+  meme(code: string, at: Vec3 | null): number { return this.voice(`meme/${code}`, at, true); }
 
   // The player's own breathing, called every frame: nothing at ease, then breaths in and out
   // that come faster and louder as exertion builds, and slow again as it eases.
@@ -902,7 +915,7 @@ export class GameAudio {
     await Promise.all(Object.entries(BANK).map(async ([name, count]) => {
       const variants = await Promise.all(Array.from({ length: count }, async (_, index) => {
         try {
-          const response = await fetch(`${base}${name}${count > 1 ? `-${index + 1}` : ""}.mp3`);
+          const response = await assetFetch(`${base}${name}${count > 1 ? `-${index + 1}` : ""}.mp3`);
           if (!response.ok) return null;
           const buffer = await decoder.decodeAudioData(await response.arrayBuffer());
           return { buffer, offset: this.onset(buffer) };

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b1723" />
-    <title>Hereafter — Night Market</title>
+    <title>Hereafter</title>
   </head>
   <body>
     <div id="app">
@@ -73,6 +73,7 @@
             <option value="grunts">Grunts only</option>
           </select>
           <label class="room-check"><input id="adult-voice" type="checkbox" /> <span>Hear 18+ lines: gaalis and swearing. Off plays a clean line instead.</span></label>
+          <label class="room-check"><input id="meme-sounds" type="checkbox" /> <span>Hear meme sounds: meme voice lines and sound effects.</span></label>
         </div>
         <div id="room-entry">
           <button id="create-room" class="room-button room-button-primary" type="button">Create room</button>
@@ -112,14 +113,65 @@
         <footer id="scoreboard-footer"></footer>
       </section>
 
-      <div id="loader" class="loader" role="status" aria-live="polite">
-        <div class="loader-card">
-          <div class="loader-brand"><strong>Hereafter<span>.</span></strong><small>Night Market</small></div>
-          <div class="loader-bar" aria-hidden="true"><span id="loader-fill"></span></div>
-          <div class="loader-row"><span id="loader-step">Loading</span><span id="loader-percent">0%</span></div>
-          <p id="loader-tip" class="loader-tip">Press H any time to see every control.</p>
-        </div>
-      </div>
+      <section id="setup" class="setup" aria-labelledby="setup-title">
+        <div class="screen-art" aria-hidden="true"></div>
+        <div class="screen-grid" aria-hidden="true"></div>
+        <div class="screen-fade" aria-hidden="true"></div>
+        <i class="corner corner-tl" aria-hidden="true"></i><i class="corner corner-tr" aria-hidden="true"></i><i class="corner corner-bl" aria-hidden="true"></i><i class="corner corner-br" aria-hidden="true"></i>
+        <div class="setup-status" role="status" aria-live="polite"><span id="setup-status-text">Downloading</span> <b id="setup-status-percent">0%</b> <span id="setup-status-pips" class="pips" aria-hidden="true"></span></div>
+        <div class="setup-map-note"><small id="setup-map-number">Map 01</small><b id="setup-map-name">Night Market</b><span id="setup-map-place">San Jose · Dusk</span></div>
+        <form id="setup-form" class="setup-panel" novalidate>
+          <header class="setup-head"><h1 id="setup-title">Match setup</h1><small>Hereafter</small></header>
+          <fieldset class="setup-section">
+            <legend class="setup-label"><i>01</i>Mode</legend>
+            <div class="seg seg-two">
+              <label class="opt"><input type="radio" name="mode" value="solo" /><span>Single player<small>Practise alone</small></span></label>
+              <label class="opt"><input type="radio" name="mode" value="room" /><span>Multiplayer<small>Invite-only room</small></span></label>
+            </div>
+            <div class="setup-room" id="setup-room">
+              <label class="chip"><input type="radio" name="room" value="create" /><span>Create room</span></label>
+              <input id="setup-code" class="setup-input" type="text" inputmode="text" autocomplete="off" spellcheck="false" maxlength="24" placeholder="Room code" aria-label="Room code" />
+              <label class="chip"><input type="radio" name="room" value="join" /><span>Join</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="setup-section">
+            <legend class="setup-label"><i>02</i>Map<em id="setup-map-count"></em></legend>
+            <div class="maps" id="setup-maps"></div>
+          </fieldset>
+          <div class="setup-section">
+            <label class="setup-label" for="setup-name"><i>03</i>Callsign</label>
+            <input id="setup-name" class="setup-input" type="text" autocomplete="nickname" spellcheck="false" maxlength="32" />
+          </div>
+          <fieldset class="setup-section">
+            <legend class="setup-label"><i>04</i>Voice</legend>
+            <div class="seg seg-three">
+              <label class="opt opt-center"><input type="radio" name="voice" value="hi" /><span lang="hi">हिन्दी</span></label>
+              <label class="opt opt-center"><input type="radio" name="voice" value="en" /><span>English</span></label>
+              <label class="opt opt-center"><input type="radio" name="voice" value="grunts" /><span>Grunts</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="setup-section">
+            <legend class="setup-label"><i>05</i>Content</legend>
+            <label class="check"><input type="checkbox" name="adult" /><span><b>18+ lines</b><small>Gaalis and swearing. Off plays a clean line instead.</small></span></label>
+            <label class="check"><input type="checkbox" name="memes" /><span><b>Meme sounds</b><small>Meme voice lines and sound effects.</small></span></label>
+          </fieldset>
+          <p id="setup-error" class="setup-error" role="alert"></p>
+          <button id="deploy" class="deploy" type="submit">Deploy <kbd>Enter</kbd></button>
+        </form>
+        <div class="setup-title"><strong>Hereafter<span>.</span></strong><small>Peer-to-peer FPS · plays in your browser</small></div>
+      </section>
+
+      <section id="loader" class="loader" aria-labelledby="loader-title" hidden>
+        <div class="screen-art" aria-hidden="true"></div>
+        <div class="screen-grid" aria-hidden="true"></div>
+        <div class="screen-fade loader-fade" aria-hidden="true"></div>
+        <div id="loader-match" class="loader-match"></div>
+        <aside class="loader-intel"><b>Intel</b><span id="loader-tip">Press H any time to see every control.</span></aside>
+        <div class="loader-title"><small id="loader-map"></small><strong id="loader-title">Hereafter<span>.</span></strong></div>
+        <ol id="loader-steps" class="loader-steps"></ol>
+        <div class="loader-bar" aria-hidden="true"><span id="loader-fill"></span></div>
+        <div class="loader-row" role="status" aria-live="polite"><span id="loader-step">Deploying</span><b id="loader-percent">0%</b></div>
+      </section>
 
       <div class="attribution"><a href="https://polyhaven.com/license" target="_blank" rel="noopener noreferrer">Textures: Poly Haven</a></div>
     </div>

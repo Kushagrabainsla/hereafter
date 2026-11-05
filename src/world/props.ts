@@ -2,6 +2,7 @@ import { InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3, type BufferGe
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { type WorldEntity } from "./entities";
 import { type Material } from "./materials";
+import { assetFetch } from "../assetStore";
 
 export interface PropModel { name: string; file: string; size: [number, number, number]; material: Material; mass: number }
 
@@ -17,7 +18,7 @@ const SHADOWLESS = new Set(["cardboard_box", "plastic_crate"]);
 
 export async function loadPropModels(): Promise<PropModel[]> {
   try {
-    const response = await fetch(`${import.meta.env.BASE_URL}models/props/props.json`);
+    const response = await assetFetch(`${import.meta.env.BASE_URL}models/props/props.json`);
     return response.ok ? await response.json() as PropModel[] : [];
   } catch {
     return [];

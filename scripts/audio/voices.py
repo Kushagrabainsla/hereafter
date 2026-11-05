@@ -1,25 +1,35 @@
 #!/usr/bin/env python3
-"""Build the players' voices into public/audio/voice from src/game/voiceLines.json.
+"""Build the players' voices and memes into public/audio from src/game/voiceLines.json and
+src/game/memes.json.
 
-Each line comes from a recording if there is one, else from a placeholder voice:
-  assets-src/voices/<hi|en>/<line id>.<wav|mp3|m4a|ogg|flac|aiff>   recorded take (preferred)
+Voice lines (public/audio/voice/<hi|en>/<line id>.mp3) come from a recording if there is one:
+  assets-src/voices/<hi|en>/<line id>.<wav|mp3|m4a|ogg|flac|aiff>   recorded take
   English placeholder: Piper TTS, voice "norman" (public-domain LibriVox data), run with
                        PIPER_PYTHON (a Python that has `pip install piper-tts`).
-  Hindi placeholder:   eSpeak NG (`brew install espeak-ng`), robotic until recorded.
+  Hindi: no placeholder. A Hindi line is silent until it is recorded.
 Wordless efforts (jump, climb, pain, death) are cut from the CC0 "Male Grunt/Yelling sounds"
 pack by HaelDB, vocalist 3, downloaded by scripts/audio/fetch.sh.
+Memes (public/audio/meme/<code>.mp3) come from a clip named after the meme's code, or for a
+sound effect from its file in assets-src/memes/sfx (scripts/audio/fetch.sh fetches those):
+  assets-src/memes/<code>.<wav|mp3|m4a|ogg|flac|aiff>               e.g. H1.m4a, E6a.wav
+A meme without a clip is silent.
 
-Every clip is trimmed of silence, high-passed, peak-normalised to -3 dBFS and written as
-48 kHz mono MP3. Existing outputs are rebuilt only with --force or when a recording is newer.
-Usage: python3 scripts/audio/voices.py [--force] [--only hi|en|effort]
+Every voice clip is trimmed of silence, high-passed, peak-normalised to -3 dBFS and written as
+48 kHz mono MP3; memes keep their low end and reverb tails and peak at -4 dBFS. Existing
+outputs are rebuilt only with --force or when their source is newer.
+Usage: python3 scripts/audio/voices.py [--force] [--only hi|en|effort|meme]
 """
 import json, os, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 LINES = json.load(open(os.path.join(ROOT, "src", "game", "voiceLines.json"), encoding="utf-8"))
+MEMES = json.load(open(os.path.join(ROOT, "src", "game", "memes.json"), encoding="utf-8"))["memes"]
 SRC = os.path.join(ROOT, "assets-src")
 OUT = os.path.join(ROOT, "public", "audio", "voice")
 RECORDINGS = os.path.join(SRC, "voices")
+MEME_SRC = os.path.join(SRC, "memes")
+MEME_OUT = os.path.join(ROOT, "public", "audio", "meme")
+EXTENSIONS = ("wav", "mp3", "m4a", "ogg", "flac", "aiff")
 PIPER_MODEL = os.path.join(SRC, "audio", "piper-norman", "en_US-norman-medium.onnx")
 GRUNTS = os.path.join(SRC, "audio", "oga-haeldb-grunts", "x", "yelling sounds")
 # Vocalist 3's short grunts for effort, short yells for pain and long ones for dying.
@@ -37,12 +47,31 @@ def run(*args, **kw):
     return subprocess.run(args, check=True, capture_output=True, **kw)
 
 
-def recording(lang, line_id):
-    for ext in ("wav", "mp3", "m4a", "ogg", "flac", "aiff"):
-        path = os.path.join(RECORDINGS, lang, f"{line_id}.{ext}")
+def first(folder, name):
+    for ext in EXTENSIONS:
+        path = os.path.join(folder, f"{name}.{ext}")
         if os.path.exists(path):
             return path
     return None
+
+
+def recording(lang, line_id):
+    return first(os.path.join(RECORDINGS, lang), line_id)
+
+
+def meme_source(meme):
+    """A clip named after the meme's code, else a sound effect's fetched file."""
+    return first(MEME_SRC, meme["code"]) or (meme.get("sfx") and first(os.path.join(MEME_SRC, "sfx"), meme["sfx"]))
+
+
+def finish_meme(source, target):
+    """Trim silence (keeping quiet tails), peak-normalise to -4 dBFS and encode one meme."""
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    trim = "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.01,areverse,silenceremove=start_periods=1:start_threshold=-55dB:start_silence=0.08,areverse"
+    probe = run("ffmpeg", "-nostats", "-i", source, "-af", f"aformat=channel_layouts=mono,{trim},volumedetect", "-f", "null", "-").stderr.decode()
+    peak = float([l for l in probe.splitlines() if "max_volume" in l][0].split("max_volume:")[1].split("dB")[0])
+    run("ffmpeg", "-v", "error", "-y", "-i", source, "-af", f"aformat=channel_layouts=mono,{trim},volume={-4 - peak:.2f}dB,afade=t=in:d=0.003",
+        "-ar", "48000", "-c:a", "libmp3lame", "-b:a", "96k", target)
 
 
 def finish(source, target, placeholder=False):
@@ -87,7 +116,7 @@ def piper(texts, folder):
 
 def main():
     temp = tempfile.mkdtemp()
-    built = {"hi": 0, "en": 0, "effort": 0, "recorded": 0}
+    built = {"hi": 0, "en": 0, "effort": 0, "recorded": 0, "meme": 0, "silent": 0}
     try:
         lines = LINES["lines"]
         if ONLY in (None, "en"):
@@ -109,12 +138,9 @@ def main():
                 target, take = os.path.join(OUT, "hi", f"{line['id']}.mp3"), recording("hi", line["id"])
                 if take and stale(target, take):
                     finish(take, target); built["hi"] += 1; built["recorded"] += 1
-                elif not take and stale(target):
-                    if not shutil.which("espeak-ng"):
-                        sys.exit("Hindi placeholders need eSpeak NG: brew install espeak-ng (or record the line).")
-                    wav = os.path.join(temp, f"hi-{line['id']}.wav")
-                    run("espeak-ng", "-v", "hi+m3", "-s", "165", "-p", "38", "-a", "160", "-w", wav, line["hi"])
-                    finish(wav, target, True); built["hi"] += 1
+                elif not take and os.path.exists(target):
+                    # No synthesised Hindi: an unrecorded line is silent.
+                    os.remove(target)
         if ONLY in (None, "effort"):
             for kind, names in EFFORTS.items():
                 assert len(names) == LINES["efforts"][kind], kind
@@ -124,9 +150,17 @@ def main():
                         sys.exit(f"Missing {source}: run scripts/audio/fetch.sh first.")
                     if stale(target):
                         finish(source, target); built["effort"] += 1
+        if ONLY in (None, "meme"):
+            for meme in MEMES:
+                source, target = meme_source(meme), os.path.join(MEME_OUT, f"{meme['code']}.mp3")
+                if not source:
+                    built["silent"] += 1
+                elif stale(target, source):
+                    finish_meme(source, target); built["meme"] += 1
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     print(f"Voices: {built['en']} English, {built['hi']} Hindi, {built['effort']} efforts built ({built['recorded']} from recordings).")
+    print(f"Memes: {built['meme']} built, {built['silent']} without a clip yet.")
 
 
 main()

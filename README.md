@@ -70,11 +70,11 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 **Matches**
 - Five-minute rounds, or first to 15 kills. The winner is shown on the scoreboard, and the next round starts 12 seconds later with the market rebuilt.
 - A scoreboard on <kbd>Tab</kbd> with kills, deaths and ping, a round clock, and a kill feed naming who got whom.
-- Pick your name and voice (Hindi, English or grunts only) in the room dialog; they are saved in your browser.
+- Set up each match on the opening screen: single player or a room, the map, your callsign, your voice (Hindi, English or grunts only), 18+ lines and meme sounds. Your choices are saved in your browser and can be changed during play.
 
 **Multiplayer**
 - Share a link and play together, 2 to 8 players, browser to browser over WebRTC, with no game server.
-- A player opening the link connects while their world is still loading.
+- The map downloads while you set up the match; a player opening the link connects while their world is still building.
 - If the host's tab crashes, play carries on after about 2 seconds. If the host switches tabs, the role moves to another player straight away.
 
 **Look and sound**
@@ -82,7 +82,8 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 - Light bouncing off walls and floors is baked offline in Blender's Cycles. Wet paving reflects the lamps.
 - Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
 - A market that sounds alive: traffic beyond the walls, humming neon and air conditioners, and music thumping from the bar.
-- Players have voices: grunts, cries and sprint breathing, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. The lines are placeholders until recorded; see the [recording sheet](docs/voice-lines.md).
+- Players have voices: grunts, cries and sprint breathing, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. English lines are placeholders and Hindi lines are silent until recorded; see the [recording sheet](docs/voice-lines.md).
+- Meme sounds on top: a vine boom on a headshot, an air horn on a double kill, a metal pipe on a hard landing, crickets after a round with no kills, and famous meme lines in Hindi and English once their clips are added ([list](docs/voice-lines.md#memes)).
 
 ## How to play
 
@@ -110,11 +111,11 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 
 ## Play with friends
 
-1. Click **Play together**, then **Create room**.
-2. Copy the invite link and send it to your friends.
-3. They open it and join automatically, or type in the room code.
+1. On the setup screen choose **Multiplayer**, keep **Create room** and press **Deploy**.
+2. Press **Room** at the top right, copy the invite link and send it to your friends.
+3. Their setup screen opens on your room; they press **Deploy**. Or they type in the room code and choose **Join**.
 
-Once two players are in, a ten-second countdown starts the first round. Change your name under **Play together** at any time.
+Once two players are in, a ten-second countdown starts the first round. Change your name, voice and sound choices under **Room** at any time.
 
 Rooms are found through public Nostr relays and played over direct WebRTC connections between browsers; the game itself is static files on GitHub Pages. One player's browser checks combat for the room (range, cover, ammo, timing), and that role moves to another player if they leave, crash or switch tabs. Some networks block direct connections and would need a TURN relay, which isn't set up yet. See [multiplayer](docs/multiplayer.md) for how it works and [network benchmarks](docs/network-benchmarks.md) for the measurements behind it.
 
@@ -142,7 +143,7 @@ Open the URL Vite prints. No API key or account is needed: every asset the game 
 | `npm run build:viewmodels` | Rebuild the first-person arms and weapons (needs Blender 4.4+) |
 | `npm run build:lightmaps` | Rebake the market's light after a map change (needs Chrome and Blender) |
 | `npm run build:audio` | Download and rebuild the sound effects |
-| `npm run build:voices` | Rebuild the players' voices, using any recorded lines |
+| `npm run build:voices` | Rebuild the players' voices and memes from any recorded lines and added clips |
 
 Add `?renderer=webgl` to the URL to force WebGL 2. Pushes to `main` deploy to GitHub Pages through [`deploy-pages.yml`](.github/workflows/deploy-pages.yml).
 
@@ -198,7 +199,9 @@ docs/              design and engineering notes
 - Carbine: [AKM](https://opengameart.org/content/akm) by LonesomeDucky, OpenGameArt (CC0)
 - Sounds, all CC0: [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), reload packs on OpenGameArt, and [Kenney](https://kenney.nl/)'s Impact Sounds and RPG Audio
 
-- Voices: grunts and cries by HaelDB on OpenGameArt (CC0); placeholder lines from [Piper](https://github.com/OHF-Voice/piper1-gpl) with its public-domain "norman" voice, and [eSpeak NG](https://github.com/espeak-ng/espeak-ng)
+- Voices: grunts and cries by HaelDB on OpenGameArt (CC0); placeholder English lines from [Piper](https://github.com/OHF-Voice/piper1-gpl) with its public-domain "norman" voice
+- Meme sound effects, all CC0: [BigSoundBank](https://bigsoundbank.com/), OpenGameArt, Kenney, and instruments from [VS Chamber Orchestra Community Edition](https://github.com/sgossner/VSCO-2-CE)
+- Fonts: [Barlow and Barlow Condensed](https://github.com/jpt/barlow) by Jeremy Tribby and [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), both under the SIL Open Font License
 
 Full records, with authors and links, are in [asset sources](docs/data-sources.md).
 

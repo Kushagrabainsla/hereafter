@@ -1,5 +1,6 @@
 import { BufferAttribute, MeshStandardMaterial, MeshStandardNodeMaterial, SRGBColorSpace, TextureLoader, type BufferGeometry, type Mesh, type Texture } from "three/webgpu";
 import { diffuseColor, float, mix, texture, uv } from "three/tsl";
+import { assetFetch } from "../assetStore";
 
 // Baked light for the market's static surfaces, made offline by scripts/lightmaps from the
 // same map definition. Two images share one atlas, addressed by each surface's second set
@@ -29,7 +30,7 @@ export function checksum(geometry: BufferGeometry): number {
 export async function loadLightmap(name: string): Promise<Lightmap | null> {
   try {
     const base = `${import.meta.env.BASE_URL}lightmaps/${name}`;
-    const response = await fetch(`${base}.json`);
+    const response = await assetFetch(`${base}.json`);
     if (!response.ok) return null;
     const data = await response.json() as LightmapData;
     if (data.version !== 1) return null;

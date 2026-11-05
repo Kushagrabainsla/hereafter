@@ -47,7 +47,34 @@ The gunshot takes start 3 ms before each detected onset and keep a short tail; t
 |---|---|---|---|
 | Wordless efforts: jump and climb grunts, pain and death cries (`voice/effort/*`) | [Male Grunt/Yelling sounds](https://opengameart.org/content/male-gruntyelling-sounds), vocalist 3: `3grunt1` to `3grunt6` and ten `3yell` takes | HaelDB | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (also offered as OGA-BY 3.0) |
 | English lines, placeholders until recorded (`voice/en/*`) | Synthesised with [Piper](https://github.com/OHF-Voice/piper1-gpl) 1.3 and its voice [`en_US-norman-medium`](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/norman/medium), trained from scratch on public-domain LibriVox recordings | Bryce Beattie (voice) | Voice model MIT, training data public domain; the generated audio carries no licence |
-| Hindi lines, placeholders until recorded (`voice/hi/*`) | Synthesised with [eSpeak NG](https://github.com/espeak-ng/espeak-ng) 1.52, voice `hi+m3` | eSpeak NG contributors | The program is GPL-3.0; audio it generates is not covered by it |
+| Hindi lines (`voice/hi/*`) | Recorded by the project's author; silent until recorded (no synthesised placeholder) | | |
+
+## Memes
+
+`npm run build:voices` also builds `public/audio/meme/` from `src/game/memes.json`: a clip added as `assets-src/memes/<code>.*` for a meme line, or the sound effect below. Meme lines have no clips in the repository; see the [recording sheet](voice-lines.md#memes).
+
+| Meme | Source | Author | License |
+|---|---|---|---|
+| S1 vine boom (`meme/S1`) | Built from a concert bass drum hit in [VS Chamber Orchestra Community Edition](https://github.com/sgossner/VSCO-2-CE) (`Percussion/BDrumNewhit_v7_rr1_Sum.wav`): pitched down three semitones, low end boosted, lightly distorted, with a short reverb made in ffmpeg | Versilian Studios | [CC0 1.0](https://github.com/sgossner/VSCO-2-CE/blob/master/LICENSE) |
+| S2 air horn (`meme/S2`) | [Gas fog horn 1](https://bigsoundbank.com/gas-fog-horn-1-s1048.html), three blasts with the gaps shortened | Joseph Sardin, BigSoundBank | CC0 |
+| S3 boing (`meme/S3`) | [Boing](https://opengameart.org/content/boing) | Aeva, OpenGameArt | CC0 |
+| S4 metal pipe (`meme/S4`) | [Iron bar falling 1](https://bigsoundbank.com/iron-bar-falling-1-s0234.html), with a light room reverb | DenisChardonnet, BigSoundBank | CC0 |
+| S5 bonk (`meme/S5`) | `impactWood_medium_002` from [Impact Sounds](https://kenney.nl/assets/impact-sounds) | Kenney | CC0 |
+| S6 "dun dun dunnn" (`meme/S6`) | Arranged from VS Chamber Orchestra Community Edition samples: tenor trombone, tuba and horn staccatos on D and F, a held trombone and tuba C♯, timpani and bass drum, with a hall reverb made in ffmpeg | Versilian Studios | CC0 1.0 |
+| S7 crickets (`meme/S7`) | [Field cricket](https://bigsoundbank.com/field-cricket-s1020.html), 14.5 to 17.6 s | Joseph Sardin, BigSoundBank | CC0 |
+| S8 record scratch (`meme/S8`) | [Vinyl scratch 18](https://bigsoundbank.com/vinyl-scratch-18-s2875.html), declipped | Joseph Sardin, BigSoundBank | CC0 |
+| S9 fart (`meme/S9`) | [Gastric distress](https://opengameart.org/content/gastric-distress), 4.52 to 5.40 s, declipped | LFA, OpenGameArt | CC0 |
+| E22 sad trombone (`meme/E22`) | Arranged from VS Chamber Orchestra Community Edition trombone sustains and vibrato (E♭, D, C♯, then a held, sagging C), with a plunger-style filter and reverb made in ffmpeg | Versilian Studios | CC0 1.0 |
+
+The sound effects were picked and prepared from waveforms, spectrograms and level measurements, not by ear; they should still be judged by listening. The air horn is a single-pitch gas horn rather than a chord, the pipe a thin iron bar, and the crickets a single cricket.
+
+## Setup screen
+
+| Asset | Source | License |
+|---|---|---|
+| Map stills (`public/maps/night-market*.jpg`) | Screenshots of the game's own Night Market, without the HUD | Same as the game |
+| Fonts: Barlow, Barlow Condensed | [Barlow](https://github.com/jpt/barlow) by Jeremy Tribby, through [Fontsource](https://fontsource.org/) | [SIL Open Font License 1.1](https://openfontlicense.org/) |
+| Font: JetBrains Mono | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) by JetBrains, through Fontsource | SIL Open Font License 1.1 |
 
 ## Props
 

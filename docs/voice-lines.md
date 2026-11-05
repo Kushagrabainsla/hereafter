@@ -1,6 +1,6 @@
 # Voice lines: recording sheet
 
-Every line a player can say, in the order of the match. The game plays the voice each player picks in the room dialog (Hindi, English or grunts only). The Hindi and English lines are placeholders made by text-to-speech until they are recorded; recordings drop in by file name. The jump, climb, pain and death sounds are recordings already ([sources](data-sources.md#voices)).
+Every line a player can say, in the order of the match, and the [memes](#memes) played on top. The game plays the voice each player picks on the setup screen or in the room dialog (Hindi, English or grunts only). The English lines are placeholders made by text-to-speech until they are recorded; the Hindi lines are silent until they are recorded, as no synthesised Hindi is good enough. Recordings drop in by file name. The jump, climb, pain and death sounds are recordings already ([sources](data-sources.md#voices)).
 
 **Tiers.** Clean and Spicy lines always play. 18+ lines play only for listeners who turn on "Hear 18+ lines" in the room dialog; everyone else hears a clean line from the same moment instead.
 
@@ -8,7 +8,7 @@ Every line a player can say, in the order of the match. The game plays the voice
 
 1. Record each line as its own file, named after the File column: `assets-src/voices/hi/round-go.wav` for the Hindi `round-go`, `assets-src/voices/en/round-go.wav` for the English. WAV, M4A, MP3, OGG, FLAC and AIFF all work. Phone voice memos are fine.
 2. Say it as you would in the middle of a fight: short, loud and with feeling, not read out. Stand about 20 cm from the microphone, in a quiet room with soft furnishings, and leave a moment of silence before and after.
-3. Run `npm run build:voices`. It trims the silence, evens out the level and replaces the placeholder of every line you have recorded, leaving the rest. Commit what changed in `public/audio/voice/`.
+3. Run `npm run build:voices`. It trims the silence, evens out the level and replaces the placeholder of every line you have recorded, leaving the rest. Commit what changed in `public/audio/voice/` (and `public/audio/meme/` for memes).
 
 Record one take per line; the game varies the pitch a little each time it plays. A line can be reworded freely, as long as the file keeps its name. To add or remove lines, edit `src/game/voiceLines.json`.
 
@@ -63,3 +63,66 @@ Record one take per line; the game varies the pitch a little each time it plays.
 | `revenge-hisaab` | Kills whoever last killed them | Clean | हिसाब बराबर। | Hisaab barabar. | Now we're even. |
 | `respawn-wapas` | Respawns | Clean | वापस आ गया! | Wapas aa gaya! | I'm back! |
 | `respawn-picture` | Respawns | Spicy | पिक्चर अभी बाक़ी है, मेरे दोस्त! | Picture abhi baaki hai, mere dost! | The show's not over yet! |
+
+## Memes
+
+Meme lines and sound effects play on top of the voices, at the moments below ([how they are picked](audio.md)). The sound effects ship with the game. A meme line plays once its clip is added: put it in `assets-src/memes/`, named after its code (`H1.wav`, `E6a.m4a`; WAV, M4A, MP3, OGG, FLAC and AIFF all work), and run `npm run build:voices`, which trims it, evens out its level and writes `public/audio/meme/<code>.mp3`. A line can be your own recording or the original clip; clips from films, shows and songs belong to their owners, and putting them on the public site risks a copyright takedown. Lines are in the speaker's language; grunts-only players set off only the sound effects. To change a meme's moment, tier or chance, edit `src/game/memes.json`.
+
+| Code | Meme | From | Language | When | Tier | File |
+|---|---|---|---|---|---|---|
+| H1 | Kitne aadmi the? | Sholay (1975) | Hindi | A round starts | Clean | `assets-src/memes/H1.wav` |
+| H2 | How's the josh? | Uri (2019) | Hindi | A round starts | Clean | `assets-src/memes/H2.wav` |
+| H3 | Jaa Simran, jaa | DDLJ (1995) | Hindi | Sprints for 4 s | Clean | `assets-src/memes/H3.wav` |
+| H4 | Bhaag D.K. Bose | Delhi Belly (2011), song | Hindi | Sprints for 4 s | 18+ | `assets-src/memes/H4.wav` |
+| H5 | Hey Maa, Mataji! | Taarak Mehta Ka Ooltah Chashmah | Hindi | A frag lands within 6 m | Clean | `assets-src/memes/H5.wav` |
+| H6 | Rasode mein kaun tha? | Yashraj Mukhate remix (2020) | Hindi | A round passes within 1.5 m | Clean | `assets-src/memes/H6.wav` |
+| H7 | Daya, kuch toh gadbad hai | CID | Hindi | A round passes within 1.5 m | Clean | `assets-src/memes/H7.wav` |
+| H8 | Daya, darwaza tod do | CID | Hindi | Shoots glass | Clean | `assets-src/memes/H8.wav` |
+| H9 | Thappad se darr nahi lagta, sahab | Dabangg (2010) | Hindi | Hit | Clean | `assets-src/memes/H9.wav` |
+| H10 | Mogambo khush hua | Mr. India (1987) | Hindi | Gets a kill | Clean | `assets-src/memes/H10.wav` |
+| H11 | Dekh raha hai Binod? | Slayy Point video (2020) | Hindi | Gets a kill | Clean | `assets-src/memes/H11.wav` |
+| H12 | Bachcha hai tu mera | Dhurandhar 2 (2026) | Hindi | Gets a kill | Spicy | `assets-src/memes/H12.wav` |
+| H13 | Ab tera kya hoga, Kaaliya? | Sholay (1975) | Hindi | Hits someone down to 25 health or less | Clean | `assets-src/memes/H13.wav` |
+| H14 | Arre o Sambha, kitna inaam rakhe hai… | Sholay (1975) | Hindi | A second kill within 4 s | Clean | `assets-src/memes/H14.wav` |
+| H15 | Ek baar jo maine commitment kar di… | Wanted (2009) | Hindi | Kills whoever last killed them | Clean | `assets-src/memes/H15.wav` |
+| H16 | Aaj khush toh bahut hoge tum | Deewar (1975) | Hindi | Wins the round | Clean | `assets-src/memes/H16.wav` |
+| H17 | Tunak Tunak Tun | Daler Mehndi, song | Hindi | Wins the round | Clean | `assets-src/memes/H17.wav` |
+| H18 | Main jhukega nahi, saala | Pushpa (2021) | Hindi | Hit down to 25 health or less | Spicy | `assets-src/memes/H18.wav` |
+| H19 | Tumse na ho payega | Gangs of Wasseypur (2012) | Hindi | Loses the round | Clean | `assets-src/memes/H19.wav` |
+| H20 | Uthaa le re baba | Hera Pheri (2000) | Hindi | Dies | Clean | `assets-src/memes/H20.wav` |
+| H21 | Moye moye | Serbian song "Džanum" | Hindi | Dies | Clean | `assets-src/memes/H21.wav` |
+| H22 | Saala ye dukh kaahe khatam nahi hota hai be | Masaan (2015) | Hindi | Dies a third time without a kill | Spicy | `assets-src/memes/H22.wav` |
+| H23 | Apna Time Aayega | Gully Boy (2019), song | Hindi | Respawns | Clean | `assets-src/memes/H23.wav` |
+| H24 | Hello friends, chai pi lo | Somvati Mahawar video | Hindi | Respawns | Clean | `assets-src/memes/H24.wav` |
+| E1 | Leeroy Jenkins! | 2005 gaming video | English | A round starts | Clean | `assets-src/memes/E1.wav` |
+| E2 | Yeet | Vine | English | Jumps or Throws a frag | Clean | `assets-src/memes/E2.wav` |
+| E3 | Deja Vu | Initial D, song | English | Sprints for 4 s | Clean | `assets-src/memes/E3.wav` |
+| E4 | Yakety Sax | Benny Hill chase music | English | Sprints for 4 s | Clean | `assets-src/memes/E4.wav` |
+| E5 | Why are you running? | Viral video | English | Hits someone who is sprinting | Clean | `assets-src/memes/E5.wav` |
+| E6a | Omae wa mou shindeiru | Fist of the North Star | English | Throws a frag | Clean | `assets-src/memes/E6a.wav` |
+| E6b | NANI?! | Fist of the North Star | English | Answers E6a, said by the player the frag lands near | Clean | `assets-src/memes/E6b.wav` |
+| E7 | Oh hell nah | Viral | English | A frag lands within 6 m | Spicy | `assets-src/memes/E7.wav` |
+| E8 | FBI, open up! | Viral | English | Shoots glass | Clean | `assets-src/memes/E8.wav` |
+| E9 | Wow | Owen Wilson | English | Kills with a headshot | Clean | `assets-src/memes/E9.wav` |
+| E10 | Noice | Brooklyn Nine-Nine | English | Gets a kill | Clean | `assets-src/memes/E10.wav` |
+| E11 | Emotional damage! | Steven He | English | Gets a kill | Clean | `assets-src/memes/E11.wav` |
+| E12 | Hasta la vista, baby | Terminator 2 | English | Gets a kill | Clean | `assets-src/memes/E12.wav` |
+| E13 | This is Sparta! | 300 | English | Kills with the knife | Clean | `assets-src/memes/E13.wav` |
+| E14 | Surprise, motherf— | Dexter | English | Kills with the knife | 18+ | `assets-src/memes/E14.wav` |
+| E15 | Bruh | Viral | English | Out of ammunition | Clean | `assets-src/memes/E15.wav` |
+| E16 | I'll be back | The Terminator | English | Dies | Clean | `assets-src/memes/E16.wav` |
+| E17 | To Be Continued | "Roundabout" by Yes, song | English | Dies | Clean | `assets-src/memes/E17.wav` |
+| E18 | Coffin Dance | "Astronomia", song | English | Dies | Clean | `assets-src/memes/E18.wav` |
+| E19 | Oh No | TikTok song | English | Dies | Clean | `assets-src/memes/E19.wav` |
+| E20 | Directed by Robert B. Weide | Curb Your Enthusiasm theme, song | English | Dies to their own frag or a fall | Clean | `assets-src/memes/E20.wav` |
+| E21 | Ight, imma head out | SpongeBob | English | Leaves the room | Clean | `assets-src/memes/E21.wav` |
+| E22 | Sad trombone | Classic gag | Any (no words) | Loses the round | Clean | Ships with the game |
+| S1 | Vine boom | Sound effect | Any (no words) | Kills with a headshot | Clean | Ships with the game |
+| S2 | Air horn | Sound effect | Any (no words) | A second kill within 4 s | Clean | Ships with the game |
+| S3 | Boing | Sound effect | Any (no words) | Jumps | Clean | Ships with the game |
+| S4 | Metal pipe clang | Sound effect | Any (no words) | Lands hard from a height | Clean | Ships with the game |
+| S5 | Bonk | Sound effect | Any (no words) | Hits someone with the knife | Clean | Ships with the game |
+| S6 | Dramatic "dun dun dunnn" | Sound effect | Any (no words) | Hit down to 25 health or less | Clean | Ships with the game |
+| S7 | Crickets | Sound effect | Any (no words) | A round ends with no kills | Clean | Ships with the game |
+| S8 | Record scratch | Sound effect | Any (no words) | Respawns | Clean | Ships with the game |
+| S9 | Fart | Sound effect | Any (no words) | Crouches three times by someone who just died | Spicy | Ships with the game |

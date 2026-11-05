@@ -1,4 +1,5 @@
 import { joinRoom, selfId } from "trystero";
+import { normalizeRoomCode, newRoomCode } from "../settings";
 import { type Arena } from "../world/arena";
 import { type PlayerPose } from "../game/playerController";
 import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, type SentState } from "../game/matchState";
@@ -6,7 +7,6 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
 const PROTOCOL_VERSION = 18;
-const ROOM_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
 // of the five it picked failed or took seconds to pass a message on, and the rest took 135 to
@@ -54,6 +54,8 @@ type PropsPacket = { version: number; map: string; states: PropState[] };
 // Shoves a player gave loose props the coordinator simulates: [id, impulse x, y, z] in N·s.
 export type PropPush = [string, number, number, number];
 type PushPacket = { version: number; map: string; pushes: PropPush[] };
+// A meme a player's own movement set off (src/game/memes.ts), so every peer plays the same one.
+type MemePacket = { version: number; code: string; seed: number };
 
 export interface PeerRoomEvents {
   onPeers: (count: number, spawnSlot: number) => void;
@@ -62,6 +64,7 @@ export interface PeerRoomEvents {
   onStatus: (message: string) => void;
   onProps?: (states: PropState[]) => void;
   onPushes?: (pushes: PropPush[]) => void;
+  onMeme?: (peerId: string, code: string, seed: number) => void;
 }
 
 // Every two seconds each peer tells the coordinator how well it could coordinate, and the
@@ -187,14 +190,7 @@ function validIntent(value: unknown): value is CombatIntent {
   return intent.kind === "reload" || intent.kind === "respawn";
 }
 
-export function normalizeRoomCode(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
-export function newRoomCode(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(10));
-  return [...bytes].map((byte) => ROOM_ALPHABET[byte % ROOM_ALPHABET.length]).join("");
-}
+export { normalizeRoomCode, newRoomCode };
 
 export class PeerRoom {
   readonly code: string;
@@ -205,6 +201,7 @@ export class PeerRoom {
   private syncAction;
   private propsAction;
   private pushAction;
+  private memeAction;
   private leaderAction;
   private fitnessAction;
   private peers = new Set<string>();
@@ -302,6 +299,7 @@ export class PeerRoom {
     this.syncAction = this.room.makeAction<SyncPacket>("combat-sync-v1");
     this.propsAction = this.room.makeAction<PropsPacket>("props-v1");
     this.pushAction = this.room.makeAction<PushPacket>("prop-push-v1");
+    this.memeAction = this.room.makeAction<MemePacket>("meme-v1");
     this.leaderAction = this.room.makeAction<LeaderPacket>("leader-v1");
     this.fitnessAction = this.room.makeAction<FitnessPacket>("fitness-v1");
     this.leaderAction.onMessage = (value, { peerId }) => {
@@ -333,6 +331,10 @@ export class PeerRoom {
       const pushes = value.pushes.filter((push) => Array.isArray(push) && push.length === 4 && typeof push[0] === "string" && push[0].length < 40
         && push.slice(1).every((n) => typeof n === "number" && Number.isFinite(n)) && Math.hypot(push[1], push[2], push[3]) <= 120).slice(0, 8);
       if (pushes.length) this.events.onPushes?.(pushes);
+    };
+    this.memeAction.onMessage = (value, { peerId }) => {
+      if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || typeof value.code !== "string" || value.code.length > 8 || !Number.isInteger(value.seed)) return;
+      this.events.onMeme?.(peerId, value.code, value.seed);
     };
     this.propsAction.onMessage = (value, { peerId }) => {
       if (peerId !== this.leaderId || this.leaderId === selfId || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.states)) return;
@@ -776,6 +778,11 @@ export class PeerRoom {
   sendProps(states: PropState[]): void {
     if (this.leaderId !== selfId || !this.peers.size || !states.length) return;
     void this.propsAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, states }).catch(() => undefined);
+  }
+
+  sendMeme(code: string, seed: number): void {
+    if (!this.peers.size) return;
+    void this.memeAction.send({ version: PROTOCOL_VERSION, code, seed }).catch(() => undefined);
   }
 
   sendPushes(pushes: PropPush[]): void {

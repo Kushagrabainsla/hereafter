@@ -7,6 +7,7 @@ import {
 import { type ShotRay } from "../world/physics";
 import { type PlayerPose } from "./playerController";
 import { BODY_COST, MATERIALS, PENETRATION, type Material } from "../world/materials";
+import { cleanName, NAME_LENGTH } from "../settings";
 
 export interface Vec3 { x: number; y: number; z: number }
 
@@ -52,13 +53,9 @@ export const KILL_LIMIT = 15;
 export const COUNTDOWN_MS = 10_000;
 export const INTERMISSION_MS = 12_000;
 const PHASES: RoundPhase[] = ["warmup", "countdown", "live", "over"];
-export const NAME_LENGTH = 16;
-
-// A name as the game keeps it: no control or formatting characters, single spaces, and at most
-// 16 characters. It is only ever shown as text.
-export function cleanName(name: string): string {
-  return Array.from(name.normalize("NFC").replace(/[\p{C}]/gu, "").replace(/\s+/g, " ").trim()).slice(0, NAME_LENGTH).join("").trim();
-}
+// Names are kept as cleanName (in settings.ts) leaves them: no control or formatting
+// characters, single spaces, and at most NAME_LENGTH characters, only ever shown as text.
+export { cleanName, NAME_LENGTH };
 
 // Players in order of the scoreboard: most kills, then fewest deaths.
 export function standings(players: Record<string, CombatPlayer>): (CombatPlayer & { id: string })[] {

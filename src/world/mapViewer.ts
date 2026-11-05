@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, MeshBasicMaterial, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
+  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
 import { float, luminance, mix, pass, renderOutput, screenUV, smoothstep, vec3, vec4 } from "three/tsl";
@@ -54,7 +54,10 @@ export interface MapViewerEvents {
   // Current hip-fire spread as a crosshair gap in CSS pixels; melee is true for the knife.
   onAim?: (spreadPixels: number, melee: boolean, aiming: boolean) => void;
   // Loading progress from 0 to 1, with the step under way when it changes.
-  onProgress?: (fraction: number, step?: string) => void;
+  // Building the world, step by step: textures, buildings, props, renderer, physics, shaders.
+  onStep?: (step: BuildStep) => void;
+  // How far through its files the current step is, from 0 to 1.
+  onStepProgress?: (step: BuildStep, fraction: number) => void;
   // A landing at this speed (m/s), fast enough that it may hurt.
   onHardLanding?: (speed: number) => void;
 }
@@ -133,23 +136,26 @@ function paint(): Promise<void> {
   return new Promise((resolve) => { requestAnimationFrame(() => setTimeout(resolve, 0)); setTimeout(resolve, 60); });
 }
 
+// The first frames reveal the market in this many slices, building each slice's shaders.
+const WARM_SLICES = 16;
+
+export type BuildStep = "textures" | "buildings" | "props" | "renderer" | "physics" | "shaders";
+
 export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
-  // Each step owns a span of the loading bar. Files that finish during a step (Three.js
-  // loaders report them to the default manager) fill that step's span, so the bar keeps
-  // moving on a slow connection without running ahead of the work.
-  let from = 0.04, until = 0.45;
-  DefaultLoadingManager.onProgress = (_url, loaded, total) => { if (total > 0) events.onProgress?.(from + (until - from) * loaded / total); };
-  const step = async (fraction: number, next: number, label: string): Promise<void> => {
-    from = fraction;
-    until = next;
-    events.onProgress?.(fraction, label);
+  // Each step is reported as it starts, with the files that finish during it (Three.js loaders
+  // report them to the default manager), so the loading screen can show how far it is.
+  let current: BuildStep = "textures";
+  DefaultLoadingManager.onProgress = (_url, loaded, total) => { if (total > 0) events.onStepProgress?.(current, loaded / total); };
+  const step = async (next: BuildStep): Promise<void> => {
+    current = next;
+    events.onStep?.(next);
     await paint();
   };
   const data = nightMarketData();
   events.onStatus("loading", `Loading the ${data.layout.name} and its materials…`);
-  events.onProgress?.(0.04, `Loading the ${data.layout.name}`);
+  events.onStep?.("textures");
   const [textures, lightmap] = await Promise.all([loadSurfaceTextures(), loadLightmap("night-market")]);
-  await step(0.45, 0.55, "Building alleys and buildings");
+  await step("buildings");
   const scene = new Scene();
   // Dusk: the last low orange light catches the upper floors while the alleys fall into
   // shadow, lit by the market itself. The painted sky is also what surfaces reflect.
@@ -202,13 +208,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   });
   for (const entity of TRUCK_ENTITIES) entities.add(entity);
   for (const [id, objects] of truck.groups) groups.set(id, objects);
-  await step(0.55, 0.7, "Placing stalls, props and lights");
+  await step("props");
   await propViews.load(propModels);
   propViews.addModel(FUEL_DRUM.name, pieces.get(FUEL_DRUM.name)?.parts ?? []);
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
   propViews.build(props);
 
-  await step(0.7, 0.8, "Starting the renderer");
+  await step("renderer");
   const camera = new PerspectiveCamera(75, 1, 0.05, 2000);
   // Smoke, steam and powder draw in a scene of their own, laid over the world after its
   // ambient occlusion. Inside a cloud, a grey haze just in front of the eyes covers the world
@@ -249,7 +255,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   if (clustered) renderer.lighting = new FixedGridLighting(1024, 64, 16, 48);
   built.light(clustered);
   container.appendChild(renderer.domElement);
-  await step(0.8, 0.92, "Building physics");
+  await step("physics");
   const physics = new PhysicsWorld(data, arena);
   for (const solid of data.layout.solids) physics.addBox(solid.half, solid.center, solid.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, solid.material);
   for (const entity of entities.all()) physics.addEntity(entity);
@@ -416,7 +422,24 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Whether the aim button is held, and how much each gun's sights magnify the view.
   let aimWanted = false;
   const AIM_ZOOM: Record<WeaponKind, number> = { knife: 1, pistol: 1.25, rifle: 1.5 };
+  // The first frames build every shader the market needs, the longest step of all on most
+  // machines; the loading screen says so before the page stalls on it.
+  DefaultLoadingManager.onProgress = () => undefined;
+  await step("shaders");
+  // Drawn all at once the shader builds stall the page for seconds; so the market appears a
+  // slice at a time over the first frames, each slice building its own shaders, and the
+  // loading screen follows the slices.
+  const warming: Object3D[] = [];
+  scene.traverse((object) => { if (object.visible && (object as Mesh).isMesh) warming.push(object); });
+  for (const object of warming) object.visible = false;
+  let warmed = 0, warmedAt = 0;
   renderer.setAnimationLoop((time) => {
+    if (warmed < warming.length) {
+      const next = Math.min(warming.length, warmed + Math.ceil(warming.length / WARM_SLICES));
+      for (; warmed < next; warmed += 1) warming[warmed].visible = true;
+      events.onStepProgress?.("shaders", warmed / warming.length);
+      if (warmed === warming.length) warmedAt = renderedFrames + 1;
+    }
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     const steps = physics.steps;
     // Other players shove props on the coordinating peer before the world steps.
@@ -501,8 +524,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     pipeline.render();
     frames += 1;
     renderedFrames += 1;
-    if (renderedFrames === 1) { DefaultLoadingManager.onProgress = () => undefined; events.onProgress?.(0.92, "Preparing shaders"); }
-    if (!readySent && renderedFrames >= 2) {
+    if (!readySent && warmed === warming.length && renderedFrames >= warmedAt + 2) {
       events.onStatus("ready", `${data.layout.name} loaded. Use arrow keys to move and drag on the map to look around.`);
       readySent = true;
       readyAt = time;
