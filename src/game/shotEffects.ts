@@ -1,11 +1,11 @@
-import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, Scene, SphereGeometry, Vector3 } from "three/webgpu";
+import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, Scene, Vector3 } from "three/webgpu";
 import { type CombatEvent } from "./matchState";
 
-// Bounded effects: one shared geometry per shape, no lights or per-frame allocations.
+// Tracers: a thin streak from the muzzle along each shot, gone in under a tenth of a second.
+// Bounded: one shared geometry, no lights or per-frame allocations.
 export class ShotEffects {
   private effects: { root: Group; material: MeshBasicMaterial; age: number; life: number; dust: boolean }[] = [];
   private trail = new CylinderGeometry(0.009, 0.009, 1, 5);
-  private sphere = new SphereGeometry(1, 6, 4);
   constructor(private scene: Scene) {}
 
   show(event: CombatEvent, muzzle?: Vector3): void {
@@ -45,5 +45,5 @@ export class ShotEffects {
       if (effect.dust) effect.root.scale.setScalar(1+effect.age*4);
     }
   }
-  dispose(): void { while (this.effects.length) this.remove(0); this.trail.dispose(); this.sphere.dispose(); }
+  dispose(): void { while (this.effects.length) this.remove(0); this.trail.dispose(); }
 }

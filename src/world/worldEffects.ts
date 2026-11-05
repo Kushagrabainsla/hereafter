@@ -1,6 +1,6 @@
 import {
-  AdditiveBlending, BoxGeometry, CanvasTexture, Color, Euler, InstancedMesh, Matrix4,
-  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
+  AdditiveBlending, BufferGeometry, CanvasTexture, Color, Euler, Group, InstancedMesh, Matrix4,
+  MeshBasicMaterial, MeshStandardMaterial, PointLight, Quaternion, Scene, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "./arena";
 import { type InstanceRef, type WorldEntity, type Vec3 } from "./entities";
@@ -27,32 +27,50 @@ const STYLES: Record<Style, { colors: number[]; size: [number, number]; speed: [
 
 const IMPACT_STYLE: Record<ReturnType<() => (typeof MATERIALS)[Material]["impact"]>, Style> = { dust: "dust", sparks: "sparks", splinters: "splinters", shards: "shards", puff: "puff", blood: "blood" };
 
-interface Particle { alive: boolean; position: Vector3; velocity: Vector3; rotation: Euler; spin: Vector3; age: number; life: number; size: number; stretch: number; gravity: number; floor: number }
+// An instanced mesh that draws only one copy, shrunk to nothing. Drawing it from the first
+// frame builds its shaders while the map loads, not at the first shot.
+export function hideAll(mesh: InstancedMesh): void {
+  mesh.setMatrixAt(0, new Matrix4().makeScale(0, 0, 0));
+  mesh.count = 1;
+  mesh.instanceMatrix.needsUpdate = true;
+}
 
+// The modelled shape (effects.glb) each look of particle is drawn with.
+type Shape = "chip" | "splinter" | "shard" | "leaf" | "spark";
+const SHAPE: Record<Style, Shape> = { dust: "chip", sparks: "spark", splinters: "splinter", shards: "shard", puff: "chip", blood: "chip", chunks: "chip", soil: "chip", leaves: "leaf", embers: "spark" };
+
+interface Particle { alive: boolean; shape: Shape; color: Color; position: Vector3; velocity: Vector3; rotation: Euler; spin: Vector3; age: number; life: number; size: number; stretch: number; gravity: number; floor: number }
+
+// Debris in flight, drawn as one instanced mesh per shape that holds only the pieces flying, each
+// coloured by its look. Glowing pools (sparks, embers) are drawn unlit.
 class ParticlePool {
-  readonly mesh: InstancedMesh;
+  readonly group = new Group();
+  private meshes = new Map<Shape, InstancedMesh>();
   private particles: Particle[];
   private next = 0;
   private matrix = new Matrix4();
   private quaternion = new Quaternion();
   private scale = new Vector3();
-  private color = new Color();
 
-  constructor(glow: boolean, count: number) {
+  constructor(glow: boolean, count: number, shapes: Map<Shape, BufferGeometry>) {
     const material = glow ? new MeshBasicMaterial({ color: 0xffffff, toneMapped: false }) : new MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
-    this.mesh = new InstancedMesh(new BoxGeometry(1, 1, 1), material, count);
-    this.mesh.frustumCulled = false;
-    this.particles = Array.from({ length: count }, () => ({ alive: false, position: new Vector3(), velocity: new Vector3(), rotation: new Euler(), spin: new Vector3(), age: 0, life: 1, size: 0, stretch: 1, gravity: 9, floor: 0 }));
-    for (let index = 0; index < count; index += 1) { this.mesh.setMatrixAt(index, new Matrix4().makeScale(0, 0, 0)); this.mesh.setColorAt(index, this.color.set(0xffffff)); }
+    for (const [shape, geometry] of shapes) {
+      const mesh = new InstancedMesh(geometry, material, count);
+      mesh.setColorAt(0, new Color(0xffffff));
+      hideAll(mesh);
+      mesh.frustumCulled = false;
+      this.meshes.set(shape, mesh);
+      this.group.add(mesh);
+    }
+    this.particles = Array.from({ length: count }, () => ({ alive: false, shape: "chip" as Shape, color: new Color(), position: new Vector3(), velocity: new Vector3(), rotation: new Euler(), spin: new Vector3(), age: 0, life: 1, size: 0, stretch: 1, gravity: 9, floor: 0 }));
   }
 
   spawn(at: Vec3, direction: Vec3, count: number, style: Style, floor: number, spread = 0.9): void {
     const look = STYLES[style];
     const range = (pair: [number, number]): number => pair[0] + Math.random() * (pair[1] - pair[0]);
     for (let i = 0; i < count; i += 1) {
-      const index = this.next;
+      const particle = this.particles[this.next];
       this.next = (this.next + 1) % this.particles.length;
-      const particle = this.particles[index];
       const speed = range(look.speed);
       const random = new Vector3(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).multiplyScalar(spread);
       particle.velocity.set(direction.x, direction.y, direction.z).add(random).normalize().multiplyScalar(speed);
@@ -65,23 +83,18 @@ class ParticlePool {
       particle.stretch = look.stretch ?? 1;
       particle.gravity = look.gravity;
       particle.floor = floor;
+      particle.shape = SHAPE[style];
+      particle.color.set(look.colors[Math.floor(Math.random() * look.colors.length)]);
       particle.alive = true;
-      this.mesh.setColorAt(index, this.color.set(look.colors[Math.floor(Math.random() * look.colors.length)]));
     }
-    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
 
   update(seconds: number): void {
-    let touched = false;
-    this.particles.forEach((particle, index) => {
-      if (!particle.alive) return;
-      touched = true;
+    const counts = new Map<Shape, number>();
+    for (const particle of this.particles) {
+      if (!particle.alive) continue;
       particle.age += seconds;
-      if (particle.age >= particle.life) {
-        particle.alive = false;
-        this.mesh.setMatrixAt(index, this.matrix.makeScale(0, 0, 0));
-        return;
-      }
+      if (particle.age >= particle.life) { particle.alive = false; continue; }
       particle.velocity.y -= particle.gravity * seconds;
       particle.position.addScaledVector(particle.velocity, seconds);
       if (particle.position.y < particle.floor) {
@@ -90,34 +103,29 @@ class ParticlePool {
         particle.spin.multiplyScalar(0.6);
       }
       particle.rotation.x += particle.spin.x * seconds; particle.rotation.y += particle.spin.y * seconds; particle.rotation.z += particle.spin.z * seconds;
+      const mesh = this.meshes.get(particle.shape);
+      if (!mesh) continue;
       const fade = Math.min(1, (particle.life - particle.age) / (particle.life * 0.35));
-      const size = particle.size * fade;
+      const size = particle.size * fade, index = counts.get(particle.shape) ?? 0;
       this.quaternion.setFromEuler(particle.rotation);
-      this.matrix.compose(particle.position, this.quaternion, this.scale.set(size, size * particle.stretch, size));
-      this.mesh.setMatrixAt(index, this.matrix);
-    });
-    if (touched) this.mesh.instanceMatrix.needsUpdate = true;
+      mesh.setMatrixAt(index, this.matrix.compose(particle.position, this.quaternion, this.scale.set(size, size * particle.stretch, size)));
+      mesh.setColorAt(index, particle.color);
+      counts.set(particle.shape, index + 1);
+    }
+    for (const [shape, mesh] of this.meshes) {
+      const count = counts.get(shape) ?? 0;
+      if (count === 0) { if (mesh.count !== 1 || mesh.userData.live) { hideAll(mesh); mesh.userData.live = false; } continue; }
+      mesh.userData.live = true;
+      mesh.count = count;
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
   }
 }
 
-function holeTexture(): CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 64;
-  const context = canvas.getContext("2d")!;
-  const gradient = context.createRadialGradient(32, 32, 2, 32, 32, 31);
-  gradient.addColorStop(0, "rgba(10,10,10,1)");
-  gradient.addColorStop(0.28, "rgba(25,23,20,0.95)");
-  gradient.addColorStop(0.45, "rgba(70,64,56,0.6)");
-  gradient.addColorStop(1, "rgba(120,112,100,0)");
-  context.fillStyle = gradient;
-  context.beginPath();
-  for (let angle = 0; angle < Math.PI * 2; angle += 0.35) {
-    const radius = 22 + Math.random() * 9;
-    context.lineTo(32 + Math.cos(angle) * radius, 32 + Math.sin(angle) * radius);
-  }
-  context.fill();
-  return new CanvasTexture(canvas);
-}
+
+// Bullet holes kept at once; the oldest goes when another is made.
+const DECALS = 260;
 
 interface Smoke { mesh: Sprite; material: SpriteMaterial; age: number; life: number; growth: number; rise: number; base: number }
 
@@ -142,8 +150,8 @@ interface FlyingGrenade { mesh: Object3D; path: GrenadePath; start: number; boun
 // Visual effects of combat on the world: impacts, bullet holes, breaking objects,
 // explosions and grenades in flight. Nothing here affects the game state.
 export class WorldEffects {
-  private solid = new ParticlePool(false, 700);
-  private glow = new ParticlePool(true, 260);
+  private solid: ParticlePool;
+  private glow: ParticlePool;
   private decals: InstancedMesh;
   private nextDecal = 0;
   private hidden = new Map<string, { ref: InstanceRef; matrix: Matrix4 }[]>();
@@ -162,10 +170,17 @@ export class WorldEffects {
 
   // `groups` holds plain objects drawn for an entity (hand-built maps), hidden while it is destroyed.
   constructor(private scene: Scene, private data: ArenaData, private refs: Map<string, InstanceRef[]>, private camera: () => Vector3, private groups = new Map<string, Object3D[]>(), private pieces = new Map<string, KitPiece>()) {
-    scene.add(this.solid.mesh, this.glow.mesh, this.flash);
-    this.decals = new InstancedMesh(new PlaneGeometry(1, 1), new MeshStandardMaterial({ map: holeTexture(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, roughness: 1 }), 260);
+    // Debris and bullet holes are modelled pieces (effects.glb); a missing piece is not drawn.
+    const shape = (name: string): BufferGeometry => pieces.get(name)?.parts[0]?.geometry ?? new BufferGeometry();
+    const shapes = (names: Shape[]): Map<Shape, BufferGeometry> => new Map(names.map((name) => [name, shape(`debris_${name}`)]));
+    this.solid = new ParticlePool(false, 700, shapes(["chip", "splinter", "shard", "leaf"]));
+    this.glow = new ParticlePool(true, 260, shapes(["spark"]));
+    scene.add(this.solid.group, this.glow.group, this.flash);
+    // A hole is a crater with a scorched ring and a spalled rim, its rim tinted by the surface.
+    this.decals = new InstancedMesh(shape("bullet_hole"), new MeshStandardMaterial({ vertexColors: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4 }), DECALS);
+    this.decals.setColorAt(0, new Color(0xffffff));
+    hideAll(this.decals);
     this.decals.frustumCulled = false;
-    for (let index = 0; index < 260; index += 1) this.decals.setMatrixAt(index, new Matrix4().makeScale(0, 0, 0));
     scene.add(this.decals);
     this.fireball = new Sprite(new SpriteMaterial({ map: this.puffMap, color: 0xffa54a, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
     this.fireball.visible = false;
@@ -183,7 +198,8 @@ export class WorldEffects {
 
   private decal(at: Vec3, normal: Vec3, size: number, tint = 0xffffff): void {
     const index = this.nextDecal;
-    this.nextDecal = (this.nextDecal + 1) % 260;
+    this.nextDecal = (this.nextDecal + 1) % DECALS;
+    this.decals.count = Math.max(this.decals.count, index + 1);
     const n = new Vector3(normal.x, normal.y, normal.z).normalize();
     this.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), n);
     this.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.random() * Math.PI * 2));

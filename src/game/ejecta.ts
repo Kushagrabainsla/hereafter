@@ -2,6 +2,7 @@ import { Group, InstancedMesh, Matrix4, Quaternion, Scene, Vector3, Euler } from
 import { type GunKind } from "./combatRules";
 import { magazineModel } from "./loot";
 import { instancedParts, type KitPiece } from "../world/kit";
+import { hideAll } from "../world/worldEffects";
 import { gameAudio } from "./gameAudio";
 
 export interface Vec3 { x: number; y: number; z: number }
@@ -53,7 +54,7 @@ export class Ejecta {
 
   constructor(private scene: Scene, private sweep: Sweep, private pieces: Map<string, KitPiece>) {
     this.meshes = { pistol: instancedParts(pieces.get("case_pistol"), CASES_KEPT), rifle: instancedParts(pieces.get("case_rifle"), CASES_KEPT) };
-    for (const gun of GUNS) for (const mesh of this.meshes[gun]) { mesh.count = 0; scene.add(mesh); }
+    for (const gun of GUNS) for (const mesh of this.meshes[gun]) { hideAll(mesh); scene.add(mesh); }
   }
 
   // A case leaves the ejection port at `at` toward the gun's right and up, a little back,
@@ -149,7 +150,8 @@ export class Ejecta {
       counts[piece.gun] += 1;
     });
     for (const gun of GUNS) for (const mesh of this.meshes[gun]) {
-      if (mesh.count === 0 && counts[gun] === 0) continue;
+      if (counts[gun] === 0) { if (mesh.userData.live) { hideAll(mesh); mesh.userData.live = false; } continue; }
+      mesh.userData.live = true;
       mesh.count = counts[gun];
       mesh.instanceMatrix.needsUpdate = true;
     }
@@ -164,7 +166,7 @@ export class Ejecta {
 
   clear(): void {
     this.cases.fill(null);
-    for (const gun of GUNS) for (const mesh of this.meshes[gun]) mesh.count = 0;
+    for (const gun of GUNS) for (const mesh of this.meshes[gun]) { hideAll(mesh); mesh.userData.live = false; }
     for (const piece of this.magazines) this.scene.remove(piece.object!);
     this.magazines = [];
   }

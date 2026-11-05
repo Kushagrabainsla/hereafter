@@ -252,8 +252,40 @@
     "furn_walnut_dark"
    ],
    "notes": "Upstairs in the bar."
+  },
+  "kitchen_counter": {
+   "triangles": 308,
+   "budget": 600,
+   "size": [
+    1.0,
+    0.735,
+    1.05
+   ],
+   "materials": [
+    "furn_black",
+    "furn_chrome",
+    "furn_steel"
+   ],
+   "notes": "The kitchen's steel prep counters, a metre at a time."
+  },
+  "kitchen_range": {
+   "triangles": 1148,
+   "budget": 2400,
+   "size": [
+    1.5,
+    0.832,
+    1.0
+   ],
+   "materials": [
+    "furn_black",
+    "furn_chrome",
+    "furn_glass_dark",
+    "furn_range",
+    "furn_steel"
+   ],
+   "notes": "The kitchen's range, in two lengths."
   }
  },
- "triangles": 12386,
- "bytes": 402632
+ "triangles": 13842,
+ "bytes": 467136
 }

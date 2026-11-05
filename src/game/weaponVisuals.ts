@@ -1,4 +1,4 @@
-import { Box3, CylinderGeometry, Group, Mesh, MeshStandardMaterial, PointLight, Vector3, Scene, type Object3D } from "three/webgpu";
+import { Box3, Group, MeshStandardMaterial, PointLight, Vector3, Scene, type Object3D } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { glowing, kitObject, type KitPiece } from "../world/kit";
 import { type WeaponKind, type WeaponPickup } from "./combatRules";
@@ -76,7 +76,6 @@ export class WeaponVisuals {
   constructor(scene: Scene, data: ArenaData, pickupData: WeaponPickup[], pieces: Map<string, KitPiece>) {
     const ringMaterial = new MeshStandardMaterial({ color: 0x59d3d0, emissive: 0x237a78, emissiveIntensity: 1.8, metalness: 0.35, roughness: 0.34 });
     const beamMaterial = new MeshStandardMaterial({ color: 0x5bd8d6, emissive: 0x3bbfba, emissiveIntensity: 0.8, transparent: true, opacity: 0.11, depthWrite: false });
-    const beamGeometry = new CylinderGeometry(0.24, 0.38, 1.7, 16, 1, true);
     for (const pickup of pickupData) {
       if (pickup.item !== "gun") continue;
       const root = new Group();
@@ -85,8 +84,9 @@ export class WeaponVisuals {
       const stand = kitObject(pieces.get("pickup_stand"), undefined, (material) => glowing(material) ? ringMaterial : material);
       stand.position.y = -0.05;
       root.add(stand);
-      const beam = new Mesh(beamGeometry, beamMaterial);
-      beam.position.y = 0.91;
+      // The column of light over it (effects.glb), rising from the stand.
+      const beam = kitObject(pieces.get("marker_beam"), undefined, () => beamMaterial);
+      beam.position.y = 0.06;
       root.add(beam);
       // The holder spins and bobs; it shows the gun once the weapon models load.
       const holder = new Group();

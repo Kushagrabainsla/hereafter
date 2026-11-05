@@ -9,7 +9,7 @@ import { type InstanceRef } from "./entities";
 // public/models/market-kit.glb (scripts/kit/build.py) and the families built by the asset
 // pipeline (scripts/assets, docs/asset-pipeline.md): lamps, signs and the rest. Every top-level
 // node of every file is one piece, modelled in its own frame with its origin where it is placed.
-const KIT_FILES = ["market-kit", "lights", "signs", "furniture", "street", "items", "buildings"];
+const KIT_FILES = ["market-kit", "lights", "signs", "furniture", "street", "items", "buildings", "effects"];
 
 export function loadKits(): Promise<(GLTF | null)[]> {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);

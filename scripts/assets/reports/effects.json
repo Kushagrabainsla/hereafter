@@ -1,0 +1,113 @@
+{
+ "family": "effects",
+ "pieces": {
+  "debris_chip": {
+   "triangles": 20,
+   "budget": 40,
+   "size": [
+    0.948,
+    0.786,
+    0.533
+   ],
+   "materials": [
+    "fx_debris"
+   ],
+   "notes": "Chips of stone, plaster, soil and flesh."
+  },
+  "debris_splinter": {
+   "triangles": 20,
+   "budget": 40,
+   "size": [
+    0.632,
+    0.378,
+    1.0
+   ],
+   "materials": [
+    "fx_debris"
+   ],
+   "notes": "Wood splinters, stretched along Y."
+  },
+  "debris_shard": {
+   "triangles": 20,
+   "budget": 20,
+   "size": [
+    0.96,
+    0.08,
+    1.0
+   ],
+   "materials": [
+    "fx_debris"
+   ],
+   "notes": "Glass shards."
+  },
+  "debris_leaf": {
+   "triangles": 44,
+   "budget": 50,
+   "size": [
+    0.56,
+    0.17,
+    1.0
+   ],
+   "materials": [
+    "fx_debris"
+   ],
+   "notes": "Leaves shaken off plants."
+  },
+  "debris_spark": {
+   "triangles": 8,
+   "budget": 12,
+   "size": [
+    0.5,
+    0.5,
+    1.0
+   ],
+   "materials": [
+    "glow_spark"
+   ],
+   "notes": "Sparks and embers, drawn unlit and stretched."
+  },
+  "bullet_hole": {
+   "triangles": 50,
+   "budget": 60,
+   "size": [
+    0.734,
+    0.06,
+    0.905
+   ],
+   "materials": [
+    "fx_hole_burn",
+    "fx_hole_core",
+    "fx_hole_rim"
+   ],
+   "notes": "Every bullet hole and blast scorch, scaled and tinted."
+  },
+  "marker_ring": {
+   "triangles": 352,
+   "budget": 400,
+   "size": [
+    2.08,
+    2.08,
+    0.08
+   ],
+   "materials": [
+    "glow_marker"
+   ],
+   "notes": "Round loose magazines and dropped guns."
+  },
+  "marker_beam": {
+   "triangles": 64,
+   "budget": 64,
+   "size": [
+    0.76,
+    0.76,
+    1.7
+   ],
+   "materials": [
+    "glow_beam"
+   ],
+   "notes": "Over gun pickups."
+  }
+ },
+ "triangles": 578,
+ "bytes": 26640
+}

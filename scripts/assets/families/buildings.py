@@ -220,6 +220,21 @@ def stair_stringer():
                  box("bottom", -0.5, 0.5, -0.035, 0.035, -0.12, -0.11, "bld_steel")], "stair_stringer")
 
 
+def grating_deck():
+    """A metre of the fire escape's walkway: steel bearing bars between channel sides, on cross
+    members at its ends. The game lays them along the platform, stretched to its width."""
+    parts = [box("sideA", -0.5, 0.5, -0.5, -0.47, -0.09, 0.09, "bld_steel"),
+             box("sideB", -0.5, 0.5, 0.47, 0.5, -0.09, 0.09, "bld_steel"),
+             box("endA", -0.5, -0.47, -0.47, 0.47, -0.05, 0.09, "bld_steel"),
+             box("endB", 0.47, 0.5, -0.47, 0.47, -0.05, 0.09, "bld_steel")]
+    for i in range(12):
+        y = -0.47 + 0.94 * (i + 0.5) / 12
+        parts.append(box(f"bar{i}", -0.47, 0.47, y - 0.005, y + 0.005, 0.04, 0.09, "bld_grating"))
+    for i, x in enumerate((-0.25, 0.0, 0.25)):
+        parts.append(box(f"rod{i}", x - 0.006, x + 0.006, -0.47, 0.47, 0.06, 0.075, "bld_grating"))
+    return join(parts, "grating_deck")
+
+
 PIECES = [
     Piece("window_unit", window_unit, 260, (1.8, 0.2, 2.465), None, "Every upper-floor window, centred on its glass, set on the wall face."),
     Piece("card_window", card_window, 2, (1.38, 0.0, 1.76), "center", "Window glass, drawn by the game as a dark pane or a lit room."),
@@ -235,4 +250,5 @@ PIECES = [
     Piece("ladder_rung", ladder_rung, 80, (0.468, 0.044, 0.044), "center", "Ladder rungs."),
     Piece("stair_tread", stair_tread, 220, (1.3, 0.31, 0.053), "center", "The bar stair's open treads."),
     Piece("stair_stringer", stair_stringer, 40, (1.0, 0.07, 0.24), "center", "The bar stair's stringers, stretched along its slope."),
+    Piece("grating_deck", grating_deck, 260, (1.0, 1.0, 0.18), "center", "The market fire escape's walkway, a metre at a time."),
 ]

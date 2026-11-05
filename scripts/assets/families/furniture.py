@@ -28,6 +28,8 @@ def materials():
     material("furn_chrome", 0xd4d8db, 1.0, 0.15)
     material("furn_leather_red", 0x7a1c18, 0.0, 0.42)
     material("furn_felt", 0x1f5c3a, 0.0, 0.9)
+    material("furn_range", 0x3a3f44, 0.6, 0.45)
+    material("furn_glass_dark", 0x0d1013, 0.3, 0.1)
     material("furn_cushion", 0x5e1f2a, 0.0, 0.85)
     material("furn_fabric", 0x3d2a30, 0.0, 0.9)
     material("furn_laminate", 0xe9e2d0, 0.0, 0.4)
@@ -287,6 +289,45 @@ def sofa():
     return join(parts, "sofa")
 
 
+def kitchen_counter():
+    """One metre of the kitchen's stainless prep counter: a worktop with a dropped front edge and
+    a rear upstand, a drawer, an undershelf and round legs on bullet feet. The game lays as
+    many as fit along each counter, stretched to fill it."""
+    parts = [box("top", -0.5, 0.5, -0.35, 0.35, 0.91, 0.95, "furn_steel"),
+             box("edge", -0.5, 0.5, -0.362, -0.35, 0.88, 0.95, "furn_steel"),
+             box("upstand", -0.5, 0.5, 0.32, 0.35, 0.95, 1.05, "furn_steel"),
+             box("drawer", -0.42, 0.42, -0.36, -0.33, 0.74, 0.865, "furn_steel"),
+             box("pull", -0.12, 0.12, -0.385, -0.36, 0.79, 0.81, "furn_chrome"),
+             box("rail", -0.48, 0.48, -0.33, 0.33, 0.72, 0.74, "furn_steel"),
+             box("shelf", -0.48, 0.48, -0.3, 0.32, 0.16, 0.18, "furn_steel")]
+    for i, (x, y) in enumerate(((-0.45, -0.3), (0.45, -0.3), (-0.45, 0.3), (0.45, 0.3))):
+        parts.append(cylinder(f"leg{i}", 0.02, 0.88, (x, y, 0.47), "Z", "furn_steel", verts=8))
+        parts.append(cylinder(f"foot{i}", 0.025, 0.03, (x, y, 0.015), "Z", "furn_black", verts=8, radius2=0.02))
+    return join(parts, "kitchen_counter")
+
+
+def kitchen_range():
+    """A metre and a half of commercial range: three burners a row under cast grates, knobs on
+    the front rail, an oven with a window below, a kick plate and a low back guard."""
+    parts = [box("body", -0.75, 0.75, -0.36, 0.4, 0.08, 0.9, "furn_range"),
+             box("kick", -0.73, 0.73, -0.3, 0.38, 0.0, 0.08, "furn_black"),
+             box("top", -0.75, 0.75, -0.38, 0.4, 0.9, 0.93, "furn_steel"),
+             box("guard", -0.75, 0.75, 0.36, 0.4, 0.93, 1.0, "furn_steel"),
+             box("rail", -0.75, 0.75, -0.4, -0.36, 0.76, 0.88, "furn_steel")]
+    for i, x in enumerate((-0.5, 0.0, 0.5)):
+        for j, y in enumerate((-0.15, 0.17)):
+            parts.append(ring(f"burner{i}{j}", 0.075, 0.009, (x, y, 0.935), "Z", "furn_black", verts=14, minor_verts=4))
+            parts.append(box(f"grateA{i}{j}", x - 0.2, x + 0.2, y - 0.007, y + 0.007, 0.93, 0.955, "furn_black"))
+            parts.append(box(f"grateB{i}{j}", x - 0.007, x + 0.007, y - 0.15, y + 0.15, 0.93, 0.955, "furn_black"))
+        for k, dx in enumerate((-0.09, 0.09)):
+            parts.append(cylinder(f"knob{i}{k}", 0.02, 0.03, (x + dx, -0.415, 0.82), "Y", "furn_black", verts=8))
+    for i, (x0, x1) in enumerate(((-0.73, -0.01), (0.01, 0.73))):
+        parts.append(box(f"door{i}", x0, x1, -0.38, -0.36, 0.14, 0.72, "furn_range"))
+        parts.append(box(f"window{i}", x0 + 0.1, x1 - 0.1, -0.385, -0.38, 0.32, 0.6, "furn_glass_dark"))
+        parts.append(cylinder(f"handle{i}", 0.012, x1 - x0 - 0.16, ((x0 + x1) / 2, -0.42, 0.68), "X", "furn_chrome", verts=8))
+    return join(parts, "kitchen_range")
+
+
 PIECES = [
     Piece("dining_table", dining_table, 650, (0.8, 0.8, 0.76), "base", "The restaurant's three tables."),
     Piece("dining_chair", dining_chair, 900, (0.42, 0.42, 0.85), "base", "Four round each restaurant table, facing it."),
@@ -304,4 +345,6 @@ PIECES = [
     Piece("back_bar", back_bar, 2400, (3.68, 0.3, 1.5), "wall", "The mirror, shelf and bottles behind the bar.", 60),
     Piece("pool_table", pool_table, 2400, (1.4, 2.2, 0.85), "base", "Under the billiard lamp."),
     Piece("sofa", sofa, 1300, (2.4, 1.0, 0.8), "base", "Upstairs in the bar."),
+    Piece("kitchen_counter", kitchen_counter, 600, (1.0, 0.735, 1.05), "base", "The kitchen's steel prep counters, a metre at a time."),
+    Piece("kitchen_range", kitchen_range, 2400, (1.5, 0.82, 1.0), "base", "The kitchen's range, in two lengths."),
 ]

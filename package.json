@@ -14,6 +14,7 @@
     "build:audio": "sh scripts/audio/fetch.sh && sh scripts/audio/build.sh",
     "build:voices": "python3 scripts/audio/voices.py",
     "build:assets": "sh scripts/assets/build.sh",
+    "build:textures": "sh scripts/assets/textures.sh",
     "build:props": "sh scripts/props/build.sh",
     "build:lightmaps": "sh scripts/lightmaps/build.sh",
     "build:truck": "sh scripts/truck/build.sh",

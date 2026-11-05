@@ -18,6 +18,7 @@ recipe (scripts/assets/families/*.py)
 | `FAMILY=lights npm run build:assets` | One family |
 | `PREVIEW=/some/dir npm run build:assets` | Also render a sheet of close-ups per family, `<dir>/<family>.png`, and one image per piece |
 | `blender -b --python-exit-code 1 --python scripts/assets/build.py -- --family lights --only lantern --no-export --preview /tmp/p` | Try one piece without writing anything |
+| `npm run build:textures` | Bake the wood floor and kitchen tile textures from Blender node materials (`scripts/assets/textures.py`) |
 | `npm run build:kit`, `npm run build:truck` | The older wall kit and food truck builds; the kit now uses the same library and compression |
 
 You need Blender 4.4 or newer (`blender` on the PATH, in `/Applications`, or `BLENDER=`), and Node for the compression step, which runs the pinned `@gltf-transform/cli@4.5.1` through `npx`. `scripts/assets/fetch.sh` downloads the sign font into the ignored `assets-src/fonts/`; the build runs it when the font is missing.
@@ -64,13 +65,17 @@ Model in metres with Z up. The exporter turns that into the game's Y up: Blender
 - **Copies that move each frame:** `instancedParts()`, as with the swaying lanterns. Whole and torn lanterns are packed into their own meshes each frame, so only those showing are drawn.
 - **One-offs:** `kitObject()`, as for signs, the breaker box and lamps that hide with their stall, and for things that come and go during play: the gun stands, magazines and thrown grenades.
 
-The viewer hands the loaded pieces to the code that draws items as well as to the map: `WeaponVisuals` (gun stands), `LootViews` and `Ejecta` (magazines and spent cases, the cases packed into one instanced mesh per calibre each frame) and `WorldEffects` (grenades).
+Instanced meshes whose copies come and go (debris, bullet holes, spent cases) always draw at least one copy, shrunk to nothing, so their shaders are built while the map loads rather than at the first shot. The viewer hands the loaded pieces to the code that draws items as well as to the map: `WeaponVisuals` (gun stands), `LootViews` and `Ejecta` (magazines and spent cases, the cases packed into one instanced mesh per calibre each frame) and `WorldEffects` (grenades, debris and bullet holes).
 
 Physics, cover and breakage do not change when a code shape becomes a model. Colliders, entities and lamp hit boxes are still declared in `src/world/nightMarket.ts`, so a model only changes what is drawn.
 
 ## Signs
 
 Every sign's text, look, colours and size live in `src/world/signs.json`. The signs family builds one piece per entry (`sign_<id>`), and the game places it and lights it at the entry's intensity. `neon` signs are glass tubes along the letters' outlines and a rounded border on a dark backer. `lightbox` signs are steel boxes with a lit face and raised letters. `blade` signs are double-sided neon boxes on wall brackets. To add or change a sign, edit the JSON, place it in `nightMarket.ts` with `sign(id, x, y, z, face)`, and rebuild the family. The lettering uses Bebas Neue (SIL Open Font License); the food truck's roof sign and menu board use it too.
+
+## Baked textures
+
+The floors and tiles that were painted on a canvas in code are now node materials in Blender, baked to a colour map and an OpenGL normal map 1024 px square (`scripts/assets/textures.py`, `npm run build:textures`): oak floorboards, 14 across a 2 m tile, a metre long and staggered by half, with grain and wear; and white subway tiles 20 by 10 cm in grey grout. They tile seamlessly: every pattern repeats a whole number of times across the tile, noise runs round a torus in 4D so it meets itself at the edges, and each board's shade comes from its row and place within the tile, so a board cut by the edge matches on both sides. The game loads them with the other surface textures (`src/world/surfaceTextures.ts`).
 
 ## Posters
 
@@ -148,6 +153,19 @@ Phase 5 (building dressing), at eight spots on both alleys, at the shopfronts, t
 
 Fourteen pieces, 1,300 triangles in all and 39 KB compressed. Frame rates were compared at a MacBook Pro's Retina size (1728 × 1117 at 2×) with production builds in two alternating rounds over six of the spots: the median was 43 FPS before and 43.5 after, and the means 42.8 and 40.1, pulled down by a few one-off stalls in both builds (one before, three after).
 
+Phase 6 (effects and the last code shapes), at six spots: bullet holes on a wall, a burst of debris, a magazine pickup, a gun stand, the kitchen and the bar's floor. Debris and holes used to draw every unused copy shrunk to nothing; now each shape's mesh holds only the pieces about, so the counts fell:
+
+| Spot | Draw calls | Triangles |
+|---|---|---|
+| Bullet holes on a wall | 281 to 280 | 635,077 to 632,171 (-0.5%) |
+| Debris burst | 303 to 304 | 651,634 to 647,826 (-0.6%) |
+| Magazines on a table | 132 to 130 | 547,230 to 540,106 (-1.3%) |
+| Carbine stand | 277 to 275 | 617,904 to 608,296 (-1.6%) |
+| Kitchen | 120 to 118 | 501,016 to 496,080 (-1.0%) |
+| Bar floor | 120 to 118 | 439,913 to 428,501 (-2.6%) |
+
+Eight effect pieces (578 triangles, 18 KB), the kitchen's counter and range (1,456 triangles) and the fire escape's walkway (228). The first burst of debris after loading took no longer a frame than the screen did standing still.
+
 ## Phases
 
 Each phase replaces one group of shapes drawn in code with modelled pieces, measured as above.
@@ -157,4 +175,4 @@ Each phase replaces one group of shapes drawn in code with modelled pieces, meas
 3. **Street dressing (done):** the service alley's dumpsters (lids, casters, stencilling and rust), the stacked pallets and the manhole cover; the cedar water tanks on their steel stands and the TV antennas on the roofs, each antenna stretched to its mast's height; the eight posters and the SOFA mural. The dumpsters keep their solid boxes as colliders.
 4. **Weapons and items in the world (done):** the gun stands with their glowing ring, the spare and dropped magazines (the pistol's double stack and the carbine's curved steel magazine, each with its top round showing), spent 9 mm brass and 7.62 mm lacquered steel cases, and the frag and smoke grenades. The stand-in guns, hands and players drawn while a model loaded, or when one failed, are gone: a missing model now leaves its slot empty. The pickup markers (rings and beams) wait for phase 6.
 5. **Buildings (done):** window units with their glass on cards, cornices and string courses, roller shutters, shopfront pilasters and ledges round the storefront photographs, railings, the steel ladders and the bar's open-tread stair with stringers, and the shop glass. The walls and the ground stay the map's own flat surfaces with photographed textures and baked light: a modelled wall would be the same flat face. The light bake was redone.
-6. **Effects:** debris, bullet holes, the muzzle flash, the code-drawn textures (awning stripes, planks, tiles) and the pickup markers. Tracers, smoke, steam, fire and haze stay particle effects.
+6. **Effects (done):** debris as modelled chips, splinters, glass shards, leaves and spark streaks; bullet holes and blast scorches as modelled craters; the pickup markers' rings and beams; the wood floors and kitchen tiles baked in Blender in place of the canvas drawings (the awning stripes were already unused). The last plain boxes, the kitchen's steel counters and range and the market fire escape's walkway, became modelled modules. The first-person muzzle flash is part of the view models, modelled already. Tracers, smoke, steam, fire and haze stay particle effects.

@@ -1,4 +1,4 @@
-import { Box3, Group, Mesh, MeshStandardMaterial, Object3D, Scene, TorusGeometry, Vector3 } from "three/webgpu";
+import { Box3, Group, Mesh, MeshStandardMaterial, Object3D, Scene, Vector3 } from "three/webgpu";
 import { type GunKind, type WeaponKind, type WeaponPickup } from "./combatRules";
 import { type Drop } from "./matchState";
 import { type GrenadePath } from "../world/physics";
@@ -42,7 +42,7 @@ const REST_LIFT = 0.04;
 interface DropView { root: Group; body: Group; path: GrenadePath | null; start: number; spin: Vector3 }
 
 // Spare magazines lying where the map puts them, and the guns and magazines fallen players
-// drop. A small marker ring makes each one findable without the beam weapons stand in.
+// drop. A small marker ring makes each one findable without the beam guns stand in.
 export class LootViews {
   private magazines = new Map<string, Group>();
   private drops = new Map<string, DropView>();
@@ -66,9 +66,10 @@ export class LootViews {
     }
   }
 
-  private ring(radius: number): Mesh {
-    const ring = new Mesh(new TorusGeometry(radius, 0.008, 4, 28), marker);
-    ring.rotation.x = Math.PI / 2;
+  // The glowing marker ring (effects.glb), modelled 1 m across and scaled to the pickup.
+  private ring(radius: number): Object3D {
+    const ring = kitObject(this.pieces.get("marker_ring"), undefined, () => marker);
+    ring.scale.setScalar(radius);
     ring.position.y = 0.012;
     return ring;
   }

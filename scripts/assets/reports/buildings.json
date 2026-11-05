@@ -193,8 +193,22 @@
     "bld_steel"
    ],
    "notes": "The bar stair's stringers, stretched along its slope."
+  },
+  "grating_deck": {
+   "triangles": 228,
+   "budget": 260,
+   "size": [
+    1.0,
+    1.0,
+    0.18
+   ],
+   "materials": [
+    "bld_grating",
+    "bld_steel"
+   ],
+   "notes": "The market fire escape's walkway, a metre at a time."
   }
  },
- "triangles": 1272,
- "bytes": 78500
+ "triangles": 1500,
+ "bytes": 91608
 }

@@ -42,7 +42,7 @@ So a carbine round passes through a window, a crate, a bin, a stall seen from th
 | Steam pipe | 10 | a burst of steam that hides the area around it for about 15 s |
 | Bin, drum, air-conditioner, walls, counters, dumpsters, the truck itself | indestructible | |
 
-A stall takes 8 pistol hits or 12 carbine hits, or one grenade landing close by. The health of anything damaged travels in the combat snapshot, so late joiners see the same broken market. A destroyed object's collider is removed, so it stops blocking movement, bullets and blasts. Bullet holes and impact particles follow the material: dust, sparks, splinters, shards or a puff.
+A stall takes 8 pistol hits or 12 carbine hits, or one grenade landing close by. The health of anything damaged travels in the combat snapshot, so late joiners see the same broken market. A destroyed object's collider is removed, so it stops blocking movement, bullets and blasts. Bullet holes and impact particles follow the material: dust, sparks, splinters, shards or a puff. Holes are modelled craters with a scorched ring and a chipped rim tinted by the surface, and the particles are modelled chips, splinters, glass shards, leaves and spark streaks (`public/models/effects.glb`), one instanced mesh per shape holding only the pieces in flight.
 
 ## Loose props
 

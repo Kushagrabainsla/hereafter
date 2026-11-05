@@ -1,7 +1,8 @@
 import { RepeatWrapping, SRGBColorSpace, TextureLoader, type Texture } from "three/webgpu";
 
-// Bundled Poly Haven photo materials (see docs/data-sources.md). Tiled textures repeat once
-// every `tileMeters`, so geometry with texture coordinates in metres keeps their real scale.
+// Bundled Poly Haven photo materials and the wood floor and kitchen tiles baked in Blender
+// (scripts/assets/textures.py; see docs/data-sources.md). Tiled textures repeat once every
+// `tileMeters`, so geometry with texture coordinates in metres keeps their real scale.
 export interface SurfaceTextures {
   asphalt: Texture;
   asphaltNormal: Texture;
@@ -13,6 +14,10 @@ export interface SurfaceTextures {
   concreteNormal: Texture;
   brick: Texture;
   brickNormal: Texture;
+  woodFloor: Texture;
+  woodFloorNormal: Texture;
+  tiles: Texture;
+  tilesNormal: Texture;
   storefrontStone: Texture;
   storefrontCafe: Texture;
   dispose: () => void;
@@ -29,17 +34,17 @@ export async function loadSurfaceTextures(): Promise<SurfaceTextures> {
     return texture;
   };
   const pair = (name: string, tileMeters: number): Promise<Texture>[] => [tiled(`${name}_diff.jpg`, tileMeters, true), tiled(`${name}_normal.jpg`, tileMeters, false)];
-  const [asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, storefrontStone, storefrontCafe] = await Promise.all([
+  const [asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, woodFloor, woodFloorNormal, tiles, tilesNormal, storefrontStone, storefrontCafe] = await Promise.all([
     ...pair("asphalt_02", 5), ...pair("concrete_pavement_02", 4), ...pair("plastered_wall_04", 5),
-    ...pair("concrete_wall_003", 5), ...pair("brick_wall_001", 2),
+    ...pair("concrete_wall_003", 5), ...pair("brick_wall_001", 2), ...pair("wood_floor", 2), ...pair("kitchen_tiles", 1),
     loader.loadAsync(`${import.meta.env.BASE_URL}textures/storefront-stone.jpg`),
     loader.loadAsync(`${import.meta.env.BASE_URL}textures/storefront-cafe.jpg`),
   ]);
   storefrontStone.colorSpace = storefrontCafe.colorSpace = SRGBColorSpace;
   storefrontStone.anisotropy = storefrontCafe.anisotropy = 4;
-  const textures = [asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, storefrontStone, storefrontCafe];
+  const textures = [asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, woodFloor, woodFloorNormal, tiles, tilesNormal, storefrontStone, storefrontCafe];
   return {
-    asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, storefrontStone, storefrontCafe,
+    asphalt, asphaltNormal, pavement, pavementNormal, plaster, plasterNormal, concrete, concreteNormal, brick, brickNormal, woodFloor, woodFloorNormal, tiles, tilesNormal, storefrontStone, storefrontCafe,
     dispose: () => textures.forEach((texture) => texture.dispose()),
   };
 }

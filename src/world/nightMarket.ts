@@ -277,37 +277,6 @@ function seeded(seed: number): () => number {
   let s = Math.abs(Math.round(seed)) % 2147483646 + 1;
   return () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
 }
-function stripes(a: string, b: string): CanvasTexture {
-  return canvasTexture(256, 64, (g, w, h) => {
-    for (let i = 0; i < 8; i += 1) { g.fillStyle = i % 2 ? b : a; g.fillRect(i * w / 8, 0, w / 8 + 1, h); }
-    // Weathering: a darker scalloped hem and faint creases.
-    const hem = g.createLinearGradient(0, h * 0.7, 0, h);
-    hem.addColorStop(0, "rgba(0,0,0,0)"); hem.addColorStop(1, "rgba(0,0,0,0.35)");
-    g.fillStyle = hem; g.fillRect(0, 0, w, h);
-  });
-}
-function planks(base: string, tile = 1): CanvasTexture {
-  const r = seeded(base.length * 97 + base.charCodeAt(2));
-  return canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = base; g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 32) {
-      g.fillStyle = `rgba(0,0,0,${0.2 + r() * 0.15})`; g.fillRect(0, y, w, 3);
-      for (let i = 0; i < 12; i += 1) { g.fillStyle = `rgba(255,220,180,${r() * 0.08})`; g.fillRect(0, y + 4 + r() * 26, w, 1); }
-      for (let i = 0; i < 3; i += 1) { g.fillStyle = `rgba(30,15,5,${0.15 + r() * 0.2})`; g.beginPath(); g.ellipse(r() * w, y + 8 + r() * 18, 3 + r() * 5, 1.5 + r() * 2, 0, 0, 7); g.fill(); }
-    }
-  }, tile);
-}
-function tiles(): CanvasTexture {
-  return canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = "#b9bdb6"; g.fillRect(0, 0, w, h);
-    const r = seeded(41);
-    for (let y = 0; y < h; y += 32) for (let x = -64; x < w; x += 64) {
-      const shade = 226 + Math.floor(r() * 18);
-      g.fillStyle = `rgb(${shade},${shade + 2},${shade - 4})`;
-      g.fillRect(x + 2 + (y / 32 % 2) * 32, y + 2, 60, 28);
-    }
-  }, 1);
-}
 function softSpot(): CanvasTexture {
   return canvasTexture(128, 128, (g, w, h) => {
     const gradient = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
@@ -490,29 +459,18 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const brick = (color: number): MeshStandardNodeMaterial => wall({ map: textures.brick, normalMap: textures.brickNormal, color, roughness: 0.92 });
   const plaster = (color: number): MeshStandardNodeMaterial => wall({ map: textures.plaster, normalMap: textures.plasterNormal, color, roughness: 0.95 });
   const concrete = (color: number): MeshStandardNodeMaterial => wall({ map: textures.concrete, normalMap: textures.concreteNormal, color, roughness: 0.9 });
-  const paint = (color: number, metalness = 0.2, roughness = 0.6): MeshStandardMaterial => std({ color, metalness, roughness });
   const glow = (color: number, intensity: number): MeshStandardMaterial => std({ color: 0x000000, emissive: color, emissiveIntensity: intensity });
-  const wood = (base: string): MeshStandardMaterial => std({ map: own(planks(base)), roughness: 0.85 });
-  const awnings = [["#c63c3c", "#f4e9d8"], ["#1f7a74", "#f1e7cf"], ["#e0a030", "#3b2a1e"], ["#3654a8", "#f2eee4"]].map(([a, b]) => std({ map: own(stripes(a, b)), roughness: 0.9, side: DoubleSide }));
   const materials: Record<string, SurfaceMaterial> = {
     brickWarm: brick(0xc9a48c), brickDark: brick(0x9b7d6a), brickRed: brick(0xb08a74), brickCap: brick(0xa88672),
     plasterCream: plaster(0xe6cfaa), plasterTeal: plaster(0xa8c0b9), plasterSand: plaster(0xd9b98f), plasterOchre: plaster(0xc9a46a), plasterInside: plaster(0xe8dcc6),
     concreteCap: concrete(0xb7b2aa), slab: concrete(0xbdb8b0),
-    shopGreen: wall({ color: 0x1d3b36, metalness: 0.1, roughness: 0.55 }), barRed: wall({ color: 0x5a1a1f, metalness: 0.1, roughness: 0.55 }), tile: std({ map: own(tiles()), roughness: 0.3 }),
-    woodDark: wood("#5e3b22"), woodBar: wood("#4a2a18"), woodTable: wood("#6e4a2c"), woodStall: wood("#8a5a35"), floor: wood("#7a5232"),
-    poolTable: paint(0x1f6b3a, 0, 0.9), sofa: paint(0x6b2430, 0, 0.85),
-    steel: paint(0x9aa3a8, 0.8, 0.3), steelDark: paint(0x3a3f44, 0.6, 0.45),
-    grating: paint(0x3d4447, 0.7, 0.5),
-    door: paint(0x3a2a22, 0.1, 0.7),
-    stool: paint(0xb8432f, 0.1, 0.6),
-    awning0: awnings[0], awning1: awnings[1], awning2: awnings[2], awning3: awnings[3],
-    goods0: paint(0xe8b04a, 0, 0.8), goods1: paint(0xd3542f, 0, 0.8), goods2: paint(0x7fae4a, 0, 0.8), goods3: paint(0xf2e2c0, 0, 0.8),
+    shopGreen: wall({ color: 0x1d3b36, metalness: 0.1, roughness: 0.55 }), barRed: wall({ color: 0x5a1a1f, metalness: 0.1, roughness: 0.55 }), tile: std({ map: textures.tiles, normalMap: textures.tilesNormal, roughness: 0.3 }),
+    floor: std({ map: textures.woodFloor, normalMap: textures.woodFloorNormal, roughness: 0.62 }),
     lampGlow: glow(0xffc27a, 4), sconce: glow(0xffb070, 3.5), bottle: glow(0x6fd0c0, 0.9),
     pavement: street({ map: textures.pavement, normalMap: textures.pavementNormal, color: 0xa29d97, roughness: 0.85 }),
     asphalt: street({ map: textures.asphalt, normalMap: textures.asphaltNormal, color: 0x7d7d7d, roughness: 0.92 }),
     photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
     photoStone: std({ map: textures.storefrontStone, emissive: 0xffffff, emissiveMap: textures.storefrontStone, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
-    poster: std({ color: 0xffffff, roughness: 0.8 }),
     recordsFront: wall({ color: 0x1b2a4a, metalness: 0.1, roughness: 0.55 }), recordsWall: plaster(0x8a4a3a),
   };
   const statics = new Batch(materials);
@@ -612,12 +570,31 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     if (solid.look === "dumpster") return ["dumpster", solid.center.x < 12.75 ? Math.PI / 2 : -Math.PI / 2];
     return null;
   };
-  // Every other solid with a look is drawn as its box.
+  // Long runs (the kitchen's counters and range, the fire escape's walkway) are laid as modules
+  // along the solid's length, each stretched a little to fill it: [piece, module length, turn
+  // to face the room, standing on the floor or centred in the solid].
+  const MODULES: Record<string, [string, number, number, boolean]> = {
+    steel: ["kitchen_counter", 1.0, Math.PI / 2, true], steelDark: ["kitchen_range", 1.5, Math.PI / 2, true], grating: ["grating_deck", 1.0, Math.PI / 2, false],
+  };
+  // Every other solid with a look is a wall or floor, drawn as its box.
   for (const solid of solids) {
     if (solid.look === "none" || solid.look === "rail" || solid.look === "stairRail") continue;
     const piece = furnish(solid);
-    if (piece && kit.has(piece[0])) {
+    if (piece) {
       placer.place(piece[0], new Matrix4().compose(new Vector3(solid.center.x, solid.center.y - solid.half[1], solid.center.z), new Quaternion().setFromAxisAngle(UP, piece[1]), new Vector3(1, 1, 1)));
+      continue;
+    }
+    const modular = MODULES[solid.look];
+    if (modular) {
+      const [name, size, yaw, standing] = modular, [hx, hy, hz] = solid.half;
+      const alongZ = hz >= hx, length = 2 * (alongZ ? hz : hx), width = 2 * (alongZ ? hx : hz);
+      const count = Math.max(1, Math.round(length / size)), step = length / count;
+      const turn = new Quaternion().setFromAxisAngle(UP, alongZ ? yaw : yaw - Math.PI / 2);
+      for (let i = 0; i < count; i += 1) {
+        const offset = -length / 2 + (i + 0.5) * step;
+        const position = new Vector3(solid.center.x + (alongZ ? 0 : offset), standing ? solid.center.y - hy : solid.center.y, solid.center.z + (alongZ ? offset : 0));
+        placer.place(name, new Matrix4().compose(position, turn, new Vector3(step / size, 1, standing ? 1 : width)));
+      }
       continue;
     }
     const [hx, hy, hz] = solid.half, r = solid.rotation ?? IDENTITY;
