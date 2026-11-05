@@ -64,7 +64,9 @@ export interface MapViewerEvents {
 
 export interface MapViewer {
   arenaData: () => ArenaData;
-  setPaused: (paused: boolean) => void;
+  // Pausing stops the player; releaseMouse also frees a locked mouse, for a dialog.
+  setPaused: (paused: boolean, releaseMouse: boolean) => void;
+  lockPointer: () => void;
   playerPose: () => PlayerPose;
   clearShot: (ray: ShotRay) => boolean;
   traceShot: (ray: ShotRay) => number;
@@ -226,7 +228,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   haze.visible = false;
   cloudScene.add(haze);
   let hazeLevel = 0;
-  const renderer = new WebGPURenderer({ antialias: false, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
+  // The page's own canvas, if it has one: the setup screen locks the mouse to it on Deploy,
+  // before the world exists.
+  const canvas = container.querySelector("canvas") ?? undefined;
+  const renderer = new WebGPURenderer({ antialias: false, canvas, forceWebGL: new URLSearchParams(window.location.search).get("renderer") === "webgl" });
   // The world renders at most `budget` pixels, at up to twice the CSS resolution. A large
   // Retina screen or an external display would otherwise multiply the cost of every lit
   // pixel. Changing the drawing size rebuilds every shader (the clustered lights fit their
@@ -254,7 +259,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // rebuilds shaders; ninety lights fit 48 to a cluster.
   if (clustered) renderer.lighting = new FixedGridLighting(1024, 64, 16, 48);
   built.light(clustered);
-  container.appendChild(renderer.domElement);
+  if (renderer.domElement.parentElement !== container) container.appendChild(renderer.domElement);
   await step("physics");
   const physics = new PhysicsWorld(data, arena);
   for (const solid of data.layout.solids) physics.addBox(solid.half, solid.center, solid.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, solid.material);
@@ -566,9 +571,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
 
   return {
     arenaData() { return data; },
-    setPaused(paused) {
-      player.setPaused(paused);
+    setPaused(paused, releaseMouse) {
+      player.setPaused(paused, releaseMouse);
     },
+    lockPointer() { player.lockPointer(); },
     playerPose() {
       return player.pose();
     },

@@ -96,7 +96,7 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 | Jump, or climb a ledge you face | <kbd>Space</kbd> |
 | Crouch (while running: slide) | hold <kbd>C</kbd> or <kbd>Ctrl</kbd> |
 | Lean | hold <kbd>Q</kbd> or <kbd>E</kbd> |
-| Look | click and drag, or double-click for mouse look (<kbd>Esc</kbd> releases it) |
+| Look | move the mouse: it locks when you press Deploy. <kbd>Esc</kbd> frees it, a click locks it again; unlocked, drag to look |
 | Attack, or slash with the knife | click or <kbd>F</kbd> |
 | Stab with the knife | right-click or <kbd>V</kbd> |
 | Aim down the sights, with a gun | hold right-click |

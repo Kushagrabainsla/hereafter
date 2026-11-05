@@ -10,6 +10,7 @@ import { MAPS, SHARED_FILES, CHOSEN_FILES, mapById, type GameMap } from "./maps"
 import { bytesOf, filesUnder, prefetch } from "./assetStore";
 import { cleanName, loadSettings, normalizeRoomCode, saveSettings, validRoomCode, VOICE_CHOICES, VOICE_LABEL, type Settings } from "./settings";
 import { Loading } from "./loading";
+import { lockMouse } from "./mouseLock";
 
 // The page opens on the setup screen. While the player chooses, the game's code and the chosen
 // map's files download in the background; Deploy shows the loading screen, which downloads
@@ -153,6 +154,9 @@ form.addEventListener("submit", (event) => {
     return;
   }
   saveSettings(settings);
+  // Deploy is the click (or Enter) browsers need before they lock the mouse, so it locks it
+  // now, to the canvas the world will draw on: mouse look is on as soon as the market appears.
+  lockMouse(element<HTMLCanvasElement>("view"));
   void deploy();
 });
 

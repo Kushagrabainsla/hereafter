@@ -46,6 +46,7 @@ const weaponName = element<HTMLElement>("weapon-name");
 const ammoCount = element<HTMLElement>("ammo-count");
 const scoreLabel = element<HTMLElement>("score-label");
 const pickupHint = element<HTMLElement>("pickup-hint");
+const resumeHint = element<HTMLElement>("resume-hint");
 const combatToast = element<HTMLElement>("combat-toast");
 const deathOverlay = element<HTMLElement>("death-overlay");
 const respawnHint = element<HTMLElement>("respawn-hint");
@@ -191,11 +192,19 @@ function closeControls(): void {
   if (controlsDialog.open) controlsDialog.close();
 }
 
+// The player stops while the loading screen is up, a dialog is open or they are down. Only a
+// dialog frees the mouse; otherwise it stays locked and play resumes without a click.
 function syncPause(): void {
-  const paused = !launched || dialogOpen() || (match?.player(selfId)?.health ?? 100) <= 0;
+  const dead = (match?.player(selfId)?.health ?? 100) <= 0;
+  const paused = !launched || dialogOpen() || dead;
   if (paused) triggerHeld = false;
-  viewer?.setPaused(paused);
+  viewer?.setPaused(paused, dialogOpen());
+  // With the mouse free in play, a hint says how to lock it again.
+  resumeHint.hidden = !launched || dialogOpen() || dead || document.pointerLockElement !== null || !mouseLookOffered;
 }
+// Touch screens cannot lock a pointer, so they get no hint.
+const mouseLookOffered = matchMedia("(pointer: fine)").matches;
+document.addEventListener("pointerlockchange", () => syncPause());
 
 function toast(message: string): void {
   combatToast.textContent = message;
@@ -905,17 +914,22 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
       canvas.addEventListener("contextmenu", (event) => event.preventDefault());
       canvas.addEventListener("pointerdown", (event) => {
         if (event.button === 2) {
+          if (!launched) return;
           if (match?.player(selfId)?.active === "knife") attack("stab");
           else viewer?.setAiming(true);
           return;
         }
-        if (event.button !== 0) return;
+        if (!launched || event.button !== 0) return;
         if (document.pointerLockElement === canvas) { triggerHeld = true; attack(); }
         else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
       });
       canvas.addEventListener("pointerup", (event) => {
         if (!pointerDown || document.pointerLockElement === canvas) return;
-        if (Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 7 && performance.now() - pointerDown.time < 350) attack();
+        // With the mouse free, a click that does not drag locks it for mouse look, however long
+        // it is held; a quick tap on a touch screen attacks.
+        const still = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 7;
+        if (still && event.pointerType === "mouse") viewer?.lockPointer();
+        else if (still && performance.now() - pointerDown.time < 350) attack();
         pointerDown = null;
       });
       canvas.addEventListener("pointercancel", () => { pointerDown = null; });

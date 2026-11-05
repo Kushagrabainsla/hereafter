@@ -365,3 +365,7 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .room-status { color: var(--t-dim); }
 .room-check input { accent-color: var(--t-accent); }
 .room-check { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; color: var(--t-dim); font-size: 13px; line-height: 1.4; cursor: pointer; }
+
+/* Shown in play while the mouse is free: how to lock it again. */
+.resume-hint { position: absolute; z-index: 4; top: calc(50% + 34px); left: 50%; transform: translateX(-50%); padding: 7px 12px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(12, 14, 15, .78); color: var(--t-text); font: 700 13px var(--t-head); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
+.resume-hint kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 0; background: none; color: inherit; font: 600 11px var(--t-mono); }

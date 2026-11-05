@@ -4,6 +4,7 @@ import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
 import { BODY_MASS, LEAN_OFFSET, loadEffects } from "./combatRules";
 import { type Ladder } from "../world/climbing";
+import { lockMouse } from "../mouseLock";
 
 export interface PlayerMotion {
   moving: boolean;
@@ -80,6 +81,7 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   return t * t * (3 - 2 * t);
 }
 
+
 export class PlayerController {
   private arena: Arena;
   private east = 0;
@@ -151,7 +153,6 @@ export class PlayerController {
     canvas.addEventListener("pointermove", this.onPointerMove);
     canvas.addEventListener("pointerup", this.onPointerUp);
     canvas.addEventListener("pointercancel", this.onPointerUp);
-    canvas.addEventListener("dblclick", this.requestPointerLock);
     document.addEventListener("mousemove", this.onLockedMouseMove);
     document.addEventListener("keydown", this.onKeyDown);
     document.addEventListener("keyup", this.onKeyUp);
@@ -287,7 +288,9 @@ export class PlayerController {
     if (standingAtSpawn) this.reset(this.arena);
   }
 
-  setPaused(paused: boolean): void {
+  // A paused player ignores input; the mouse stays locked unless releaseMouse, so a death or
+  // the loading screen does not free it but a dialog does.
+  setPaused(paused: boolean, releaseMouse = true): void {
     this.paused = paused;
     if (paused) {
       this.keys.clear();
@@ -302,7 +305,7 @@ export class PlayerController {
       this.crouching = false;
       this.sliding = false;
       this.aimHeld = false;
-      if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+      if (releaseMouse && document.pointerLockElement === this.canvas) document.exitPointerLock();
     }
   }
 
@@ -541,7 +544,6 @@ export class PlayerController {
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.canvas.removeEventListener("pointercancel", this.onPointerUp);
-    this.canvas.removeEventListener("dblclick", this.requestPointerLock);
     document.removeEventListener("mousemove", this.onLockedMouseMove);
     document.removeEventListener("keydown", this.onKeyDown);
     document.removeEventListener("keyup", this.onKeyUp);
@@ -577,9 +579,9 @@ export class PlayerController {
     this.dragging = false;
   };
 
-  private requestPointerLock = (): void => {
-    void this.canvas.requestPointerLock().catch(() => undefined);
-  };
+  lockPointer(): void {
+    lockMouse(this.canvas);
+  }
 
   private onLockedMouseMove = (event: MouseEvent): void => {
     if (!this.paused && document.pointerLockElement === this.canvas) this.turn(event.movementX, event.movementY, "locked");
