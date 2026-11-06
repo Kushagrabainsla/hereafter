@@ -10,7 +10,7 @@ import { MAPS, SHARED_FILES, CHOSEN_FILES, mapById, type GameMap } from "./maps"
 import { bytesOf, filesUnder, prefetch } from "./assetStore";
 import { cleanName, loadSettings, normalizeRoomCode, saveSettings, validRoomCode, LANGUAGES, LANGUAGE_LABEL, voiceOf, type Settings } from "./settings";
 import { Loading } from "./loading";
-import { lockMouse } from "./mouseLock";
+import { fillScreen, lockMouse } from "./mouseLock";
 
 // The page opens on the setup screen. While the player chooses, the game's code and the chosen
 // map's files download in the background; Deploy shows the loading screen, which downloads
@@ -156,9 +156,12 @@ form.addEventListener("submit", (event) => {
     return;
   }
   saveSettings(settings);
-  // Deploy is the click (or Enter) browsers need before they lock the mouse, so it locks it
-  // now, to the canvas the world will draw on: mouse look is on as soon as the market appears.
+  // Deploy is the click (or Enter) browsers need before they lock the mouse or go full screen,
+  // so it does both now: the mouse to the canvas the world will draw on, so mouse look is on as
+  // soon as the market appears, and the game to the whole screen. The lock comes first, as going
+  // full screen uses up the click.
   lockMouse(element<HTMLCanvasElement>("view"));
+  fillScreen();
   void deploy();
 });
 

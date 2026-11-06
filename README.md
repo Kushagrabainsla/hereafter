@@ -57,7 +57,7 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 | **04** | **LANGUAGE** | हिन्दी or English |
 | **05** | **CONTENT** | Voice lines (off: only grunts and cries), 18+ lines (gaalis and swearing), and meme sounds |
 
-The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse look, the loading screen fetches only the sounds you picked and builds the world, and you spawn at one end of an alley with a knife. Find a gun, find magazines, and stay alive. Your choices are saved for next time.
+The map downloads while you choose. Press **DEPLOY**: the game goes full screen and the mouse locks for mouse look, the loading screen fetches only the sounds you picked and builds the world, and you spawn at one end of an alley with a knife. Find a gun, find magazines, and stay alive. Your choices are saved for next time.
 
 <table>
   <tr>
@@ -79,7 +79,7 @@ The map downloads while you choose. Press **DEPLOY**: the mouse locks for mouse 
 | Jump, or climb a ledge you face | <kbd>Space</kbd> |
 | Crouch (while running: slide) | hold <kbd>C</kbd> or <kbd>Ctrl</kbd> |
 | Lean | hold <kbd>Q</kbd> or <kbd>E</kbd> |
-| Look | move the mouse: it locks when you deploy. <kbd>Esc</kbd> frees it, a click locks it again; unlocked, drag to look |
+| Look | move the mouse: it locks, and the game goes full screen, when you deploy. <kbd>Esc</kbd> frees it and leaves full screen, a click brings both back; unlocked, drag to look |
 | Attack, or slash with the knife | click or <kbd>F</kbd> |
 | Stab with the knife | right-click or <kbd>V</kbd> |
 | Aim down the sights, with a gun | hold right-click (on a Mac trackpad, press and hold with two fingers) |

@@ -12,6 +12,7 @@ import { type Loading, type StepId } from "./loading";
 import { assetUrl, releaseAssets } from "./assetStore";
 import { mapById } from "./maps";
 import { DefaultLoadingManager } from "three/webgpu";
+import { fillScreen } from "./mouseLock";
 
 // The game: the world, the match and everything on screen during play. main.ts loads this
 // module while the player sets up a match, and calls launch() on Deploy; until then nothing
@@ -951,9 +952,9 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
       canvas.addEventListener("pointerup", (event) => {
         if (!pointerDown || document.pointerLockElement === canvas) return;
         // With the mouse free, a click that does not drag locks it for mouse look, however long
-        // it is held; a quick tap on a touch screen attacks.
+        // it is held, and fills the screen again; a quick tap on a touch screen attacks.
         const still = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 7;
-        if (still && event.pointerType === "mouse") viewer?.lockPointer();
+        if (still && event.pointerType === "mouse") { viewer?.lockPointer(); fillScreen(); }
         else if (still && performance.now() - pointerDown.time < 350) attack();
         pointerDown = null;
       });
