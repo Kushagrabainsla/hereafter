@@ -17,9 +17,11 @@ export interface WorldEntity {
   center: Vec3;
   yaw: number;
   shape?: EntityShape;
-  // Loose objects are simulated by the coordinating peer and pushed by hits and blasts.
+  // Loose objects are simulated by whichever peer touches them and pushed by hits and blasts.
   mass?: number;
   prop?: string;
+  // The colour of a prop whose pale parts are tinted per copy.
+  tint?: number;
   // Bursts some time after it is destroyed, like a grenade, for gas cylinders.
   explosive?: boolean;
 }

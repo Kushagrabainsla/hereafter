@@ -10,7 +10,7 @@ import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./ar
 import { type Material } from "./materials";
 import { type InstanceRef, type WorldEntity } from "./entities";
 import { type SurfaceTextures } from "./surfaceTextures";
-import { FUEL_DRUM, propEntity, type PropModel } from "./props";
+import { FUEL_DRUM, FURNITURE, propEntity, type PropModel } from "./props";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
@@ -40,7 +40,6 @@ interface Pane { x: number; z0: number; z1: number; y0: number; y1: number }
 interface Strand { x0: number; z0: number; x1: number; z1: number; y: number; sag: number }
 
 const solids: LayoutBox[] = [];
-const PHO_TABLES: [number, number][] = [[2.2, -22.6], [4.3, -22.6], [3.2, -18.25]];
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 
 function box(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, material: Material, look: string): void {
@@ -64,10 +63,8 @@ box(-12.6, -11.8, 0, 1.05, 0.5, 8.5, "wood", "woodDark");
 box(-15, -14.3, 0, 0.95, -5.4, -1, "metal-solid", "steel");
 box(-15, -14.3, 0, 0.95, 3, 13.4, "metal-solid", "steel");
 box(-15, -14.2, 0, 1.0, -0.6, 2.4, "metal-solid", "steelDark");
-for (const z of [-2, 2.4, 6.8]) box(-10.7, -9.9, 0, 0.76, z - 0.4, z + 0.4, "wood", "woodTable");
 
 // ---------- market alley ----------
-for (const [x, z] of [[-4, 12.5], [-3.6, -4.5], [-4.2, -15]]) box(x - 0.55, x + 0.55, 0, 0.76, z - 0.55, z + 0.55, "wood", "woodTable");
 // Food truck across the north end, with gaps either side: a hollow kitchen players can enter.
 solids.push(...TRUCK_SOLIDS);
 // Fire escape on the west building: a grated platform with railings, reached by a ladder.
@@ -92,13 +89,10 @@ for (const room of SHOP_ROOMS) {
 // Inside the shops: a counter with a cooking line behind it, and tables by the window.
 box(2.4, 7.0, 0, 1.05, 10.4, 11.05, "wood", "none");
 box(5.6, 6.8, 0, 2.0, 13.9, 14.6, "metal-solid", "none");
-box(1.65, 2.75, 0, 0.76, 12.85, 13.95, "wood", "none");
 box(5.6, 6.3, 0, 1.05, 20.4, 24.4, "wood", "none");
 box(7.4, 8.2, 0, 1.05, 20.6, 24.4, "metal-solid", "none");
-for (const z of [21.0, 23.0]) box(1.85, 2.95, 0, 0.76, z - 0.55, z + 0.55, "wood", "none");
 box(5.6, 6.3, 0, 1.05, -24.6, -21.2, "wood", "none");
 box(7.4, 8.2, 0, 1.05, -24.4, -21.4, "metal-solid", "none");
-for (const [x, z] of PHO_TABLES) box(x - 0.4, x + 0.4, 0, 0.76, z - 0.4, z + 0.4, "wood", "none");
 box(0.5, 8.5, 0, 10, -6.6, -2, "brick", "plasterTeal");
 box(0.5, 8.5, 3.6, 10, -14.4, -6.6, "brick", "plasterTeal");
 // The record shop runs through the block: a glass front and double doors on the market alley,
@@ -230,6 +224,32 @@ const propSpots: [string, number, number, number, number][] = [
   // Red fuel drums: shot open, they vent fire and burst.
   ["fuel_drum", -7.6, 13.0, 0, 0], ["fuel_drum", 16.3, -3.0, 0, 0.6],
 ];
+// Furniture is loose too: [model, x, z, yaw, tint for the plastic stools].
+const furnitureSpots: [string, number, number, number, number?][] = [];
+const stoolsRound = (x: number, z: number, angles: number[], tints: number[]): void => angles.forEach((a, k) => { furnitureSpots.push(["plastic_stool", x + Math.cos(a) * 0.95, z + Math.sin(a) * 0.95, a, tints[k]]); });
+// The restaurant's tables, four chairs round each, every chair facing its table.
+for (const z of [-2, 2.4, 6.8]) {
+  furnitureSpots.push(["dining_table", -10.3, z, 0]);
+  for (const [dx, dz] of [[-0.75, 0], [0.75, 0], [0, 0.7], [0, -0.7]]) furnitureSpots.push(["dining_chair", -10.3 + dx, z + dz, Math.atan2(-dx, -dz)]);
+}
+// The market alley's folding tables, three plastic stools round each.
+for (const [x, z] of [[-4, 12.5], [-3.6, -4.5], [-4.2, -15]]) {
+  furnitureSpots.push(["cafe_table", x, z, 0]);
+  stoolsRound(x, z, [0.4, 0.4 + Math.PI * 2 / 3, 0.4 + Math.PI * 4 / 3], [0xc9302c, 0x2f6fb5, 0x3c9d6b]);
+}
+for (let z = -0.4; z <= 4.8; z += 0.9) furnitureSpots.push(["bar_stool", 20.0, z, 0]);
+// The shops of the middle block.
+for (const x of [3.3, 4.7, 6.1]) furnitureSpots.push(["bar_stool", x, 11.5, 0]);
+furnitureSpots.push(["cafe_table", 2.2, 13.4, 0]);
+stoolsRound(2.2, 13.4, [0.5, 3.6], [0xc94f6d, 0x3fa7a0]);
+for (const z of [21.0, 23.0]) {
+  furnitureSpots.push(["cafe_table", 2.4, z, 0]);
+  stoolsRound(2.4, z, [0.1, 3.3], [0xc9402f, 0xe0a030]);
+}
+for (const [x, z] of [[2.2, -22.6], [4.3, -22.6], [3.2, -18.25]]) {
+  furnitureSpots.push(["dining_table", x, z, 0]);
+  for (const dx of [-0.75, 0.75]) furnitureSpots.push(["dining_chair", x + dx, z, Math.atan2(-dx, 0)]);
+}
 // Fire extinguishers on walls: shot, they burst into a cloud of powder. [wall, surface, along, height]
 const EXTINGUISHERS: [Face, number, number, number][] = [
   ["px", -15, 13.6, 1.05], ["pz", -2, 18.5, 0.9], ["nx", 8.19, -13.95, 0.9], ["px", 8.5, 19.3, 0.9], ["nx", 17, -11.8, 0.9], ["nx", 0.5, 5.2, 0.9],
@@ -254,12 +274,12 @@ export const NIGHT_MARKET: MapLayout = {
     { id: "pistol-north", weapon: "pistol", east: 12.75, north: -21.5 },
     { id: "rifle-cut", weapon: "rifle", east: 4.5, north: 1 },
     { id: "rifle-kitchen", weapon: "rifle", east: -13.45, north: 3.6 },
-    // Spare magazines, two to a pickup, on tables, counters and the high ground.
-    { id: "mags-table-south", weapon: "pistol", item: "magazines", east: -4, north: 12.5, y: 0.76 },
-    { id: "mags-dining", weapon: "pistol", item: "magazines", east: -10.3, north: -2, y: 0.76 },
+    // Spare magazines, two to a pickup, on counters, the ground and the high ground.
+    { id: "mags-table-south", weapon: "pistol", item: "magazines", east: -2.7, north: 13.6 },
+    { id: "mags-dining", weapon: "pistol", item: "magazines", east: -12.2, north: 2.0, y: 1.05 },
     { id: "mags-bar", weapon: "pistol", item: "magazines", east: 21, north: 3.6, y: 1.1 },
     { id: "mags-cut", weapon: "pistol", item: "magazines", east: 2.2, north: -1.2 },
-    { id: "mags-table-north", weapon: "rifle", item: "magazines", east: -4.2, north: -15, y: 0.76 },
+    { id: "mags-table-north", weapon: "rifle", item: "magazines", east: -2.9, north: -16.1 },
     { id: "mags-fire-escape", weapon: "rifle", item: "magazines", east: -7.8, north: -19.4, y: 4.6 },
     { id: "mags-upstairs", weapon: "rifle", item: "magazines", east: 18.4, north: 8.8, y: 4.2 },
     { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 16.4, north: -9.25, y: 1.3 },
@@ -590,8 +610,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // the solid and turned to face the room; the solid stays as its collider. Counters run along
   // the solid's longer side.
   const furnish = (solid: LayoutBox): [string, number] | null => {
-    const [hx, , hz] = solid.half;
-    if (solid.look === "woodTable") return [hx < 0.5 ? "dining_table" : "cafe_table", 0];
+    const [, , hz] = solid.half;
     if (solid.look === "woodDark") return ["pass_counter", Math.PI / 2];
     if (solid.look === "woodBar") return [hz > 2 ? "bar_counter" : "record_counter", -Math.PI / 2];
     if (solid.look === "poolTable") return ["pool_table", 0];
@@ -803,38 +822,23 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   };
   // Boba: a bar with stools, a drinks fridge and a table by the window.
   bobaKit.place("boba_bar", turned(4.7, 0, 10.725, 0));
-  for (const x of [3.3, 4.7, 6.1]) bobaKit.place("bar_stool", new Matrix4().makeTranslation(x, 0, 11.5));
   bobaKit.place("drink_fridge", turned(6.2, 0, 14.25, Math.PI));
-  bobaKit.place("cafe_table", turned(2.2, 0, 13.4, 0));
-  for (const a of [0.5, 3.6]) bobaKit.place("plastic_stool", turned(2.2 + Math.cos(a) * 0.95, 0, 13.4 + Math.sin(a) * 0.95, a), a < 1 ? 0xc94f6d : 0x3fa7a0);
   shelf(bobaKit, "pz", 9.61, 4.4, ["goods_jars", "goods_bowls"]);
   bobaKit.place("menu_boba", wallMatrix("nz", 14.59, 3.4, 2.0));
   // Dumplings: a counter with steamers behind it, and two tables by the window.
   dumplingsKit.place("dumpling_counter", turned(5.95, 0, 22.4, -Math.PI / 2));
   kitchenLine(dumplingsKit, [["kitchen_counter", 21.175, 1.15], ["kitchen_range", 22.5, 1.5], ["kitchen_counter", 23.825, 1.15]]);
   for (const z of [22.1, 22.9]) dumplingsKit.place("steamer_stack", turned(7.8, 1.0, z, z));
-  for (const z of [21.0, 23.0]) {
-    dumplingsKit.place("cafe_table", turned(2.4, 0, z, 0));
-    for (const a of [0.1, 3.3]) dumplingsKit.place("plastic_stool", turned(2.4 + Math.cos(a) * 0.95, 0, z + Math.sin(a) * 0.95, a), a < 1 ? 0xc9402f : 0xe0a030);
-  }
   shelf(dumplingsKit, "nz", 24.39, 2.85, ["goods_sacks", "goods_tins"]);
   dumplingsKit.place("menu_dumplings", wallMatrix("nx", 8.19, 22.5, 2.0));
   // Pho: stockpots behind the counter, and dining tables.
   phoKit.place("pho_counter", turned(5.95, 0, -22.9, -Math.PI / 2));
   kitchenLine(phoKit, [["kitchen_counter", -24.025, 0.75], ["kitchen_range", -22.9, 1.5], ["kitchen_counter", -21.775, 0.75]]);
   phoKit.place("stock_pots", turned(7.8, 1.0, -22.9, 0));
-  for (const [x, z] of PHO_TABLES) {
-    phoKit.place("dining_table", turned(x, 0, z, 0));
-    for (const dx of [-0.75, 0.75]) phoKit.place("dining_chair", turned(x + dx, 0, z, Math.atan2(-dx, 0)));
-  }
   shelf(phoKit, "nz", -17.41, 5.8, ["goods_bowls", "goods_jars"]);
   phoKit.place("menu_pho", wallMatrix("nx", 8.19, -22.9, 2.0));
 
   // ---------- restaurant and bar interiors ----------
-  for (const z of [-2, 2.4, 6.8]) {
-    // Four cafe chairs round each table, each facing it.
-    for (const [dx, dz] of [[-0.75, 0], [0.75, 0], [0, 0.7], [0, -0.7]]) placer.place("dining_chair", new Matrix4().compose(new Vector3(-10.3 + dx, 0, z + dz), new Quaternion().setFromAxisAngle(UP, Math.atan2(-dx, -dz)), new Vector3(1, 1, 1)));
-  }
   // Pendants over the dining tables and the pass, and a lamp over the pool table.
   const pendants = lampSet("pendant", [...[-2, 2.4, 6.8].map((z) => at(-10.3, 2.86, z)), ...[1, 4.5, 8].map((z) => at(-12.2, 2.9, z, 0.88))], materials.lampGlow);
   [-2, 2.4, 6.8].forEach((z, index) => lamps.add(`lamp:pendant-${index}`, { x: -10.3, y: 2.86, z }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, pendants.slice(index, index + 1), [pendantLights[index]]));
@@ -847,7 +851,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     if (k % 2 === 0) placer.place("goods_bowls", wallMatrix("px", -14.975, z + 0.45, 2.275, 0.02));
   }
   // Leather stools along the bar, and behind it the mirror, the shelf and its bottles.
-  for (let z = -0.4; z <= 4.8; z += 0.9) placer.place("bar_stool", new Matrix4().makeTranslation(20.0, 0, z));
   placer.place("back_bar", wallMatrix("nx", 24.5, 8.0, 0));
   lamps.add("lamp:pool-table", { x: 20.1, y: 2.96, z: 8.5 }, { type: "box", half: [0.26, 0.08, 0.26] }, 0, lampSet("billiard_lamp", [at(20.1, 2.96, 8.5)], materials.lampGlow), [barLight]);
 
@@ -894,10 +897,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   });
 
   // ---------- market alley dressing ----------
-  for (const [x, z] of [[-4, 12.5], [-3.6, -4.5], [-4.2, -15]]) {
-    // Plastic stools, red, blue and green, round each folding table.
-    for (let k = 0; k < 3; k += 1) { const a = k / 3 * Math.PI * 2 + 0.4; placer.place("plastic_stool", new Matrix4().compose(new Vector3(x + Math.cos(a) * 0.95, 0, z + Math.sin(a) * 0.95), new Quaternion().setFromAxisAngle(UP, a), new Vector3(1, 1, 1)), [0xc9302c, 0x2f6fb5, 0x3c9d6b][k]); }
-  }
   // The food truck is a model of its own (foodTruck.ts).
 
   // ---------- service alley dressing ----------
@@ -1056,6 +1055,10 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   for (const [name, x, z, base, yaw] of propSpots) {
     const model = models.get(name);
     if (model) props.push(propEntity(`prop:${props.length}`, model, x, z, base, yaw));
+  }
+  for (const [name, x, z, yaw, tint] of furnitureSpots) {
+    const model = FURNITURE.find((entry) => entry.name === name)!;
+    props.push({ ...propEntity(`prop:${props.length}`, model, x, z, 0, yaw), tint });
   }
 
   let last = 0;

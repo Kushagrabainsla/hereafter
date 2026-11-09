@@ -35,7 +35,7 @@ import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
 import { EntityRegistry } from "./entities";
 import { WorldEffects } from "./worldEffects";
-import { FUEL_DRUM, loadPropModels, PropViews } from "./props";
+import { FUEL_DRUM, FURNITURE, loadPropModels, PropViews } from "./props";
 import { type PropPush, type PropState } from "../network/peerRoom";
 
 export type MapState = "loading" | "ready" | "error";
@@ -90,24 +90,22 @@ export interface MapViewer {
   remoteFlinch: (peerId: string, damage: number) => void;
   remotePosition: (peerId: string) => { x: number; y: number; z: number } | null;
   setLocalDead: (dead: boolean) => void;
-  propStates: (all: boolean) => PropState[];
-  applyPropStates: (states: PropState[]) => void;
-  setAuthority: (authority: boolean) => void;
+  propTraffic: (leading: boolean) => { moving: PropState[]; settled: PropState[] };
+  displacedProps: () => PropState[];
+  applyPropStates: (states: PropState[], owner: string, rest: boolean, self: string) => void;
   resetWorld: () => void;
   quickThrow: () => void;
   playAttack: (weapon: WeaponKind, stroke?: KnifeStroke) => void;
   // The mass of everything the player carries, in kilograms.
   setLoad: (kilograms: number) => void;
-  // Another player's carried mass, for how hard they shove props.
-  setRemoteMass: (peerId: string, kilograms: number) => void;
   // Dropped guns and magazines; ones named in fresh just fell and tumble into place.
   setDrops: (drops: Drop[], fresh: Set<string>) => void;
   // Which doors and hatches are open, from the shared state.
   setOpen: (open: Record<string, boolean>) => void;
   // The closest thing within reach that the player can open or close.
   nearestUse: () => { id: string; label: string; open: boolean } | null;
-  // Props this player walked into since the last call, for the coordinating peer to shove.
-  takeShoves: () => PropPush[];
+  // Props another peer owns that this player pushed since the last call, by that peer.
+  takeShoves: () => Map<string, PropPush[]>;
   applyShoves: (shoves: PropPush[]) => void;
   startReload: (weapon: WeaponKind, durationMs: number) => void;
   cancelReload: () => void;
@@ -217,7 +215,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   for (const [id, objects] of truck.groups) groups.set(id, objects);
   await step("props");
   await propViews.load(propModels);
-  propViews.addModel(FUEL_DRUM.name, pieces.get(FUEL_DRUM.name)?.parts ?? []);
+  for (const { name } of [FUEL_DRUM, ...FURNITURE]) propViews.addModel(name, pieces.get(name)?.parts ?? []);
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
   propViews.build(props);
 
@@ -370,7 +368,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const loot = new LootViews(scene, pickupData, pieces);
   void loadWeaponModels().then((models) => loot.setWeaponModels(models));
   const ejecta = new Ejecta(scene, (origin, direction, distance) => physics.sweep(origin, direction, distance), pieces);
-  const remoteMass = new Map<string, number>();
   let muzzleGlow = 0;
   // Where the camera was and how fast it moved, for what spent cases inherit.
   const eyeVelocity = new Vector3();
@@ -459,14 +456,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     const steps = physics.steps;
-    // Other players shove props on the coordinating peer before the world steps.
-    const present = new Set<string>();
-    remotePlayers.each((peerId, feet, pose, dead) => {
-      if (dead) return;
-      present.add(peerId);
-      physics.movePusher(peerId, feet.x, feet.z, feet.y, pose.crouching, 80 + (remoteMass.get(peerId) ?? 1));
-    });
-    for (const id of physics.pusherIds()) if (!present.has(id)) physics.removePusher(id);
     player.update(delta);
     camera.updateMatrixWorld();
     const eye = camera.position.clone();
@@ -765,9 +754,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     remoteFlinch(peerId, damage) { remotePlayers.flinch(peerId, damage); },
     remotePosition(peerId) { return remotePlayers.position(peerId); },
     quickThrow() { weaponVisuals.quickThrow(); },
-    propStates(all) { return physics.propStates(all); },
-    applyPropStates(states) { physics.applyPropStates(states); },
-    setAuthority(authority) { physics.setAuthority(authority); },
+    propTraffic(leading) { return physics.propTraffic(leading); },
+    displacedProps() { return physics.displacedProps(); },
+    applyPropStates(states, owner, rest, self) { physics.applyPropStates(states, owner, rest, self); },
     resetWorld() { physics.resetProps(); ejecta.clear(); loot.clear(); },
     setOpen(open) {
       toggleState = { ...toggleDefaults, ...open };
@@ -814,7 +803,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setLoad(kilograms) { player.setLoad(kilograms); },
     takeShoves() { return physics.takeShoves(); },
     applyShoves(shoves) { physics.applyShoves(shoves); },
-    setRemoteMass(peerId, kilograms) { remoteMass.set(peerId, kilograms); },
     setDrops(drops, fresh) {
       const falling = new Map<string, GrenadePath>();
       for (const drop of drops) if (fresh.has(drop.id)) falling.set(drop.id, physics.grenadePath(drop.from, drop.velocity, 1.6));

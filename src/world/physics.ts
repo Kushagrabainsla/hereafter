@@ -12,17 +12,25 @@ const STEP_SECONDS = 1 / 60;
 const MIN_MANTLE = 0.45;
 const MAX_MANTLE = 1.6;
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
-const PLAYER_GROUPS = (0x0002 << 16) | 0xffff;
+// The player takes part in no contacts: props are moved only by the character controller, with
+// the mass of the player's body, not the unstoppable force of a moving kinematic body.
+const PLAYER_GROUPS = 0x0002 << 16;
 const RAGDOLL_GROUPS = (0x0004 << 16) | 0x0001;
-// Other players' bodies on the coordinating peer take part in no contacts: they reach loose
-// props only through their character controller, which pushes with a body's mass rather
-// than the unstoppable force of a moving kinematic body.
-const PUSHER_GROUPS = 0x0008 << 16;
 // The most force a player's body puts into a prop it walks into, in newtons: enough to
 // shove a crate or a bin along, not a full drum.
 const PUSH_FORCE = 800;
+// A prop another peer owns glides to each place it reports over a little more than the gap
+// between reports. An owner silent for this long has gone, and the coordinating peer takes over.
+const FOLLOW_SECONDS = 0.08;
+const OWNER_SILENCE_MS = 1500;
+// A prop this slow for this long has come to rest, and its owner lets it go.
+const QUIET_SPEED = 0.06;
+const QUIET_SPIN = 0.12;
+const QUIET_SECONDS = 0.5;
 
 export interface Quat { x: number; y: number; z: number; w: number }
+export type PropTransform = [string, number, number, number, number, number, number, number];
+interface Followed { owner: string; from: number[]; to: number[]; progress: number; resting: boolean; heard: number }
 export interface RagdollPart { name: string; position: Vec3; rotation: Quat; shape: { type: "capsule"; halfHeight: number; radius: number; rotation: Quat } | { type: "ball"; radius: number } }
 export interface RagdollJoint { a: string; b: string; anchor: Vec3; hinge?: { axis: Vec3; limits: [number, number] } }
 export interface Ragdoll { pose(name: string): { position: Vec3; rotation: Quat } | null; remove(): void }
@@ -71,18 +79,18 @@ export class PhysicsWorld {
   private solid = (collider: RAPIER.Collider): boolean => !this.cosmetic.has(collider.handle);
   private idleTime = 0;
   steps = 0;
-  // Loose props: simulated here when this peer coordinates the room, otherwise moved to
-  // the coordinator's reported transforms.
+  // Loose props. Each has one owner at a time: the peer that touched it first simulates it and
+  // tells the others where it is. A prop at rest has no owner and is held still everywhere.
   private props = new Map<string, RAPIER.RigidBody>();
   private propHandles = new Set<number>();
-  private authority = true;
-  // Other players as kinematic capsules, so they shove props on the coordinating peer.
-  private pushers = new Map<string, { body: RAPIER.RigidBody; collider: RAPIER.Collider; crouched: boolean }>();
-  private pusherController: RAPIER.KinematicCharacterController;
+  private owned = new Set<string>();
+  private followed = new Map<string, Followed>();
+  // How long each prop this peer owns has been all but still.
+  private quiet = new Map<string, number>();
   // Doors and hatches: fixed colliders moved whenever they open or close.
   private movers = new Map<string, RAPIER.Collider>();
-  // Shoves the player gave props this peer does not simulate, waiting to be sent.
-  private shoves = new Map<string, Vec3>();
+  // Shoves the player gave props another peer owns, waiting to be sent to that peer.
+  private shoves = new Map<string, { owner: string; push: Vec3; speed: number }>();
 
   constructor(private data: ArenaData, arena: Arena) {
     this.world = new RAPIER.World({ x: 0, y: -14, z: 0 });
@@ -101,49 +109,10 @@ export class PhysicsWorld {
     // put into it: a cardboard box flies, a full drum barely shifts.
     this.controller.setApplyImpulsesToDynamicBodies(true);
     this.controller.setCharacterMass(80);
-    this.pusherController = this.world.createCharacterController(0.015);
-    this.pusherController.setApplyImpulsesToDynamicBodies(true);
-    this.pusherController.setCharacterMass(80);
     this.world.step();
   }
 
   setCharacterMass(kilograms: number): void { this.controller.setCharacterMass(kilograms); }
-
-  // Moves another player's body to where they are, shoving any loose prop in the way with
-  // their mass. Their own client decides where they go; this only pushes the props.
-  movePusher(id: string, east: number, north: number, feet: number, crouched: boolean, kilograms: number): void {
-    if (!this.authority) return;
-    let pusher = this.pushers.get(id);
-    const halfHeight = crouched ? CROUCHED_HALF_HEIGHT : STANDING_HALF_HEIGHT;
-    const target = { x: east, y: feet + halfHeight + RADIUS, z: north };
-    if (!pusher) {
-      const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(target.x, target.y, target.z));
-      const collider = this.world.createCollider(RAPIER.ColliderDesc.capsule(halfHeight, RADIUS).setCollisionGroups(PUSHER_GROUPS), body);
-      this.cosmetic.add(collider.handle);
-      pusher = { body, collider, crouched };
-      this.pushers.set(id, pusher);
-      return;
-    }
-    if (pusher.crouched !== crouched) { pusher.collider.setShape(new RAPIER.Capsule(halfHeight, RADIUS)); pusher.crouched = crouched; }
-    const current = pusher.body.translation();
-    const delta = { x: target.x - current.x, y: target.y - current.y, z: target.z - current.z };
-    // Respawns and corrections teleport without sweeping through props.
-    if (Math.hypot(delta.x, delta.z) < 1.5) {
-      this.pusherController.setCharacterMass(kilograms);
-      this.pusherController.computeColliderMovement(pusher.collider, delta, undefined, undefined, (collider) => this.propHandles.has(collider.handle));
-    }
-    pusher.body.setNextKinematicTranslation(target);
-  }
-
-  removePusher(id: string): void {
-    const pusher = this.pushers.get(id);
-    if (!pusher) return;
-    this.cosmetic.delete(pusher.collider.handle);
-    this.world.removeRigidBody(pusher.body);
-    this.pushers.delete(id);
-  }
-
-  pusherIds(): string[] { return [...this.pushers.keys()]; }
 
   private addTerrain(): void {
     const segments = 42;
@@ -183,7 +152,7 @@ export class PhysicsWorld {
     let collider: RAPIER.Collider;
     if (entity.mass) {
       const volume = shape.type === "box" ? 8 * shape.half[0] * shape.half[1] * shape.half[2] : Math.PI * shape.radius ** 2 * 2 * shape.halfHeight;
-      const body = this.world.createRigidBody((this.authority ? RAPIER.RigidBodyDesc.dynamic() : RAPIER.RigidBodyDesc.kinematicPositionBased())
+      const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()
         .setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation).setLinearDamping(0.1).setAngularDamping(0.5).setCcdEnabled(true));
       collider = this.world.createCollider(desc.setDensity(entity.mass / volume).setFriction(0.7).setRestitution(0.15), body);
       this.props.set(entity.id, body);
@@ -202,6 +171,9 @@ export class PhysicsWorld {
     this.tags.delete(collider.handle);
     this.propHandles.delete(collider.handle);
     const body = this.props.get(id);
+    this.owned.delete(id);
+    this.quiet.delete(id);
+    this.followed.delete(id);
     if (body) { this.world.removeRigidBody(body); this.props.delete(id); }
     else this.world.removeCollider(collider, true);
     this.entityColliders.delete(id);
@@ -217,42 +189,147 @@ export class PhysicsWorld {
 
   propIds(): string[] { return [...this.props.keys()]; }
 
-  // Props that are moving, or with all set every prop that has left its starting place.
-  propStates(all: boolean): [string, number, number, number, number, number, number, number][] {
-    const states: [string, number, number, number, number, number, number, number][] = [];
-    for (const [id, body] of this.props) {
-      const start = this.entities.get(id)!.center, t = body.translation(), r = body.rotation();
-      const moved = Math.hypot(t.x - start.x, t.y - start.y, t.z - start.z) > 0.03 || Math.abs(r.x) + Math.abs(r.z) > 0.02;
-      if (all ? moved : !body.isSleeping() && body.isDynamic()) {
-        const round = (value: number): number => Math.round(value * 1000) / 1000;
-        states.push([id, round(t.x), round(t.y), round(t.z), round(r.x), round(r.y), round(r.z), round(r.w)]);
+  // The state of a prop to send to other peers: [id, x, y, z, qx, qy, qz, qw].
+  private propState(id: string, body: RAPIER.RigidBody): PropTransform {
+    const t = body.translation(), r = body.rotation();
+    const round = (value: number): number => Math.round(value * 1000) / 1000;
+    return [id, round(t.x), round(t.y), round(t.z), round(r.x), round(r.y), round(r.z), round(r.w)];
+  }
+
+  // Starts simulating a prop nobody owns, on this peer.
+  private claim(id: string, body: RAPIER.RigidBody): void {
+    if (this.owned.has(id) || this.followed.has(id)) return;
+    body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    this.owned.add(id);
+    this.quiet.set(id, 0);
+  }
+
+  // What this peer has to tell the others: the props it is moving, and those that have just
+  // settled, which it lets go. A prop whose owner has gone quiet in mid-air is taken over by
+  // the coordinating peer, so it finishes falling.
+  propTraffic(leading: boolean): { moving: PropTransform[]; settled: PropTransform[] } {
+    const moving: PropTransform[] = [], settled: PropTransform[] = [];
+    for (const id of this.owned) {
+      const body = this.props.get(id);
+      if (!body) continue;
+      const state = this.propState(id, body);
+      if ((this.quiet.get(id) ?? 0) < QUIET_SECONDS) { moving.push(state); continue; }
+      settled.push(state);
+      this.owned.delete(id);
+      this.quiet.delete(id);
+      const t = body.translation(), r = body.rotation();
+      body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
+      body.setNextKinematicTranslation(t);
+      body.setNextKinematicRotation(r);
+    }
+    if (leading) {
+      const now = performance.now();
+      for (const [id, follow] of this.followed) {
+        if (follow.resting || now - follow.heard < OWNER_SILENCE_MS) continue;
+        this.followed.delete(id);
+        const body = this.props.get(id);
+        if (body) this.claim(id, body);
       }
+    }
+    return { moving, settled };
+  }
+
+  // Every prop at rest away from where it started, for a player who has just joined.
+  displacedProps(): PropTransform[] {
+    const states: PropTransform[] = [];
+    for (const [id, body] of this.props) {
+      if (this.owned.has(id) || this.followed.has(id)) continue;
+      const start = this.entities.get(id)!.center, t = body.translation(), r = body.rotation(), yaw = this.entities.get(id)!.yaw;
+      const turned = Math.abs(r.x) + Math.abs(r.z) > 0.02 || Math.abs(Math.abs(r.y) - Math.abs(Math.sin(yaw / 2))) > 0.02;
+      if (Math.hypot(t.x - start.x, t.y - start.y, t.z - start.z) > 0.03 || turned) states.push(this.propState(id, body));
     }
     return states;
   }
 
-  // Moves props this peer does not simulate to the coordinator's transforms.
-  applyPropStates(states: [string, number, number, number, number, number, number, number][]): void {
-    if (this.authority) return;
+  // What another peer says about props it owns, or, with resting set, where props have come
+  // to rest. Two peers can claim one prop in the same moment: the lower id keeps it.
+  applyPropStates(states: PropTransform[], owner: string, resting: boolean, self: string): void {
+    const now = performance.now();
     for (const [id, x, y, z, qx, qy, qz, qw] of states) {
       const body = this.props.get(id);
-      if (!body || ![x, y, z, qx, qy, qz, qw].every(Number.isFinite)) continue;
-      body.setNextKinematicTranslation({ x, y, z });
-      body.setNextKinematicRotation({ x: qx, y: qy, z: qz, w: qw });
+      if (!body || ![x, y, z, qx, qy, qz, qw].every(Number.isFinite) || Math.abs(x) > 60 || Math.abs(z) > 60 || y < -5 || y > 40) continue;
+      if (this.owned.has(id)) {
+        if (resting || owner > self) continue;
+        this.owned.delete(id);
+        body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
+      }
+      const current = this.followed.get(id);
+      if (current && current.owner !== owner && (resting || (now - current.heard < OWNER_SILENCE_MS && owner > current.owner))) continue;
+      const t = body.translation(), r = body.rotation();
+      this.followed.set(id, { owner, from: [t.x, t.y, t.z, r.x, r.y, r.z, r.w], to: [x, y, z, qx, qy, qz, qw], progress: 0, resting, heard: now });
     }
   }
 
-  setAuthority(authority: boolean): void {
-    if (authority === this.authority) return;
-    this.authority = authority;
-    for (const body of this.props.values()) body.setBodyType(authority ? RAPIER.RigidBodyType.Dynamic : RAPIER.RigidBodyType.KinematicPositionBased, true);
-    if (!authority) for (const id of this.pusherIds()) this.removePusher(id);
+  // Before each step: props another peer owns glide to where it last said they were, a packet
+  // behind so they move smoothly between packets.
+  private followProps(): void {
+    for (const [id, follow] of this.followed) {
+      const body = this.props.get(id);
+      if (!body) { this.followed.delete(id); continue; }
+      follow.progress = Math.min(1, follow.progress + STEP_SECONDS / FOLLOW_SECONDS);
+      const { from, to, progress: t } = follow;
+      const at = (index: number): number => from[index] + (to[index] - from[index]) * t;
+      // Quaternions may come with either sign; turn the short way.
+      const sign = from[3] * to[3] + from[4] * to[4] + from[5] * to[5] + from[6] * to[6] < 0 ? -1 : 1;
+      const turn = (index: number): number => from[index] + (sign * to[index] - from[index]) * t;
+      const [qx, qy, qz, qw] = [turn(3), turn(4), turn(5), turn(6)], length = Math.hypot(qx, qy, qz, qw) || 1;
+      body.setNextKinematicTranslation({ x: at(0), y: at(1), z: at(2) });
+      body.setNextKinematicRotation({ x: qx / length, y: qy / length, z: qz / length, w: qw / length });
+      if (t >= 1 && follow.resting) this.followed.delete(id);
+    }
   }
 
-  // A bullet or blast pushing a loose prop.
+  // Before each step: a moving prop this peer owns takes over the free props it is about to
+  // touch, so what it hits moves with its full momentum and a stack comes down together.
+  private spreadOwnership(): void {
+    const reached: string[] = [];
+    for (const id of this.owned) {
+      const body = this.props.get(id), shape = this.entities.get(id)?.shape;
+      if (!body || !shape) continue;
+      const v = body.linvel(), w = body.angvel();
+      const still = Math.hypot(v.x, v.y, v.z) < QUIET_SPEED && Math.hypot(w.x, w.y, w.z) < QUIET_SPIN;
+      this.quiet.set(id, still ? (this.quiet.get(id) ?? 0) + STEP_SECONDS : 0);
+      const size = shape.type === "box" ? Math.hypot(...shape.half) : Math.hypot(shape.halfHeight, shape.radius);
+      const speed = Math.hypot(v.x, v.y, v.z) + Math.hypot(w.x, w.y, w.z) * size;
+      if (speed < 0.05) continue;
+      const reach = size + speed * STEP_SECONDS * 2 + 0.05;
+      this.world.collidersWithAabbIntersectingAabb(body.translation(), { x: reach, y: reach, z: reach }, (collider) => {
+        if (!this.propHandles.has(collider.handle)) return true;
+        const other = this.tags.get(collider.handle)?.entity;
+        if (other && !this.owned.has(other) && !this.followed.has(other)) reached.push(other);
+        return true;
+      });
+    }
+    for (const id of reached) { const body = this.props.get(id); if (body) this.claim(id, body); }
+  }
+
+  private stepWorld(): void {
+    this.spreadOwnership();
+    this.followProps();
+    this.world.step();
+  }
+
+  // A bullet or blast pushing a loose prop: this peer starts simulating a prop nobody owns,
+  // and passes the push to the owner of one that somebody does.
   push(id: string, point: Vec3, impulse: Vec3): void {
     const body = this.props.get(id);
-    if (body && body.isDynamic()) body.applyImpulseAtPoint(impulse, point, true);
+    if (!body) return;
+    const follow = this.followed.get(id);
+    if (follow) { this.addShove(id, follow.owner, impulse, 0); return; }
+    this.claim(id, body);
+    body.applyImpulseAtPoint(impulse, point, true);
+  }
+
+  // speed is how fast the player pushing was walking into the prop, or 0 for a bullet or blast.
+  private addShove(id: string, owner: string, push: Vec3, speed: number): void {
+    const shove = this.shoves.get(id);
+    if (shove && shove.owner === owner) { shove.push.x += push.x; shove.push.y += push.y; shove.push.z += push.z; shove.speed = Math.max(shove.speed, speed); }
+    else this.shoves.set(id, { owner, push: { ...push }, speed });
   }
 
   // A door or hatch: a thin box of a material, placed and turned with setMover. A door leaf
@@ -287,11 +364,12 @@ export class PhysicsWorld {
   resetProps(): void {
     for (const [id, body] of this.props) {
       const entity = this.entities.get(id)!;
+      body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
       body.setTranslation(entity.center, true);
       body.setRotation({ x: 0, y: Math.sin(entity.yaw / 2), z: 0, w: Math.cos(entity.yaw / 2) }, true);
-      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     }
+    this.owned.clear();
+    this.followed.clear();
   }
 
   restoreEntity(id: string): void {
@@ -319,7 +397,7 @@ export class PhysicsWorld {
     this.crouched = false;
     this.collider.setShape(new RAPIER.Capsule(STANDING_HALF_HEIGHT, RADIUS));
     this.body.setTranslation({ x: east, y: terrainHeight(this.data, east, north) + STANDING_HALF_HEIGHT + RADIUS + 0.03, z: north }, true);
-    this.world.step();
+    this.stepWorld();
     return this.position(true);
   }
 
@@ -342,18 +420,19 @@ export class PhysicsWorld {
 
   move(east: number, north: number, vertical: number): CharacterStep {
     this.controller.computeColliderMovement(this.collider, { x: east, y: vertical, z: north }, undefined, undefined, this.solid);
-    if (!this.authority) this.collectShoves(east, north);
+    this.collectShoves(east, north);
     this.steps += 1;
     const movement = this.controller.computedMovement();
     const current = this.body.translation();
     this.body.setNextKinematicTranslation({ x: current.x + movement.x, y: current.y + movement.y, z: current.z + movement.z });
-    this.world.step();
+    this.stepWorld();
     return this.position(this.controller.computedGrounded());
   }
 
-  // Where another peer simulates the props, the local copies cannot move, so the character
-  // controller's own push does nothing. Walking into one is recorded instead, as the impulse
-  // the player's mass would give it: as much of the walk as the prop blocked, up to a
+  // Walking into a loose prop. A prop nobody owns becomes this peer's, and from the next step
+  // the character controller shoves it with the player's mass, with no wait on the network. A
+  // prop another peer owns cannot move here, so the walk is recorded for that peer, as the
+  // impulse the player's mass would give it: as much of the walk as the prop blocked, up to a
   // body's pushing force.
   private collectShoves(east: number, north: number): void {
     const mass = this.controller.characterMass() ?? 80;
@@ -366,33 +445,43 @@ export class PhysicsWorld {
       if (!id || flat < 0.3) continue;
       const into = -(east * n.x + north * n.z) / flat / STEP_SECONDS;
       if (into <= 0.05) continue;
+      const follow = this.followed.get(id);
+      if (!follow) { const body = this.props.get(id); if (body) this.claim(id, body); continue; }
       const impulse = Math.min(mass * into, PUSH_FORCE * STEP_SECONDS);
-      const total = this.shoves.get(id) ?? { x: 0, y: 0, z: 0 };
-      total.x -= n.x / flat * impulse;
-      total.z -= n.z / flat * impulse;
-      this.shoves.set(id, total);
+      this.addShove(id, follow.owner, { x: -n.x / flat * impulse, y: 0, z: -n.z / flat * impulse }, Math.min(into, 12));
     }
   }
 
-  takeShoves(): [string, number, number, number][] {
-    // A long frame can gather more than a packet may carry; the excess is lost, as a body
-    // cannot lean harder than that anyway.
-    const shoves = [...this.shoves].map(([id, v]): [string, number, number, number] => {
-      const scale = Math.min(1, 100 / (Math.hypot(v.x, v.z) || 1));
-      return [id, Math.round(v.x * scale * 100) / 100, 0, Math.round(v.z * scale * 100) / 100];
-    });
+  // Shoves waiting to go out, by the peer that owns each prop.
+  takeShoves(): Map<string, [string, number, number, number, number][]> {
+    const byOwner = new Map<string, [string, number, number, number, number][]>();
+    for (const [id, { owner, push, speed }] of this.shoves) {
+      // A long frame can gather more than a packet may carry; the excess is lost, as a body
+      // cannot lean harder than that anyway.
+      const scale = Math.min(1, 100 / (Math.hypot(push.x, push.y, push.z) || 1));
+      const list = byOwner.get(owner) ?? [];
+      list.push([id, Math.round(push.x * scale * 100) / 100, Math.round(push.y * scale * 100) / 100, Math.round(push.z * scale * 100) / 100, Math.round(speed * 100) / 100]);
+      byOwner.set(owner, list);
+    }
     this.shoves.clear();
-    return shoves;
+    return byOwner;
   }
 
-  // Shoves another player gave props this peer simulates, applied a little above the
-  // middle of each prop the way a hip or hand meets it.
-  applyShoves(shoves: [string, number, number, number][]): void {
-    for (const [id, x, y, z] of shoves) {
+  // Shoves other players gave props this peer owns, applied a little above the middle of each
+  // prop the way a hip or hand meets it. A body walking into a light stool moves it no faster
+  // than the body is walking; it does not fire it across the room.
+  applyShoves(shoves: [string, number, number, number, number][]): void {
+    for (const [id, x, y, z, speed] of shoves) {
       const body = this.props.get(id);
-      if (!body || !body.isDynamic()) continue;
+      // It may have settled while the shove was on its way; then it is this peer's to move again.
+      if (!body || this.followed.has(id)) continue;
+      this.claim(id, body);
       const at = body.translation();
       body.applyImpulseAtPoint({ x, y, z }, { x: at.x, y: at.y + 0.1, z: at.z }, true);
+      if (speed <= 0) continue;
+      const length = Math.hypot(x, y, z) || 1, v = body.linvel();
+      const over = (v.x * x + v.y * y + v.z * z) / length - speed;
+      if (over > 0) body.setLinvel({ x: v.x - x / length * over, y: v.y - y / length * over, z: v.z - z / length * over }, true);
     }
   }
 
@@ -503,7 +592,7 @@ export class PhysicsWorld {
   // ragdolls and loose props keep falling.
   advance(seconds: number): void {
     this.idleTime = Math.min(0.1, this.idleTime + seconds);
-    while (this.idleTime >= STEP_SECONDS) { this.world.step(); this.idleTime -= STEP_SECONDS; }
+    while (this.idleTime >= STEP_SECONDS) { this.stepWorld(); this.idleTime -= STEP_SECONDS; }
   }
 
   // Linked bodies for a falling character. Parts start at rest in the given pose with a

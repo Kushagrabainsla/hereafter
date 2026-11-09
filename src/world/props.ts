@@ -1,4 +1,4 @@
-import { InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
+import { Color, InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { type WorldEntity } from "./entities";
 import { type Material } from "./materials";
@@ -7,14 +7,23 @@ import { assetFetch } from "../assetStore";
 export interface PropModel { name: string; file: string; size: [number, number, number]; material: Material; mass: number }
 
 // Durability of breakable props; the rest dent and get thrown around but stay whole.
-const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16 };
+const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16, dining_chair: 40, dining_table: 120, cafe_table: 70, plastic_stool: 20 };
 const ROUND = new Set(["trash_can", "oil_drum", "fuel_drum"]);
 // Shot open, these vent burning fuel and then burst like a grenade.
 const EXPLOSIVE = new Set(["fuel_drum"]);
 
 // A red fuel drum, modelled in the market kit rather than taken from a photo scan.
 export const FUEL_DRUM: PropModel = { name: "fuel_drum", file: "", size: [0.62, 0.92, 0.62], material: "metal-thin", mass: 60 };
-const SHADOWLESS = new Set(["cardboard_box", "plastic_crate"]);
+// Furniture from the kit (scripts/assets/families/furniture.py), with what it really weighs. The
+// steel bar stools dent but do not break.
+export const FURNITURE: PropModel[] = [
+  { name: "dining_chair", file: "", size: [0.42, 0.85, 0.42], material: "wood", mass: 5 },
+  { name: "dining_table", file: "", size: [0.8, 0.76, 0.8], material: "wood", mass: 18 },
+  { name: "cafe_table", file: "", size: [1.1, 0.76, 1.1], material: "wood", mass: 9 },
+  { name: "bar_stool", file: "", size: [0.41, 0.75, 0.41], material: "metal-thin", mass: 9 },
+  { name: "plastic_stool", file: "", size: [0.42, 0.46, 0.42], material: "plastic", mass: 1.2 },
+];
+const SHADOWLESS = new Set(["cardboard_box", "plastic_crate", ...FURNITURE.map((model) => model.name)]);
 
 export async function loadPropModels(): Promise<PropModel[]> {
   try {
@@ -37,7 +46,7 @@ export function propEntity(id: string, model: PropModel, east: number, north: nu
 export class PropViews {
   private parts = new Map<string, { geometry: BufferGeometry; material: SurfaceMaterial | SurfaceMaterial[]; matrix: Matrix4 }[]>();
   private meshes = new Map<string, InstancedMesh[]>();
-  private slots = new Map<string, { model: string; index: number; drop: number; hidden: boolean }>();
+  private slots = new Map<string, { model: string; index: number; drop: number; hidden: boolean; last: number[] }>();
   private counts = new Map<string, number>();
   private body = new Matrix4();
   private part = new Matrix4();
@@ -75,7 +84,7 @@ export class PropViews {
     this.counts.set(entity.prop, index + 1);
     // Models sit with their base at y = 0; bodies are centred, so drop the model half its height.
     const drop = entity.shape?.type === "box" ? entity.shape.half[1] : entity.shape?.type === "cylinder" ? entity.shape.halfHeight : 0;
-    this.slots.set(entity.id, { model: entity.prop, index, drop, hidden: false });
+    this.slots.set(entity.id, { model: entity.prop, index, drop, hidden: false, last: [] });
   }
 
   build(entities: WorldEntity[]): void {
@@ -92,7 +101,10 @@ export class PropViews {
       this.meshes.set(model, meshes);
     }
     for (const entity of entities) {
-      if (!this.slots.has(entity.id)) continue;
+      const slot = this.slots.get(entity.id);
+      if (!slot) continue;
+      // Pale parts take each copy's own colour, like the plastic stools.
+      for (const mesh of this.meshes.get(slot.model) ?? []) if (entity.tint !== undefined && (mesh.material as SurfaceMaterial).name.startsWith("paint_")) mesh.setColorAt(slot.index, new Color(entity.tint));
       this.place(entity.id, entity.center, { x: 0, y: Math.sin(entity.yaw / 2), z: 0, w: Math.cos(entity.yaw / 2) });
     }
   }
@@ -100,6 +112,10 @@ export class PropViews {
   place(id: string, position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number; w: number }): void {
     const slot = this.slots.get(id);
     if (!slot || slot.hidden) return;
+    // Most props are at rest, and a moved instance is sent to the graphics card again.
+    const now = [position.x, position.y, position.z, rotation.x, rotation.y, rotation.z, rotation.w];
+    if (now.every((value, index) => value === slot.last[index])) return;
+    slot.last = now;
     const meshes = this.meshes.get(slot.model);
     const parts = this.parts.get(slot.model);
     if (!meshes || !parts) return;
@@ -115,6 +131,7 @@ export class PropViews {
     const slot = this.slots.get(id);
     if (!slot) return;
     slot.hidden = !visible;
+    slot.last = [];
     if (visible) return;
     for (const mesh of this.meshes.get(slot.model) ?? []) { mesh.setMatrixAt(slot.index, this.zero); mesh.instanceMatrix.needsUpdate = true; }
   }

@@ -6,7 +6,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 19;
+const PROTOCOL_VERSION = 20;
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
 // of the five it picked failed or took seconds to pass a message on, and the rest took 135 to
@@ -48,11 +48,13 @@ type LeaderPacket = { version: number; map: string; leader: string; epoch: numbe
 // How well a peer could coordinate: how long its main thread keeps a message waiting, and its
 // round trip to each peer, in ms.
 type FitnessPacket = { version: number; map: string; lag: number; rtt: Record<string, number> };
-// Loose prop transforms from the coordinator: [id, x, y, z, qx, qy, qz, qw].
+// Loose prop transforms from whichever peer owns them: [id, x, y, z, qx, qy, qz, qw]. With
+// rest set, they have come to rest and nobody owns them any more.
 export type PropState = [string, number, number, number, number, number, number, number];
-type PropsPacket = { version: number; map: string; states: PropState[] };
-// Shoves a player gave loose props the coordinator simulates: [id, impulse x, y, z] in N·s.
-export type PropPush = [string, number, number, number];
+type PropsPacket = { version: number; map: string; states: PropState[]; rest?: boolean };
+// Shoves a player gave loose props another peer owns: [id, impulse x, y, z] in N·s, and how
+// fast they were walking into it, or 0 for a bullet or blast.
+export type PropPush = [string, number, number, number, number];
 type PushPacket = { version: number; map: string; pushes: PropPush[] };
 // A meme a player's own movement set off (src/game/memes.ts), so every peer plays the same one.
 type MemePacket = { version: number; code: string; seed: number };
@@ -62,7 +64,7 @@ export interface PeerRoomEvents {
   onPose: (peerId: string, pose: PlayerPose, sentAt: number) => void;
   onPeerLeave: (peerId: string) => void;
   onStatus: (message: string) => void;
-  onProps?: (states: PropState[]) => void;
+  onProps?: (states: PropState[], owner: string, rest: boolean) => void;
   onPushes?: (pushes: PropPush[]) => void;
   onMeme?: (peerId: string, code: string, seed: number) => void;
 }
@@ -326,10 +328,10 @@ export class PeerRoom {
       this.fitness.set(peerId, { version: value.version, map: value.map, lag: Math.max(0, Math.min(5000, value.lag)), rtt, at: performance.now() });
     };
     this.pushAction.onMessage = (value, { peerId }) => {
-      if (this.leaderId !== selfId || !this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.pushes)) return;
+      if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.pushes)) return;
       // A body can only lean so hard on a prop in the time between packets.
-      const pushes = value.pushes.filter((push) => Array.isArray(push) && push.length === 4 && typeof push[0] === "string" && push[0].length < 40
-        && push.slice(1).every((n) => typeof n === "number" && Number.isFinite(n)) && Math.hypot(push[1], push[2], push[3]) <= 120).slice(0, 8);
+      const pushes = value.pushes.filter((push) => Array.isArray(push) && push.length === 5 && typeof push[0] === "string" && push[0].length < 40
+        && push.slice(1).every((n) => typeof n === "number" && Number.isFinite(n)) && Math.hypot(push[1], push[2], push[3]) <= 120 && push[4] >= 0 && push[4] <= 12).slice(0, 8);
       if (pushes.length) this.events.onPushes?.(pushes);
     };
     this.memeAction.onMessage = (value, { peerId }) => {
@@ -337,9 +339,9 @@ export class PeerRoom {
       this.events.onMeme?.(peerId, value.code, value.seed);
     };
     this.propsAction.onMessage = (value, { peerId }) => {
-      if (peerId !== this.leaderId || this.leaderId === selfId || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.states)) return;
+      if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.states)) return;
       const states = value.states.filter((state) => Array.isArray(state) && state.length === 8 && typeof state[0] === "string" && state[0].length < 40 && state.slice(1).every((n) => typeof n === "number" && Number.isFinite(n))).slice(0, 200);
-      this.events.onProps?.(states);
+      this.events.onProps?.(states, peerId, value.rest === true);
     };
     this.poseAction.onMessage = (value, { peerId }) => this.receivePose(value, peerId);
     this.intentAction.onMessage = (value, { peerId }) => {
@@ -775,9 +777,9 @@ export class PeerRoom {
 
   leading(): boolean { return this.leaderId === selfId; }
 
-  sendProps(states: PropState[]): void {
-    if (this.leaderId !== selfId || !this.peers.size || !states.length) return;
-    void this.propsAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, states }).catch(() => undefined);
+  sendProps(states: PropState[], rest: boolean): void {
+    if (!this.peers.size || !states.length) return;
+    void this.propsAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, states, ...(rest ? { rest } : {}) }).catch(() => undefined);
   }
 
   sendMeme(code: string, seed: number): void {
@@ -785,9 +787,9 @@ export class PeerRoom {
     void this.memeAction.send({ version: PROTOCOL_VERSION, code, seed }).catch(() => undefined);
   }
 
-  sendPushes(pushes: PropPush[]): void {
-    if (this.leaderId === selfId || !pushes.length) return;
-    void this.pushAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, pushes }, { target: this.leaderId }).catch(() => undefined);
+  sendPushes(owner: string, pushes: PropPush[]): void {
+    if (!this.peers.has(owner) || !pushes.length) return;
+    void this.pushAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, pushes }, { target: owner }).catch(() => undefined);
   }
 
   sendPose(pose: PlayerPose): void {

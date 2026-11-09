@@ -23,11 +23,11 @@ Each gun holds one magazine, so the nine spare-magazine pickups decide how long 
 
 | Pickup | Magazines | Where |
 |---|---|---|
-| `mags-table-south` | pistol | on the south market table |
-| `mags-dining` | pistol | on a restaurant dining table |
+| `mags-table-south` | pistol | on the ground beside the south market table |
+| `mags-dining` | pistol | on the restaurant's pass counter |
 | `mags-bar` | pistol | on the bar counter |
 | `mags-cut` | pistol | on the ground in the cut-through |
-| `mags-table-north` | carbine | on the north market table |
+| `mags-table-north` | carbine | on the ground beside the north market table |
 | `mags-fire-escape` | carbine | on the fire escape platform |
 | `mags-upstairs` | carbine | on the bar's upper floor |
 | `mags-dumpster` | carbine | on a dumpster lid in the service alley |
@@ -93,7 +93,7 @@ The dumpling shop, the boba shop and the pho house (`src/world/shops.ts`) are bu
 
 Food is a pickup: press E at the counter, from either side. It keeps the hands busy for 1 s, with the weapon lowered and no shots or throws, and comes back on the counter after 40 s or at the start of a round. A player at full health cannot eat. Food heals at once and the coordinator applies it; a sugar rush is applied by the player's own peer, and its top speed of 9.4 m/s stays inside the 10 m/s other peers accept.
 
-Counters and tables are cover: the counters are wood, so rounds pass through them weakened, and the kitchen lines and the boba shop's fridge are solid metal.
+Counters are cover: they are wood, so rounds pass through them weakened, and the kitchen lines and the boba shop's fridge are solid metal. The tables, chairs and stools can be pushed over and shot apart.
 
 ## Look
 
@@ -119,7 +119,7 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 | Check | Result |
 |---|---|
 | Frame rate at the south spawn | 60 FPS, about 224,000 triangles |
-| Entities | 247 windows, 7 stalls, 7 glass storefronts, 21 door leaves, 4 steam pipes, 6 extinguishers, 2 boarded windows, 109 lamps and 27 props |
+| Entities | 247 windows, 7 stalls, 7 glass storefronts, 21 door leaves, 4 steam pipes, 6 extinguishers, 2 boarded windows, 109 lamps and 81 props |
 | All 8 spawns | the player stands on the ground at each |
 | Walking into the restaurant glass | stopped at the sill |
 | One pistol round at the glass | shattered, and a running jump carried the player inside |

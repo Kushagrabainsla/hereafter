@@ -322,7 +322,6 @@ function onMatchChange(state: CombatSnapshot): void {
   for (const [peerId, remote] of Object.entries(state.players)) if (peerId !== selfId) {
     viewer?.setRemoteHealth(peerId, remote.health);
     viewer?.setRemoteWeapon(peerId, remote.active);
-    viewer?.setRemoteMass(peerId, carriedMass(remote));
   }
   deathOverlay.hidden = player.health > 0;
   viewer?.setLocalDead(player.health <= 0);
@@ -669,8 +668,8 @@ function enterRoom(rawCode: string): void {
       onStatus(message) {
         roomStatus.textContent = message;
       },
-      onProps(states) {
-        viewer?.applyPropStates(states);
+      onProps(states, owner, rest) {
+        viewer?.applyPropStates(states, owner, rest, selfId);
       },
       onPushes(pushes) {
         viewer?.applyShoves(pushes);
@@ -700,7 +699,6 @@ async function leaveRoom(): Promise<void> {
   viewer?.setSpawnSlot(0);
   match?.reset(selfId);
   viewer?.resetWorld();
-  viewer?.setAuthority(true);
   lastEventId = 0;
   killFeed.replaceChildren();
   nameSentAt = 0;
@@ -767,33 +765,32 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// The coordinating peer simulates loose props and shares moving ones 15 times a second. Every
-// two seconds it also shares the displaced props that have changed since it last did, so each
-// comes to rest in the same place everywhere, and every displaced prop after a player joins.
+// Each loose prop is simulated by the peer that first touched it, which shares it 15 times a
+// second while it moves and once more where it comes to rest. Every two seconds the coordinating
+// peer also shares the displaced props that have changed since it last did, and every displaced
+// prop after a player joins.
 let propTick = 0, playerJoined = false, roomSize = 1;
 const sharedProps = new Map<string, string>();
 window.setInterval(() => {
   if (!viewer) return;
   const leading = !peerRoom || peerRoom.leading();
-  viewer.setAuthority(leading);
-  // Props this player walked into go to the peer that simulates them.
+  const { moving, settled } = viewer.propTraffic(leading);
   const shoves = viewer.takeShoves();
-  if (peerRoom && !leading) peerRoom.sendPushes(shoves);
-  if (!peerRoom || !leading) return;
+  if (!peerRoom) return;
+  for (const [owner, pushes] of shoves) peerRoom.sendPushes(owner, pushes);
+  peerRoom.sendProps(moving, false);
+  peerRoom.sendProps(settled, true);
+  for (const state of settled) sharedProps.set(state[0], state.join());
   propTick += 1;
-  const refresh = propTick % 30 === 0;
-  let states = viewer.propStates(refresh);
-  if (refresh) {
-    const everything = playerJoined;
-    playerJoined = false;
-    states = states.filter((state) => {
-      const text = state.join();
-      if (!everything && sharedProps.get(state[0]) === text) return false;
-      sharedProps.set(state[0], text);
-      return true;
-    });
-  }
-  peerRoom.sendProps(states);
+  if (!leading || propTick % 30 !== 0) return;
+  const everything = playerJoined;
+  playerJoined = false;
+  peerRoom.sendProps(viewer.displacedProps().filter((state) => {
+    const text = state.join();
+    if (!everything && sharedProps.get(state[0]) === text) return false;
+    sharedProps.set(state[0], text);
+    return true;
+  }), true);
 }, 66);
 
 window.setInterval(() => {
