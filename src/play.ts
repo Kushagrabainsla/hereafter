@@ -2,7 +2,7 @@ import { MARKET_ARENA } from "./world/nightMarket";
 import { createMapViewer, type MapViewer } from "./world/mapViewer";
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
-import { carriedMass, EAT_MS, FOOD, FULL_HEALTH, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
+import { BANDAGE_MS, BLEED_DRIP_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
 import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
@@ -64,7 +64,9 @@ const smokeCount = element<HTMLElement>("smoke-count");
 const magRow = element<HTMLElement>("mag-row");
 const magPips = element<HTMLElement>("mag-pips");
 const loadCount = element<HTMLElement>("load-count");
-const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object" };
+const woundRow = element<HTMLElement>("wound-row");
+const bandageCount = element<HTMLElement>("bandage-count");
+const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object", bleed: "Bled out" };
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const playerNameInput = element<HTMLInputElement>("player-name");
@@ -281,6 +283,16 @@ function showAmmo(player: CombatPlayer): void {
   viewer?.setLoad(mass);
 }
 
+// What the player is carrying in the way of wounds, and what they have to treat them with.
+function showWounds(player: CombatPlayer): void {
+  const chip = (text: string, kind = ""): HTMLElement => Object.assign(document.createElement("span"), { textContent: text, className: kind });
+  const wounds = [...(player.bleedUntil ? [chip("Bleeding", "bleeding")] : []), ...(player.leg ? [chip(player.leg >= NO_SPRINT_LEG ? "Bad leg" : "Leg wound")] : []), ...(player.arm ? [chip(player.arm >= 0.6 ? "Bad arm" : "Arm wound")] : [])];
+  const text = wounds.map((wound) => wound.textContent).join();
+  if (woundRow.dataset.shown !== text) { woundRow.dataset.shown = text; woundRow.replaceChildren(...wounds); }
+  woundRow.hidden = !wounds.length || player.health <= 0;
+  bandageCount.textContent = player.bandages ? "● ".repeat(player.bandages).trim() : "—";
+}
+
 // Weapon switches and reload starts arrive as state changes rather than events.
 function cueStateChanges(state: CombatSnapshot, fresh: CombatEvent[]): void {
   for (const [peerId, player] of Object.entries(state.players)) {
@@ -291,7 +303,7 @@ function cueStateChanges(state: CombatSnapshot, fresh: CombatEvent[]): void {
     if (peerId === selfId) {
       const pickedUp = fresh.some((event) => event.kind === "pickup" && event.actor === selfId);
       if (player.active !== before.active && !pickedUp && player.health > 0) gameAudio.switchWeapon(player.active);
-      if (reloadStarted) viewer?.startReload(player.active, WEAPONS[player.active].reloadMs);
+      if (reloadStarted) viewer?.startReload(player.active, reloadTime(player.active, player.arm));
       if (player.health <= 0 && before.health > 0) { viewer?.cancelReload(); viewer?.putDown(); }
     } else if (reloadStarted) viewer?.remoteReload(peerId, player.active);
   }
@@ -319,9 +331,12 @@ function onMatchChange(state: CombatSnapshot): void {
   viewer?.setWeapon(player.active);
   viewer?.setTakenPickups(state.taken);
   viewer?.setOpen(state.open);
+  viewer?.setWounds(player.leg, player.arm);
+  showWounds(player);
   for (const [peerId, remote] of Object.entries(state.players)) if (peerId !== selfId) {
     viewer?.setRemoteHealth(peerId, remote.health);
     viewer?.setRemoteWeapon(peerId, remote.active);
+    viewer?.setRemoteLeg(peerId, remote.leg);
   }
   deathOverlay.hidden = player.health > 0;
   viewer?.setLocalDead(player.health <= 0);
@@ -376,6 +391,10 @@ function playEvent(event: CombatEvent): void {
     toast(food.rushSeconds ? `Sugar rush: faster for ${food.rushSeconds} s` : `+${food.heal} health`);
     gameAudio.pickup();
   }
+  if (event.kind === "bandage" && event.actor === selfId) {
+    toast("Bandaged: the bleeding has stopped");
+    gameAudio.pickup();
+  }
   if (event.kind === "reload" && event.actor === selfId && match) {
     const player = match.player(selfId);
     if (player && player.active !== "knife" && !player.mags[player.active].length) window.setTimeout(() => toast("That was your last magazine"), 600);
@@ -389,7 +408,7 @@ function playEvent(event: CombatEvent): void {
     if (event.from && event.cause !== "fall") showDamageDirection(event.from);
   }
   if (event.kind === "death" && event.target === selfId) {
-    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.cause === "struck" && event.actor === selfId ? "Something heavy hit you" : event.actor === selfId ? "Caught in your own blast"
+    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.cause === "struck" && event.actor === selfId ? "Something heavy hit you" : event.cause === "bleed" && event.actor === selfId ? "You bled out" : event.actor === selfId ? "Caught in your own blast"
       : [`By ${nameOf(event.actor)}`, CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "Headshot" : "", event.behind ? "From behind" : ""].filter(Boolean).join(" · ");
   }
 }
@@ -425,6 +444,9 @@ function addToKillFeed(event: CombatEvent): void {
     line.append(who(victim), how);
   } else if (event.cause === "struck" && event.actor === victim) {
     how.textContent = "was flattened";
+    line.append(who(victim), how);
+  } else if (event.cause === "bleed" && event.actor === victim) {
+    how.textContent = "bled out";
     line.append(who(victim), how);
   } else if (event.actor === victim || !event.actor) {
     how.textContent = `${CAUSE_LABEL[event.cause ?? ""] ?? ""} · own blast`;
@@ -636,6 +658,19 @@ function interact(): void {
   else if (pickup?.idle) toast(pickup.label);
 }
 
+// Ties a bandage round the worst of it: both hands, for a couple of seconds.
+function bandage(): void {
+  const player = match?.player(selfId);
+  if (!viewer || !player || player.health <= 0) return;
+  if (!player.leg && !player.arm && !player.bleedUntil) { toast("You have nothing to bandage"); return; }
+  if (!player.bandages) { toast("No bandages left"); return; }
+  if (viewer.holding() || !viewer.weaponReady() || player.reloadUntil > Date.now()) return;
+  viewer.busyHands(BANDAGE_MS / 1000);
+  viewer.holdSprint(BANDAGE_MS / 1000);
+  toast("Tying a bandage…");
+  submit({ kind: "bandage" });
+}
+
 function reload(): void {
   const player = match?.player(selfId);
   if (!player || player.health <= 0 || player.active === "knife" || viewer?.holding()) return;
@@ -767,7 +802,7 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (!launched || event.repeat || event.altKey || event.metaKey || event.ctrlKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
-  if (!["f", "v", "e", "g", "t", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
+  if (!["f", "v", "e", "g", "t", "b", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
   if (key === "m") {
     gameAudio.setMuted(!gameAudio.isMuted());
@@ -776,6 +811,7 @@ document.addEventListener("keydown", (event) => {
   else if (key === "v") attack("stab");
   else if (key === "g") throwGrenade();
   else if (key === "t") throwGrenade(true);
+  else if (key === "b") bandage();
   else if (key === "e") interact();
   else if (key === "r") reload();
   else if (key === "enter") submit({ kind: "respawn" });
@@ -869,6 +905,11 @@ window.setInterval(() => {
   else if (usable) pickupHint.textContent = `Press E to ${usable.open ? "close" : "open"} ${usable.label}`;
   const player = match.player(selfId);
   if (player && (held?.mass ?? 0) !== shownHeld) { shownHeld = held?.mass ?? 0; showAmmo(player); }
+  // Others can see a bleeding player leaving blood behind.
+  if (performance.now() - lastDrip > BLEED_DRIP_MS) {
+    lastDrip = performance.now();
+    for (const [peerId, other] of Object.entries(match.players())) if (peerId !== selfId && other.bleedUntil && other.health > 0) viewer.dripBlood(peerId);
+  }
   if (player?.health === 0) {
     const seconds = Math.max(0, Math.ceil((player.respawnAfter - roomClock()) / 1000));
     respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : "Press Enter to respawn";
@@ -883,7 +924,7 @@ window.setInterval(() => {
   const langs = [...new Set(Object.values(match.players()).map((other) => other.voice))].sort().join();
   if (launched && langs !== heardLangs) { heardLangs = langs; void loadVoices(); }
 }, 100);
-let heardLangs = "", shownHeld = 0;
+let heardLangs = "", shownHeld = 0, lastDrip = 0;
 // Mobile browsers often skip beforeunload when a page goes away; pagehide comes in either case.
 for (const event of ["beforeunload", "pagehide"]) window.addEventListener(event, () => { void peerRoom?.leave(); });
 

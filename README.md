@@ -88,6 +88,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Pick up, eat, open doors and hatches | <kbd>E</kbd> |
 | Lift what you look at, put it down | <kbd>E</kbd> |
 | Throw what you carry | click, hold for more power |
+| Bandage your wounds | <kbd>B</kbd> |
 | Frag grenade, smoke grenade | <kbd>G</kbd>, <kbd>T</kbd> |
 | Respawn, three seconds after you fall | <kbd>Enter</kbd> |
 | Scoreboard | hold <kbd>Tab</kbd> |
@@ -120,6 +121,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - Walk into the dumpling shop, the boba shop and the pho house. Eat at the counter for health, or grab a boba for a burst of speed.
 - Chairs, stools and tables are real objects with real weight: barge through them, knock them over or shoot them apart. Everything loose is simulated by whoever touches it, so it reacts instantly.
 - Pick up anything up to 25 kg and throw it. A stool flies and a crate barely leaves your hands, a thrown chair hits like a bullet, and what hits a wall hard enough breaks.
+- Wounds last. A shot leg limps, a shot arm shakes and reloads slowly, and cuts and bullets bleed until you stop to tie a bandage.
 
 **▸ MATCHES**
 - Five-minute rounds, or first to 15 kills. The winner is shown on the scoreboard, and the next round starts 12 seconds later with the market rebuilt.

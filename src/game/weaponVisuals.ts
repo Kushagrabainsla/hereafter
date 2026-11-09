@@ -63,6 +63,8 @@ export class WeaponVisuals {
   // Both hands on something else; the weapon stays out of sight until they are free.
   private handsFull = false;
   private stowed = 0;
+  // How bad the arm wound is, 0 to 1: the weapon shakes and wanders with it.
+  private armWound = 0;
   private reloadElapsed = 0;
   private reloadDuration = 0;
   private reloadWeapon: WeaponKind = "knife";
@@ -183,13 +185,13 @@ export class WeaponVisuals {
     const exertion = motion.exertion;
     this.breathPhase += seconds * 2 * Math.PI * (0.23 + exertion * 0.45);
     const breath = Math.sin(this.breathPhase), depth = 0.0012 + exertion * 0.0055;
-    const tremor = (0.00025 + exertion * 0.0008) * (Math.sin(this.time * 47) + Math.sin(this.time * 61 + 1.3) * 0.7);
+    const tremor = (0.00025 + exertion * 0.0008 + this.armWound * 0.003) * (Math.sin(this.time * 47) + Math.sin(this.time * 61 + 1.3) * 0.7);
     this.sway = {
       x: s.x.value - s.yaw.value * 0.35 + tremor * 0.6,
       y: s.y.value + breath * depth + tremor,
       z: s.z.value,
-      pitch: s.pitch.value + breath * depth * 2.2,
-      yaw: s.yaw.value,
+      pitch: s.pitch.value + breath * depth * 2.2 + this.armWound * 0.012 * Math.sin(this.time * 3.1),
+      yaw: s.yaw.value + this.armWound * 0.012 * Math.sin(this.time * 2.3),
       roll: s.roll.value + s.yaw.value * 0.4,
     };
   }
@@ -215,6 +217,8 @@ export class WeaponVisuals {
   }
 
   ready(): boolean { return !this.switching && this.throwTime <= 0 && !this.handsFull && this.stowed < 0.15; }
+
+  setArmWound(arm: number): void { this.armWound = arm; }
 
   setHandsFull(full: boolean): void {
     this.handsFull = full;

@@ -190,7 +190,30 @@ export const PICKUP_REACH = 2.3;
 export const PICKUP_HEIGHT = 1.5;
 
 export type HitZone = "head" | "torso" | "legs";
-export interface TargetHit { distance: number; zone: HitZone; }
+// arm marks a hit on the torso's outer edge, where the arms hang.
+export interface TargetHit { distance: number; zone: HitZone; arm?: boolean }
+
+// Wounds last until the player bandages them or dies. A leg or arm wound grows with the damage
+// that caused it, from 0 to 1: this much damage is a full one.
+export const LEG_WOUND_DAMAGE = 40;
+export const ARM_WOUND_DAMAGE = 50;
+const ARM_EDGE = 0.2;
+// A cut or a round that does this much opens a wound, and every further one bleeds for longer:
+// a point of health at each drip, up to about 20 points in all.
+export const BLEED_MIN_DAMAGE = 15;
+export const BLEED_PER_WOUND_MS = 9000;
+export const BLEED_LONGEST_MS = 24_000;
+export const BLEED_DRIP_MS = 1200;
+export const BANDAGES_PER_LIFE = 2;
+export const BANDAGE_MS = 2500;
+// What a bad leg does: a slower walk and sprint, a lower jump, and past this no sprint at all.
+export const NO_SPRINT_LEG = 0.6;
+export const legEffects = (leg: number): { walk: number; sprint: number; jump: number } => ({ walk: 1 - 0.4 * leg, sprint: 1 - 0.5 * leg, jump: 1 - 0.3 * leg });
+// What a bad arm does: a wider spread, a slower reload, a weaker throw and less it can lift.
+export const armSpread = (arm: number): number => 1 + 1.5 * arm;
+export const armThrow = (arm: number): number => 1 - 0.3 * arm;
+export const armCarry = (arm: number): number => MAX_CARRY * (1 - 0.5 * arm);
+export const reloadTime = (weapon: WeaponKind, arm: number): number => Math.round(WEAPONS[weapon].reloadMs * (1 + 0.5 * arm));
 
 // How far a full lean moves the eyes sideways, and the head and chest with them.
 export const LEAN_OFFSET = 0.32;
@@ -230,7 +253,7 @@ export function targetHit(data: ArenaData, attacker: PlayerPose, target: PlayerP
         near = Math.max(near, Math.min(a,b)); far = Math.min(far, Math.max(a,b));
       }
     }
-    if (near <= far && far >= 0 && (!closest || near < closest.distance)) closest = { distance: near, zone };
+    if (near <= far && far >= 0 && (!closest || near < closest.distance)) closest = { distance: near, zone, arm: zone === "torso" && Math.abs(origin[0] + direction[0] * near - offset) > ARM_EDGE };
   }
   return closest;
 }

@@ -29,6 +29,7 @@ interface RemoteAvatar {
   pose: PlayerPose;
   heading: number;
   carrying: boolean;
+  limpPhase: number;
   weapons: Map<WeaponKind, Group>;
   samples: PoseSample[];
   dying: boolean;
@@ -59,13 +60,14 @@ function createAvatar(peerId: string): RemoteAvatar {
   return { root: new Group(), model: null, tint: new Color().setHSL(hue, 0.5, 0.78), pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
-  }, heading: 0, carrying: false, weapons: new Map(), samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
+  }, heading: 0, carrying: false, limpPhase: 0, weapons: new Map(), samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
 }
 
 export class RemotePlayers {
   private avatars = new Map<string, RemoteAvatar>();
   private dead = new Set<string>();
   private equipped = new Map<string, WeaponKind>();
+  private legWounds = new Map<string, number>();
   private weaponModels: Map<WeaponKind, Object3D> | null = null;
 
   constructor(private scene: Scene, private data: ArenaData, private models: PlayerModelLibrary, private physics?: PhysicsWorld) {}
@@ -141,6 +143,9 @@ export class RemotePlayers {
     for (const [peerId, avatar] of this.avatars) if (!this.dead.has(peerId) && avatar.samples.length) seen[peerId] = Math.round(avatar.displayTime);
     return seen;
   }
+
+  // How bad a player's leg wound is, 0 to 1, shown in how they walk.
+  setLegWound(peerId: string, leg: number): void { this.legWounds.set(peerId, leg); }
 
   flinch(peerId: string, damage: number): void {
     this.avatars.get(peerId)?.model?.flinch(Math.min(1, 0.35 + damage / 60));
@@ -259,6 +264,7 @@ export class RemotePlayers {
     this.avatars.delete(peerId);
     this.dead.delete(peerId);
     this.equipped.delete(peerId);
+    this.legWounds.delete(peerId);
   }
 
   clear(): void {
@@ -316,6 +322,14 @@ export class RemotePlayers {
       // bends the upper body the rest of the way, matching the shifted hit boxes.
       const lean = this.dead.has(peerId) ? 0 : pose.lean ?? 0;
       root.rotation.z = lean * 0.1;
+      // A limp drops the body on the bad leg and tips it that way.
+      const leg = this.dead.has(peerId) ? 0 : this.legWounds.get(peerId) ?? 0;
+      if (leg > 0 && pose.moving) {
+        avatar.limpPhase += delta * (pose.running ? 9 : 6.5);
+        const swing = Math.sin(avatar.limpPhase);
+        root.rotation.z += swing * 0.07 * leg;
+        root.position.y -= Math.max(0, swing) * 0.05 * leg;
+      }
       if (avatar.model) {
         this.bounds.center.set(root.position.x, root.position.y + 0.95, root.position.z);
         root.visible = !camera || this.frustum.intersectsSphere(this.bounds);

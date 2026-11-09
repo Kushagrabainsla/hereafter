@@ -1,6 +1,7 @@
 import { type ArenaData, terrainHeight } from "../world/arena";
 import {
-  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects, smashShare, strikeDamage, strikeKnock,
+  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime,
+  ARM_WOUND_DAMAGE, BANDAGE_MS, BANDAGES_PER_LIFE, BLEED_DRIP_MS, BLEED_LONGEST_MS, BLEED_MIN_DAMAGE, BLEED_PER_WOUND_MS, LEG_WOUND_DAMAGE,
   EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, KNIFE, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
   type FoodKind, type GunKind, type HitZone, type KnifeStroke, type WeaponKind, type WeaponPickup,
 } from "./combatRules";
@@ -33,6 +34,13 @@ export interface CombatPlayer {
   // The voice they speak with: "hi" for Hindi, "en" for English, "grunts" for no words, or
   // empty until they say, heard as English.
   voice: string;
+  // How bad their leg and arm wounds are, 0 to 1, and until when on the coordinator's clock they
+  // bleed, 0 if they are not, and from whose hand. Bandages left this life.
+  leg: number;
+  arm: number;
+  bleedUntil: number;
+  bleedBy: string;
+  bandages: number;
 }
 
 // A room plays rounds once two players are in the game: a countdown, then a round of five
@@ -80,24 +88,27 @@ export type CombatIntent =
   // falling or flung), or stopped so suddenly it may have broken.
   | { kind: "struck"; prop: string; target: string; speed: number; zone: HitZone; thrown: boolean }
   | { kind: "smash"; prop: string; speed: number }
+  | { kind: "bandage" }
   // The player's name and voice.
   | { kind: "profile"; name: string; voice: string };
 export const VOICES = ["hi", "en", "grunts"];
 
-export type DamageCause = WeaponKind | "grenade" | "fall" | "struck";
+export type DamageCause = WeaponKind | "grenade" | "fall" | "struck" | "bleed";
 
 export interface Impact { x: number; y: number; z: number; nx: number; ny: number; nz: number; material: Material; exit?: boolean }
 
 export interface CombatEvent {
   id: number;
   // A "round" event starts a round: every peer then resets its market and its player.
-  kind: "shot" | "hit" | "pickup" | "death" | "respawn" | "throw" | "explode" | "reload" | "drop" | "use" | "vent" | "smoke" | "round";
+  kind: "shot" | "hit" | "pickup" | "death" | "respawn" | "throw" | "explode" | "reload" | "drop" | "use" | "vent" | "smoke" | "round" | "bandage";
   actor: string;
   target?: string;
   weapon?: WeaponKind;
   cause?: DamageCause;
   damage?: number;
   zone?: HitZone;
+  // A hit on the arm rather than the body.
+  arm?: boolean;
   shot?: ShotRay;
   impact?: boolean;
   impacts?: Impact[];
@@ -133,7 +144,7 @@ export interface Drop { id: string; weapon: GunKind; gun: boolean; rounds: numbe
 export interface LiveGrenade { id: number; actor: string; explodeAt: number; position: Vec3; entity?: string; smoke?: boolean }
 
 export interface CombatSnapshot {
-  version: 9;
+  version: 10;
   revision: number;
   eventSeq: number;
   players: Record<string, CombatPlayer>;
@@ -202,13 +213,15 @@ const FALL_SAFE_SPEED = 9;
 const FALL_DAMAGE_PER_MS = 9;
 const BULLET_IMPULSE = { pistol: 2.5, rifle: 4.5 } as const;
 const MATERIAL_NAMES = Object.keys(MATERIALS);
-const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent", "smoke", "round"];
+const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent", "smoke", "round", "bandage"];
 // A shot gas cylinder vents burning gas for this long, then bursts like a grenade.
 const VENT_MS = 1600;
 // How far a player can reach to open or close something, from the eyes.
 const USE_REACH = 2.3;
 const GUNS = ["pistol", "rifle"] as const;
-const CAUSES = ["knife", "pistol", "rifle", "grenade", "fall", "struck"];
+const CAUSES = ["knife", "pistol", "rifle", "grenade", "fall", "struck", "bleed"];
+// What breaks the skin; a fall or a thrown crate bruises instead.
+const CUTTING: (DamageCause | undefined)[] = ["knife", "pistol", "rifle", "grenade"];
 // One prop hits one player once per impact, and breaks a bit at a time.
 const STRUCK_GAP_MS = 500;
 const SMASH_GAP_MS = 250;
@@ -239,7 +252,8 @@ function validEvent(event: CombatEvent): boolean {
     && (event.drop === undefined || (typeof event.drop === "string" && event.drop.length < 40))
     && (event.entity === undefined || (typeof event.entity === "string" && event.entity.length < 40))
     && (event.open === undefined || typeof event.open === "boolean")
-    && (event.smoke === undefined || typeof event.smoke === "boolean");
+    && (event.smoke === undefined || typeof event.smoke === "boolean")
+    && (event.arm === undefined || typeof event.arm === "boolean");
 }
 
 const validMagazines = (gun: GunKind, mags: unknown): boolean => Array.isArray(mags) && mags.length <= MAX_SPARE_MAGAZINES
@@ -253,7 +267,7 @@ function validDrop(drop: Drop): boolean {
 
 // Every life starts with only the knife and grenades: guns and ammunition are found.
 function freshPlayer(): CombatPlayer {
-  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "" };
+  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "", leg: 0, arm: 0, bleedUntil: 0, bleedBy: "", bandages: BANDAGES_PER_LIFE };
 }
 
 function validPlayer(player: CombatPlayer): boolean {
@@ -270,7 +284,10 @@ function validPlayer(player: CombatPlayer): boolean {
     && Number.isSafeInteger(player.deaths) && player.deaths >= 0
     && Number.isSafeInteger(player.intent) && player.intent >= 0
     && typeof player.name === "string" && player.name.length <= 4 * NAME_LENGTH
-    && (player.voice === "" || VOICES.includes(player.voice));
+    && (player.voice === "" || VOICES.includes(player.voice))
+    && finite(player.leg, player.arm, player.bleedUntil) && player.leg >= 0 && player.leg <= 1 && player.arm >= 0 && player.arm <= 1 && player.bleedUntil >= 0
+    && typeof player.bleedBy === "string" && player.bleedBy.length <= 64
+    && Number.isInteger(player.bandages) && player.bandages >= 0 && player.bandages <= BANDAGES_PER_LIFE;
 }
 
 const PLAYER_FIELDS = Object.keys(freshPlayer());
@@ -278,7 +295,7 @@ const PLAYER_FIELDS = Object.keys(freshPlayer());
 const checkEvents = (events: CombatEvent[]): CombatEvent[] => events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
 
 function emptySnapshot(): CombatSnapshot {
-  return { version: 9, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
+  return { version: 10, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
 }
 
 // The fields of value whose text differs from `before`, which is brought up to date; null if none.
@@ -312,6 +329,9 @@ export class MatchState {
   private lastUse = new Map<string, number>();
   private lastStruck = new Map<string, number>();
   private lastSmash = new Map<string, number>();
+  // When each player bleeding next loses a point, and when a bandage being tied is done.
+  private drips = new Map<string, number>();
+  private bandaging = new Map<string, number>();
   // Players whose positions have arrived, so they are in the game rather than loading it.
   private present = new Set<string>();
   private now = 0;
@@ -332,6 +352,8 @@ export class MatchState {
     this.equipUntil.clear();
     this.lastStruck.clear();
     this.lastSmash.clear();
+    this.drips.clear();
+    this.bandaging.clear();
     this.present.clear();
     this.onChange(this.snapshot);
   }
@@ -403,7 +425,7 @@ export class MatchState {
   // Takes a coordinator's whole state. With force it replaces this one whatever their
   // revisions, as when a new coordinator takes over.
   adopt(incoming: CombatSnapshot, force = false): boolean {
-    if (!incoming || incoming.version !== 9 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
+    if (!incoming || incoming.version !== 10 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
       || !incoming.players || typeof incoming.players !== "object" || !incoming.entities || SHARED_PARTS.some((key) => !incoming[key]) || !Array.isArray(incoming.events)) return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
     if (!force && (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers))) return false;
@@ -608,12 +630,19 @@ export class MatchState {
       if (gun === "knife" || player.reloadUntil > now || !player.mags[gun].length) return false;
       const loaded = player.ammo[gun], chamber = loaded > 0 ? 1 : 0;
       if (Math.max(...player.mags[gun]) + chamber <= loaded) return false;
-      player.reloadUntil = now + WEAPONS[gun].reloadMs;
+      player.reloadUntil = now + reloadTime(gun, player.arm);
       this.emit({ kind: "reload", actor, weapon: gun, dropped: loaded - chamber <= 0 });
       this.changed();
       return true;
     }
     if (intent.kind === "fall") return this.fall(actor, intent.speed);
+    // Tying a bandage keeps the hands busy, and a fresh wound undoes it.
+    if (intent.kind === "bandage") {
+      if (player.bandages <= 0 || this.bandaging.has(actor) || player.reloadUntil > now || now < (this.equipUntil.get(actor) ?? 0) || (!player.leg && !player.arm && !player.bleedUntil)) return false;
+      this.bandaging.set(actor, now + BANDAGE_MS);
+      this.equipUntil.set(actor, now + BANDAGE_MS);
+      return true;
+    }
     if (intent.kind === "use") {
       const toggle = this.data.layout.toggles.find((item) => item.id === intent.target);
       if (!toggle || !pose || !fresh || now - (this.lastUse.get(toggle.id) ?? 0) < 500) return false;
@@ -668,7 +697,7 @@ export class MatchState {
       // Spread follows how the shooter was moving and how fast they have been firing.
       const sinceLast = (now - last) / 1000;
       const bloom = currentBloom(weapon, this.bloom.get(actor) ?? 0, sinceLast);
-      const spread = spreadDegrees(weapon, { moving: pose.moving, crouching: pose.crouching, airborne: !!pose.airborne, sliding: !!pose.sliding, aiming: !!pose.aiming }, bloom);
+      const spread = spreadDegrees(weapon, { moving: pose.moving, crouching: pose.crouching, airborne: !!pose.airborne, sliding: !!pose.sliding, aiming: !!pose.aiming }, bloom) * armSpread(player.arm);
       this.bloom.set(actor, bloomAfterShot(weapon, this.bloom.get(actor) ?? 0, sinceLast));
       const origin = { ...pose, ...deviateAim(aim ?? pose, spread) };
       this.lastAttack.set(actor, now);
@@ -778,17 +807,17 @@ export class MatchState {
       const ray = shotRay(this.data, swept, "knife", rules.reach);
       if (t === 0.5) center = ray;
       const surface = (this.world?.traceBullet(ray) ?? []).find((hit) => hit.material !== "boundary");
-      let body: { id: string; target: PlayerPose; distance: number; zone: HitZone } | null = null;
+      let body: { id: string; target: PlayerPose; distance: number; zone: HitZone; arm?: boolean } | null = null;
       for (const id of this.poses.keys()) {
         if (id === actor || (this.snapshot.players[id]?.health ?? 0) <= 0 || this.now - (this.poseTimes.get(id) ?? 0) > 1500) continue;
         const target = this.poseAt(id, seen?.[id]);
         const hit = target && targetHit(this.data, swept, target, "knife", rules.reach);
-        if (target && hit && hit.distance <= rules.reach && (!body || hit.distance < body.distance)) body = { id, target, distance: hit.distance, zone: hit.zone };
+        if (target && hit && hit.distance <= rules.reach && (!body || hit.distance < body.distance)) body = { id, target, distance: hit.distance, zone: hit.zone, arm: hit.arm };
       }
       if (body && (!surface || body.distance <= surface.distance)) {
         const behind = fromBehind(pose, body.target);
         this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: body.distance }, impact: false });
-        this.hurt(body.id, knifeDamage(stroke, body.zone, behind), { kind: "hit", actor, target: body.id, weapon: "knife", cause: "knife", stroke, behind, zone: body.zone, from: ray.origin });
+        this.hurt(body.id, knifeDamage(stroke, body.zone, behind), { kind: "hit", actor, target: body.id, weapon: "knife", cause: "knife", stroke, behind, zone: body.zone, arm: body.arm, from: ray.origin });
         return;
       }
       if (surface) {
@@ -823,13 +852,13 @@ export class MatchState {
   // each and dealing what it has left. Objects it crosses take damage by their material.
   private resolveShot(actor: string, weapon: GunKind, origin: PlayerPose, seen?: Record<string, number>): void {
     const ray = shotRay(this.data, origin, weapon);
-    const items: ({ distance: number; surface: SurfaceHit } | { distance: number; body: string; zone: HitZone })[] = [];
+    const items: ({ distance: number; surface: SurfaceHit } | { distance: number; body: string; zone: HitZone; arm?: boolean })[] = [];
     for (const surface of this.world?.traceBullet(ray) ?? []) items.push({ distance: surface.distance, surface });
     for (const id of this.poses.keys()) {
       if (id === actor || (this.snapshot.players[id]?.health ?? 0) <= 0 || this.now - (this.poseTimes.get(id) ?? 0) > 1500) continue;
       const target = this.poseAt(id, seen?.[id]);
       const hit = target && targetHit(this.data, origin, target, weapon);
-      if (hit && hit.distance <= ray.distance) items.push({ distance: hit.distance, body: id, zone: hit.zone });
+      if (hit && hit.distance <= ray.distance) items.push({ distance: hit.distance, body: id, zone: hit.zone, arm: hit.arm });
     }
     items.sort((a, b) => a.distance - b.distance);
     const full = PENETRATION[weapon];
@@ -844,7 +873,7 @@ export class MatchState {
         const victim = this.snapshot.players[item.body];
         if (!victim || victim.health <= 0) continue;
         const damage = Math.round(damageAt(weapon, { distance: item.distance, zone: item.zone }) * share);
-        hits.push({ kind: "hit", actor, target: item.body, weapon, cause: weapon, damage, zone: item.zone, from: ray.origin });
+        hits.push({ kind: "hit", actor, target: item.body, weapon, cause: weapon, damage, zone: item.zone, arm: item.arm, from: ray.origin });
         power -= BODY_COST;
         if (power <= 0) { end = item.distance; break; }
         continue;
@@ -888,15 +917,70 @@ export class MatchState {
     const damage = Math.min(victim?.health ?? 0, Math.max(0, Math.round(amount)));
     if (!victim || damage <= 0) return;
     victim.health -= damage;
+    this.bandaging.delete(targetId);
+    if (victim.health > 0) this.wound(victim, targetId, damage, event);
     if (victim.health === 0) {
       victim.deaths += 1;
       victim.respawnAfter = this.now + 3000;
       victim.reloadUntil = 0;
+      victim.bleedUntil = 0;
+      victim.bleedBy = "";
+      this.drips.delete(targetId);
       this.dropLoot(targetId, victim, event.cause === "fall" ? undefined : event.from);
       const killer = this.snapshot.players[event.actor];
       if (killer && event.actor !== targetId) killer.kills += 1;
     }
     this.emit({ ...event, kind: victim.health === 0 ? "death" : "hit", target: targetId, damage });
+  }
+
+  // What a blow leaves behind. Legs are hurt by hits to them and by hard landings, arms by hits
+  // on the arm, and anything that breaks the skin deeply enough bleeds, for longer with each.
+  private wound(victim: CombatPlayer, id: string, damage: number, event: Omit<CombatEvent, "id">): void {
+    const worse = (now: number, by: number): number => Math.min(1, Math.round((now + by) * 100) / 100);
+    if (event.zone === "legs" || event.cause === "fall") victim.leg = worse(victim.leg, damage / LEG_WOUND_DAMAGE);
+    if (event.arm) victim.arm = worse(victim.arm, damage / ARM_WOUND_DAMAGE);
+    if (!CUTTING.includes(event.cause) || damage < BLEED_MIN_DAMAGE) return;
+    victim.bleedUntil = Math.min(this.now + BLEED_LONGEST_MS, Math.max(victim.bleedUntil, this.now) + BLEED_PER_WOUND_MS);
+    victim.bleedBy = event.actor;
+    this.drips.set(id, this.drips.get(id) ?? this.now + BLEED_DRIP_MS);
+  }
+
+  // Bandages finishing, and wounds losing blood. A bleed is not a blow: it flashes nothing and
+  // credits nobody until the last point, which counts as the kill of whoever opened it.
+  private tendWounds(now: number): boolean {
+    let changed = false;
+    for (const [id, player] of Object.entries(this.snapshot.players)) {
+      if (now >= (this.bandaging.get(id) ?? Infinity)) {
+        this.bandaging.delete(id);
+        if (player.health > 0 && player.bandages > 0) {
+          const ease = (wound: number): number => (wound < 0.1 ? 0 : Math.round(wound * 50) / 100);
+          player.bandages -= 1;
+          player.bleedUntil = 0;
+          player.bleedBy = "";
+          player.leg = ease(player.leg);
+          player.arm = ease(player.arm);
+          this.drips.delete(id);
+          this.emit({ kind: "bandage", actor: id });
+          changed = true;
+        }
+      }
+      if (!player.bleedUntil) continue;
+      if (player.health <= 0 || now >= player.bleedUntil) {
+        player.bleedUntil = 0;
+        player.bleedBy = "";
+        this.drips.delete(id);
+        changed = true;
+        continue;
+      }
+      const due = this.drips.get(id);
+      if (due === undefined) { this.drips.set(id, now + BLEED_DRIP_MS); continue; }
+      if (now < due || this.snapshot.round.phase === "over") continue;
+      this.drips.set(id, now + BLEED_DRIP_MS);
+      if (player.health > 1) player.health -= 1;
+      else this.hurt(id, 1, { kind: "hit", actor: this.snapshot.players[player.bleedBy] ? player.bleedBy : id, target: id, cause: "bleed" });
+      changed = true;
+    }
+    return changed;
   }
 
   // Landing faster than a safe speed hurts. The drop has to show in the player's recent
@@ -986,6 +1070,7 @@ export class MatchState {
       for (const grenade of due) this.explode(grenade);
       changed = true;
     }
+    if (this.tendWounds(now)) changed = true;
     if (this.advanceRound(now)) changed = true;
     if (changed) this.changed();
     return changed;
@@ -1027,7 +1112,7 @@ export class MatchState {
       this.removePose(id);
     }
     Object.assign(this.snapshot, { taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {} });
-    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.lastStroke, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash]) map.clear();
+    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.lastStroke, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash, this.drips, this.bandaging]) map.clear();
     this.emit({ kind: "round", actor: "" });
   }
 

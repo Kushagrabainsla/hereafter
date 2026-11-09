@@ -22,7 +22,7 @@ import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio, type AmbientSource } from "../game/gameAudio";
 import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
-import { bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, MAX_CARRY, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
+import { armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
 import { buildNightMarket, nightMarketData, MARKET_SUN } from "./nightMarket";
 import { duskSky } from "./duskSky";
@@ -129,6 +129,11 @@ export interface MapViewer {
   remoteReload: (peerId: string, weapon: WeaponKind) => void;
   setRemotePose: (peerId: string, pose: PlayerPose, sentAt?: number) => void;
   setRemoteHealth: (peerId: string, health: number) => void;
+  // How bad this player's own wounds are, 0 to 1, and another player's leg.
+  setWounds: (leg: number, arm: number) => void;
+  setRemoteLeg: (peerId: string, leg: number) => void;
+  // Blood falling from another player who is bleeding.
+  dripBlood: (peerId: string) => void;
   setRemoteWeapon: (peerId: string, weapon: WeaponKind) => void;
   removeRemotePeer: (peerId: string) => void;
   clearRemotePeers: () => void;
@@ -417,7 +422,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   let lastLandings = 0;
   // When the player started drawing back a throw, and the weight now in their hands.
-  let throwStart = 0, handsHold = 0;
+  let throwStart = 0, handsHold = 0, armWound = 0;
   // The first-person view drops and rolls when eliminated, from the pose at that moment.
   let deathView: { position: Vector3; quaternion: Quaternion; time: number } | null = null;
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
@@ -537,7 +542,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     authoredViewModel.update(delta, player.motion(), dynamics);
     // The crosshair opens with the same spread the leader applies to this player's shots.
     const motion = player.motion(), active = weaponVisuals.dynamics().active;
-    const spread = spreadDegrees(active, motion, currentBloom(active, localBloom, (performance.now() - lastLocalShot) / 1000));
+    const spread = spreadDegrees(active, motion, currentBloom(active, localBloom, (performance.now() - lastLocalShot) / 1000)) * armSpread(armWound);
     const spreadPixels = Math.tan(spread * Math.PI / 180) * (container.clientHeight / 2) / Math.tan(camera.fov * Math.PI / 360);
     if (Math.abs(spreadPixels - lastSpread) > 0.25 || motion.aiming !== lastAiming) {
       lastSpread = spreadPixels;
@@ -779,7 +784,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
             const from = event.from ?? { x: at.x, y: at.y + 1, z: at.z - 1 };
             const dx = at.x - from.x, dz = at.z - from.z, length = Math.hypot(dx, dz) || 1;
             const blast = event.cause === "grenade" ? 140 * Math.max(0.2, 1 - Math.hypot(dx, dz) / 7) : 0;
-            const strength = blast || { knife: 10, pistol: 20, rifle: 28 }[event.cause as "knife" | "pistol" | "rifle"] || 15;
+            const strength = blast || { knife: 10, pistol: 20, rifle: 28, bleed: 1 }[event.cause as "knife" | "pistol" | "rifle" | "bleed"] || 15;
             remotePlayers.kill(event.target, event.zone === "head" ? "head" : "chest", { x: dx / length * strength, y: blast ? strength * 0.6 : 2, z: dz / length * strength });
           }
         }
@@ -841,7 +846,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     liftable() {
       const motion = player.motion(), id = motion.climbing || motion.mantling ? null : physics.propInView(CARRY_REACH);
       const entity = id ? entities.get(id) : undefined;
-      return id && entity?.mass ? { id, label: PROP_LABEL[entity.prop ?? ""] ?? "it", mass: entity.mass, heavy: entity.mass > MAX_CARRY } : null;
+      return id && entity?.mass ? { id, label: PROP_LABEL[entity.prop ?? ""] ?? "it", mass: entity.mass, heavy: entity.mass > armCarry(armWound) } : null;
     },
     lift(id) {
       const lifted = physics.lift(id);
@@ -855,7 +860,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       const charge = (performance.now() - throwStart) / THROW_CHARGE_MS, mass = physics.heldProp()?.mass ?? 0;
       throwStart = 0;
       if (!mass) return;
-      const speed = throwSpeed(mass, charge), direction = physics.throwHeld(speed);
+      const speed = throwSpeed(mass, charge) * armThrow(armWound), direction = physics.throwHeld(speed);
       if (!direction) return;
       // Whatever goes forward pushes the thrower back.
       const recoil = mass * speed / (BODY_MASS + mass);
@@ -897,6 +902,16 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     setRemotePose(peerId, pose, sentAt) {
       remotePlayers.setPose(peerId, pose, sentAt);
+    },
+    setWounds(leg, arm) {
+      armWound = arm;
+      player.setLegWound(leg);
+      weaponVisuals.setArmWound(arm);
+    },
+    setRemoteLeg(peerId, leg) { remotePlayers.setLegWound(peerId, leg); },
+    dripBlood(peerId) {
+      const at = remotePlayers.position(peerId);
+      if (at) effects.impact({ x: at.x, y: at.y + 0.9, z: at.z }, { x: 0, y: 0.4, z: 0 }, "flesh");
     },
     setRemoteHealth(peerId, health) {
       remotePlayers.setHealth(peerId, health);

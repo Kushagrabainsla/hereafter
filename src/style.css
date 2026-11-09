@@ -122,6 +122,12 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .hud-grenade-row kbd { min-width: 0; padding: 0 4px; font-size: 9px; }
 .hud-grenade-row strong { color: #ff6a13; font-size: 11px; letter-spacing: .12em; }
 .hud-smoke-row { margin-top: 3px; }
+.hud-bandage-row strong { color: #e8e6e1; }
+.hud-wound-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; font: 700 12px "Barlow Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; }
+.hud-wound-row[hidden] { display: none; }
+.hud-wound-row span { padding: 1px 6px; border: 1px solid #ffb36b66; color: #ffb36b; }
+.hud-wound-row .bleeding { border-color: #ff4a3d99; color: #ff5a4d; animation: bleeding 1.2s ease-in-out infinite; }
+@keyframes bleeding { 50% { opacity: .45; } }
 .hud-smoke-row strong { color: #c9c7c1; }
 .hud-mag-row, .hud-load-row { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; color: #9aa1a4; font: 700 14px "Barlow Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; }
 .hud-mag-row[hidden] { display: none; }

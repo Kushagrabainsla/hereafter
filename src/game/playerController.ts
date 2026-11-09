@@ -2,7 +2,7 @@ import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
-import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, loadEffects, RUSH_SPEED } from "./combatRules";
+import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loadEffects, NO_SPRINT_LEG, RUSH_SPEED } from "./combatRules";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
 
@@ -128,6 +128,8 @@ export class PlayerController {
   // What the player has on them, and what they hold in both hands, in kilograms.
   private worn = 0;
   private carried = 0;
+  // How bad the player's leg wound is, 0 to 1.
+  private leg = 0;
   private shoveEast = 0;
   private shoveNorth = 0;
   private shoveUp = 0;
@@ -232,6 +234,8 @@ export class PlayerController {
     this.carried = kilograms;
     this.applyLoad();
   }
+
+  setLegWound(leg: number): void { this.leg = leg; }
 
   private applyLoad(): void {
     this.load = loadEffects(this.worn + this.carried);
@@ -402,7 +406,7 @@ export class PlayerController {
       if (!crouchKey || !this.grounded || this.slideSpeed < SLIDE_END_SPEED || this.slideTime > SLIDE_LONGEST || jumpFromSlide) this.endSlide();
     }
     this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
-    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld && this.carried < CARRY_SPRINT_LIMIT;
+    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld && this.carried < CARRY_SPRINT_LIMIT && this.leg < NO_SPRINT_LEG;
     // Q and E lean while walking or standing; a wall at the side limits how far.
     const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.keys.has("e")) - Number(this.keys.has("q"));
     this.lean += (leanInput - this.lean) * Math.min(1, delta * 8);
@@ -421,7 +425,9 @@ export class PlayerController {
       this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
     } else if (!jumpFromSlide) {
       // Looking down the sights, a player walks at little over half pace.
-      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1) * (this.rushLeft > 0 ? RUSH_SPEED : 1) * carrySpeed(this.carried);
+      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1) * (this.rushLeft > 0 ? RUSH_SPEED : 1) * carrySpeed(this.carried)
+        // A limp is slower on the bad leg's half of each stride.
+        * (wantsRun ? legEffects(this.leg).sprint : legEffects(this.leg).walk) * (1 - 0.25 * this.leg * Math.max(0, Math.sin(this.stride)));
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;
@@ -434,7 +440,7 @@ export class PlayerController {
     }
     this.coyote = this.grounded ? 0.11 : Math.max(0, this.coyote - delta);
     if (this.jumpBuffer > 0 && this.coyote > 0 && !this.crouching) {
-      this.verticalSpeed = 5.2 * this.load.jump;
+      this.verticalSpeed = 5.2 * this.load.jump * legEffects(this.leg).jump;
       this.exertion = Math.min(1, this.exertion + 0.04 * this.load.inertia);
       this.grounded = false;
       this.coyote = 0;
@@ -639,13 +645,15 @@ export class PlayerController {
     const bob = Math.sin(this.stride * 2) * this.bobAmount * (this.running ? 0.045 : 0.025);
     // Leaning moves the eyes toward screen right, (-cos h, sin h), and a little lower.
     const lean = this.lean * LEAN_OFFSET;
-    this.camera.position.set(this.east - Math.cos(heading) * lean, this.feet + this.eyeHeight + bob - Math.abs(this.lean) * 0.04, this.north + Math.sin(heading) * lean);
+    // A limp drops the head on the bad leg and rolls it toward that side.
+    const limp = Math.sin(this.stride) * this.bobAmount * this.leg;
+    this.camera.position.set(this.east - Math.cos(heading) * lean, this.feet + this.eyeHeight + bob - Math.max(0, limp) * 0.05 - Math.abs(this.lean) * 0.04, this.north + Math.sin(heading) * lean);
     this.camera.lookAt(
       this.camera.position.x + Math.sin(heading) * Math.cos(pitch),
       this.camera.position.y + Math.sin(pitch),
       this.camera.position.z + Math.cos(heading) * Math.cos(pitch),
     );
-    const roll = this.roll - this.lean * LEAN_ROLL + this.swingRoll;
+    const roll = this.roll - this.lean * LEAN_ROLL + this.swingRoll + limp * 0.018;
     if (roll) this.camera.rotateZ(roll);
   }
 }

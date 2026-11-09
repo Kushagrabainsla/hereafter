@@ -76,6 +76,18 @@ Walking into the stacked crates moved the bottom one and brought the top one dow
 
 **Breaking and knocking.** A sharp change of speed is a knock, heard by everyone, louder the harder it was and deeper the heavier the prop. Above 6.3 m/s it may damage the prop, by how fast it stopped rather than by its weight, since heavy things are built to be: `(½Δv² − 20 J/kg) / toughness` of its full strength, with toughness 25 for cardboard, 70 for wood, 300 for plastic and 400 for thin metal. A chair thrown square at a wall lost 44% of its strength. Being pushed by a bullet, a blast or a player does not count as a knock.
 
+## Wounds
+
+Being hit leaves more than a lower health number (`wound` in `src/game/matchState.ts`). Wounds last until the player bandages them or dies, are kept per player in the coordinator's state, and reset with a new life.
+
+**Legs.** A hit to the legs, a hard landing, or a flying prop that strikes the legs wounds the leg, from 0 to 1, a full wound being 40 damage. A wounded leg slows walking by up to 40% and sprinting by up to 50%, lowers the jump by up to 30%, and takes up to another 25% off the bad leg's half of each stride, which shows as a limp in the player's own view and in how other players see them walk. At 0.6 or worse the player cannot sprint. A pistol round to the leg (leg wound 0.43) took walking from 4.5 to 3.7 m/s and sprinting from 8.2 to 6.4 m/s; at 0.76, walking was 3.1 m/s and sprinting no faster.
+
+**Arms.** `targetHit` counts a hit on the outer edge of the torso, more than 20 cm from the middle of the body, as a hit on the arm, for the same damage as the torso. A full wound is 50 damage. It widens the spread by up to 2.5 times, on the coordinator and on the crosshair, makes the weapon shake and wander, takes up to half as long again to reload, weakens a throw by up to 30% and halves what can be lifted. A pistol round to the arm (0.5) opened the crosshair from 3.0 to 4.9 px and took a pistol reload from 1.2 s to 1.5 s.
+
+**Bleeding.** A blade, round or blast doing 15 damage or more opens a wound that loses a point of health every 1.2 s for 9 s, and further wounds add 9 s, up to 24 s. Falls and thrown objects bruise and do not bleed. Blood falls from a bleeding player where others can see it. A bleed is not a blow: it flashes nothing and credits nobody until the last point, which counts as a kill for whoever opened it.
+
+**Bandages.** Each life has two. B ties one: 2.5 s with the hands busy, after which the bleeding stops and leg and arm wounds halve. A fresh wound while tying it undoes the attempt, without using the bandage. Food restores health but does not treat wounds. The HUD lists the player's wounds and bandages.
+
 ## Weight
 
 Everything a player carries has its real mass (`MASS` in `src/game/combatRules.ts`): the knife 0.25 kg, a grenade 0.4 kg, a smoke grenade 0.54 kg, the pistol 0.72 kg with a 70 g magazine and 12 g cartridges, and the carbine 3.1 kg with a 330 g steel magazine and 16.3 g cartridges. A loaded pistol and magazine weigh 0.94 kg; a full carbine magazine 0.82 kg. Beyond the basic kit of knife and four grenades (2.1 kg), each kilogram costs 1.2% of walking speed and 1.8% of sprinting speed, to at most a fifth. The same legs launch more mass, so a jump starts slower in proportion to the square root of the total mass, and the body's inertia grows with it, so starting, stopping and climbing take longer. A carbine with six spare magazines, a pistol with four and the four grenades weigh 12.8 kg: walking drops to 87%, sprinting to 81% (6.6 m/s), the jump to 94%. Heavier landings also hurt more, in proportion to the mass coming down. The HUD shows the load and turns amber above 7 kg.
