@@ -51,9 +51,12 @@ const VENTS: [Face, number, number, number][] = [
 // Steel back doors that stay shut: wall, surface, along, paint, and whether a meter cabinet
 // hangs beside it.
 export const BACK_DOORS: [Face, number, number, number, boolean][] = [
-  ["px", 8.5, 18, 0x3d5a4c, true], ["px", 8.5, -20, 0x6e2a24, true], ["nx", 17, 15.5, 0x2f4a66, true],
+  ["nx", 17, 15.5, 0x2f4a66, true],
   ["nx", 17, -10.5, 0x4a4036, true], ["px", -8.5, 15.9, 0x5a5a52, true], ["nx", 0.5, 25, 0x2e3a2c, false],
 ];
+
+// Meter cabinets beside the shops' real back doors (doors.ts): wall, surface, along the door.
+const SHOP_DOOR_METERS: [Face, number, number][] = [["px", 8.5, 18], ["px", 8.5, -20]];
 
 // Fire escapes: wall, surface, the window column they serve and how many landings, one per
 // floor from the first upper floor. Their bottom landings are 4.25 m up, beyond reach.
@@ -92,6 +95,7 @@ export function dressFacades(placer: KitPlacer, windows: WindowSpot[], blades: B
     placer.place("door_steel", wallMatrix(face, at, along - ALONG_SIGN[face] * 0.49, 0, 0.03), paint);
     if (meter) placer.place("meter_box", wallMatrix(face, at, along + ALONG_SIGN[face] * 1.15, 1.1), 0xb9bdb8);
   }
+  for (const [face, at, along] of SHOP_DOOR_METERS) placer.place("meter_box", wallMatrix(face, at, along + ALONG_SIGN[face] * 1.15, 1.1), 0xb9bdb8);
   for (const [face, at, along, landings] of ESCAPES) {
     for (let k = 0; k < landings; k += 1) {
       const y = 5.2 - LANDING_DROP + k * FLOOR;

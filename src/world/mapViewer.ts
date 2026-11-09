@@ -78,6 +78,9 @@ export interface MapViewer {
   setWeapon: (kind: WeaponKind) => void;
   setTakenPickups: (taken: string[]) => void;
   weaponReady: () => boolean;
+  // The hands are busy for this long with food or a drink; the weapon dips out of the way.
+  busyHands: (seconds: number) => void;
+  startRush: (seconds: number) => void;
   holdSprint: (seconds: number) => void;
   combatWorld: () => CombatWorld;
   setEntityHealth: (health: Record<string, number>) => void;
@@ -601,6 +604,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       weaponVisuals.setTaken(taken);
       loot.setTaken(taken);
     },
+    busyHands(seconds) { weaponVisuals.dip(seconds); },
+    startRush(seconds) { player.startRush(seconds); },
     weaponReady() { const motion = player.motion(); return weaponVisuals.ready() && !motion.mantling && !motion.climbing; },
     holdSprint(seconds) { player.holdSprint(seconds); },
     combatWorld() { return combatWorld; },

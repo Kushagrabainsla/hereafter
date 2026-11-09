@@ -2,7 +2,7 @@ import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
-import { BODY_MASS, LEAN_OFFSET, loadEffects } from "./combatRules";
+import { BODY_MASS, LEAN_OFFSET, loadEffects, RUSH_SPEED } from "./combatRules";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
 
@@ -109,6 +109,8 @@ export class PlayerController {
   private slides = 0;
   private crouchHeld = false;
   private sprintHold = 0;
+  // Seconds of a sugar rush left: a boba makes the player faster for a while.
+  private rushLeft = 0;
   private mantle: Mantle | null = null;
   private mantles = 0;
   private ladders: Ladder[] = [];
@@ -181,6 +183,7 @@ export class PlayerController {
     this.sliding = false;
     this.slideCooldown = 0;
     this.sprintHold = 0;
+    this.rushLeft = 0;
     this.mantle = null;
     this.climbing = null;
     this.roll = 0;
@@ -240,6 +243,8 @@ export class PlayerController {
     this.punchYaw += (Math.random() < 0.5 ? -1 : 1) * (0.4 + Math.random() * 0.8);
     this.tagged = TAG_SECONDS;
   }
+
+  startRush(seconds: number): void { this.rushLeft = Math.max(this.rushLeft, seconds); }
 
   // Firing drops a sprint; it resumes on its own once the trigger has rested this long.
   holdSprint(seconds: number): void {
@@ -346,6 +351,7 @@ export class PlayerController {
   private fixedUpdate(delta: number): void {
     this.slideCooldown = Math.max(0, this.slideCooldown - delta);
     this.sprintHold = Math.max(0, this.sprintHold - delta);
+    this.rushLeft = Math.max(0, this.rushLeft - delta);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - delta);
     if (this.mantle) { this.stepMantle(delta); return; }
     const forward = Number(this.keys.has("w") || this.keys.has("arrowup")) - Number(this.keys.has("s") || this.keys.has("arrowdown"));
@@ -396,7 +402,7 @@ export class PlayerController {
       this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
     } else if (!jumpFromSlide) {
       // Looking down the sights, a player walks at little over half pace.
-      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1);
+      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1) * (this.rushLeft > 0 ? RUSH_SPEED : 1);
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;

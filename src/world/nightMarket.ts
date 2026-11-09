@@ -18,6 +18,7 @@ import { cardGeometry, glowing, instancedParts, kitObject, KitPlacer, splitGlow,
 import signCatalog from "./signs.json";
 import posterCatalog from "./posters.json";
 import { DOOR_ENTITIES, DOOR_TOGGLES, Doors } from "./doors";
+import { SHOP_BACK, SHOP_CEILING, SHOP_FOOD, SHOP_FRONT, SHOP_LAMPS, SHOP_ROOMS, shopBackWall, shopFrontWall, shopPane } from "./shops";
 import { dressFacades, wallMatrix } from "./facades";
 import { PIPE_ENTITIES, placeSteamPipes, POWDER, SteamPipes } from "./steamPipes";
 import { Stalls, type Goods } from "./stalls";
@@ -39,6 +40,7 @@ interface Pane { x: number; z0: number; z1: number; y0: number; y1: number }
 interface Strand { x0: number; z0: number; x1: number; z1: number; y: number; sag: number }
 
 const solids: LayoutBox[] = [];
+const PHO_TABLES: [number, number][] = [[2.2, -22.6], [4.3, -22.6], [3.2, -18.25]];
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 
 function box(x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, material: Material, look: string): void {
@@ -76,8 +78,27 @@ box(-8.5, -7.1, 4.6, 5.65, -20.56, -20.5, "boundary", "rail");
 box(-8.5, -7.1, 4.6, 5.65, -14.5, -14.44, "boundary", "rail");
 
 // ---------- middle block, with a cut-through and passages at both ends ----------
-box(0.5, 8.5, 0, 12, 4, 26, "brick", "brickRed");
-box(0.5, 8.5, 0, 10, -26, -14.4, "brick", "plasterTeal");
+// Solid brick between the shops; the shops themselves are cut out below (shops.ts).
+box(0.5, 8.5, 0, 12, 4, 9.6, "brick", "brickRed");
+box(0.5, 8.5, 0, 12, 14.6, 17.2, "brick", "brickRed");
+box(0.5, 8.5, 0, 12, 24.4, 26, "brick", "brickRed");
+box(0.5, 8.5, 0, 10, -26, -24.6, "brick", "plasterTeal");
+box(0.5, 8.5, 0, 10, -17.4, -14.4, "brick", "plasterTeal");
+for (const room of SHOP_ROOMS) {
+  box(SHOP_FRONT.outer, SHOP_BACK.outer, SHOP_CEILING, room.roof, room.z0, room.z1, "brick", room.outer);
+  for (const [z0, z1, y0, y1] of shopFrontWall(room)) box(SHOP_FRONT.outer, SHOP_FRONT.inner, y0, y1, z0, z1, "brick", room.front);
+  for (const [z0, z1, y0, y1] of shopBackWall(room)) box(SHOP_BACK.inner, SHOP_BACK.outer, y0, y1, z0, z1, "brick", room.outer);
+}
+// Inside the shops: a counter with a cooking line behind it, and tables by the window.
+box(2.4, 7.0, 0, 1.05, 10.4, 11.05, "wood", "none");
+box(5.6, 6.8, 0, 2.0, 13.9, 14.6, "metal-solid", "none");
+box(1.65, 2.75, 0, 0.76, 12.85, 13.95, "wood", "none");
+box(5.6, 6.3, 0, 1.05, 20.4, 24.4, "wood", "none");
+box(7.4, 8.2, 0, 1.05, 20.6, 24.4, "metal-solid", "none");
+for (const z of [21.0, 23.0]) box(1.85, 2.95, 0, 0.76, z - 0.55, z + 0.55, "wood", "none");
+box(5.6, 6.3, 0, 1.05, -24.6, -21.2, "wood", "none");
+box(7.4, 8.2, 0, 1.05, -24.4, -21.4, "metal-solid", "none");
+for (const [x, z] of PHO_TABLES) box(x - 0.4, x + 0.4, 0, 0.76, z - 0.4, z + 0.4, "wood", "none");
 box(0.5, 8.5, 0, 10, -6.6, -2, "brick", "plasterTeal");
 box(0.5, 8.5, 3.6, 10, -14.4, -6.6, "brick", "plasterTeal");
 // The record shop runs through the block: a glass front and double doors on the market alley,
@@ -168,10 +189,10 @@ const upperWindows: { z: number }[] = [{ z: -0.6 }, { z: 2.6 }, { z: 8.4 }];
 const shopfronts: Shopfront[] = [
   { face: "px", at: -8.5, along: 27, width: 5.2, photo: "cafe", sign: ["NOODLE BAR", "#18322f", "#ffd27a"] },
   { face: "px", at: -8.5, along: -27, width: 4.6, photo: "stone", sign: ["TEA HOUSE", "#2f1830", "#ffd2ef"] },
-  { face: "nx", at: 0.5, along: 21.7, width: 5.2, photo: "stone", sign: ["DUMPLINGS", "#401818", "#ffe0a0"] },
-  { face: "nx", at: 0.5, along: 11.9, width: 3.6, photo: "cafe", sign: ["BOBA", "#173a52", "#bfe9ff"] },
+  { face: "nx", at: 0.5, along: 21.7, width: 5.2, photo: "stone", sign: ["DUMPLINGS", "#401818", "#ffe0a0"], open: true },
+  { face: "nx", at: 0.5, along: 11.9, width: 3.6, photo: "cafe", sign: ["BOBA", "#173a52", "#bfe9ff"], open: true },
   { face: "nx", at: 0.5, along: -11.5, width: 4.4, photo: "cafe", sign: ["RECORDS", "#1b2240", "#c8e4ff"], open: true },
-  { face: "nx", at: 0.5, along: -21, width: 4.6, photo: "stone", sign: ["PHO HOUSE", "#3a2a12", "#ffe6b0"] },
+  { face: "nx", at: 0.5, along: -21, width: 4.6, photo: "stone", sign: ["PHO HOUSE", "#3a2a12", "#ffe6b0"], open: true },
   { face: "nx", at: 17, along: -20, width: 4.6, photo: "stone", sign: ["LAUNDRY", "#e9e2d2", "#2d5a8a"] },
 ];
 
@@ -187,6 +208,7 @@ const panes: Pane[] = [
   { x: -8.65, z0: 5.4, z1: 9.8, y0: 0.55, y1: 2.9 },
   { x: 17.15, z0: 1.2, z1: 5.6, y0: 0.55, y1: 2.9 },
   { x: 0.65, z0: -13.9, z1: -11.1, y0: 0.55, y1: 2.9 },
+  ...SHOP_ROOMS.map(shopPane),
 ];
 const strands: Strand[] = [
   ...[23, 15, 8, 1, -6, -13, -20].map((z) => ({ x0: -8.5, z0: z, x1: 0.5, z1: z + 1.5, y: 5.4, sag: 0.7 })),
@@ -240,8 +262,9 @@ export const NIGHT_MARKET: MapLayout = {
     { id: "mags-table-north", weapon: "rifle", item: "magazines", east: -4.2, north: -15, y: 0.76 },
     { id: "mags-fire-escape", weapon: "rifle", item: "magazines", east: -7.8, north: -19.4, y: 4.6 },
     { id: "mags-upstairs", weapon: "rifle", item: "magazines", east: 18.4, north: 8.8, y: 4.2 },
-    { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 9.2, north: 11.5, y: 1.3 },
+    { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 16.4, north: -9.25, y: 1.3 },
     { id: "mags-records", weapon: "pistol", item: "magazines", east: 6.95, north: -12.5, y: 1.0 },
+    ...SHOP_FOOD,
   ],
   solids,
   toggles: [...TRUCK_TOGGLES, ...DOOR_TOGGLES],
@@ -472,6 +495,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
     photoStone: std({ map: textures.storefrontStone, emissive: 0xffffff, emissiveMap: textures.storefrontStone, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
     recordsFront: wall({ color: 0x1b2a4a, metalness: 0.1, roughness: 0.55 }), recordsWall: plaster(0x8a4a3a),
+    bobaFront: wall({ color: 0x1c5560, metalness: 0.1, roughness: 0.55 }), bobaWall: plaster(0xe2b8b0),
+    dumplingsFront: wall({ color: 0x5a1a16, metalness: 0.1, roughness: 0.55 }), dumplingsWall: plaster(0xd9a860),
+    phoFront: wall({ color: 0x3e3a18, metalness: 0.1, roughness: 0.55 }), phoWall: plaster(0xa8c09e),
   };
   const statics = new Batch(materials);
   // ---------- lights ----------
@@ -492,6 +518,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const bannerLight = light([-4, 5.6, -22.8, 0xffd0a8, 3, 5]);
   const pendantLights = [-2, 2.4, 6.8].map((z) => light([-10.3, 2.6, z, 0xffc887, 4.5, 6]));
   const recordsLights = [3.0, 6.0].map((x) => light([x, 3.0, -10.5, 0xffd6a0, 4.5, 6.5]));
+  const shopLights = new Map(SHOP_ROOMS.map((room) => [room.id, light([4.5, 3.0, (room.z0 + room.z1) / 2, 0xffd6a0, 8, 5.5])]));
   light([-13.4, 3.1, -2, 0xfff0dd, 4, 6]);
   light([-13.4, 3.1, 9, 0xfff0dd, 4, 6]);
   const barLight = light([20.1, 3.4, 8.5, 0xff9ab0, 5, 7]);
@@ -503,6 +530,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const darkGlass = std({ color: 0x2a2622, roughness: 0.25, metalness: 0.1 });
   // Kit pieces placed around the market: wall dressing, lamps and their fittings.
   const placer = new KitPlacer(kit);
+  // The shops' furniture is drawn apart from the same chairs and shelves elsewhere, which would
+  // otherwise all be drawn whenever any one copy is in view.
+  const shopKit = new KitPlacer(kit), bobaKit = shopKit, dumplingsKit = shopKit, phoKit = shopKit;
   // Lamps drawn from a kit piece: the fittings instanced like any piece, and the glass once
   // per lamp, lit by a flag of its own, so that each goes dark on its own without a second,
   // hidden copy being drawn. One part per lamp, in order.
@@ -746,6 +776,60 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   refs.set("boards:records", placer.place("boards", wallMatrix("px", 8.5, -10.8, 1.55)));
   entities.push({ id: "boards:records", kind: "boards", material: "wood", maxHealth: 120, yaw: 0, center: { x: 8.35, y: 1.55, z: -10.8 }, shape: { type: "box", half: [0.15, 0.95, 1.0] } });
 
+  // ---------- the shops beside it ----------
+  const turned = (x: number, y: number, z: number, yaw: number, stretch = 1): Matrix4 => new Matrix4().compose(new Vector3(x, y, z), new Quaternion().setFromAxisAngle(UP, yaw), new Vector3(stretch, 1, 1));
+  for (const room of SHOP_ROOMS) {
+    ground("floor", SHOP_FRONT.inner, SHOP_BACK.inner, room.z0, room.z1, 0.012);
+    lining(0.8, 8.2, 0, 3.6, room.z0, room.z0 + 0.01, room.inside);
+    lining(0.8, 8.2, 0, 3.6, room.z1 - 0.01, room.z1, room.inside);
+    for (const [z0, z1, y0, y1] of shopFrontWall(room)) lining(0.8, 0.81, y0, y1, z0, z1, room.inside);
+    for (const [z0, z1, y0, y1] of shopBackWall(room)) lining(8.19, 8.2, y0, y1, z0, z1, room.inside);
+    lining(0.8, 8.2, SHOP_CEILING - 0.02, SHOP_CEILING, room.z0, room.z1, "plasterInside");
+    if ("door" in room.back) placer.place("frame_steel", wallMatrix("px", SHOP_BACK.outer, room.back.door, 0));
+    else {
+      const id = `boards:${room.id}`;
+      refs.set(id, placer.place("boards", wallMatrix("px", SHOP_BACK.outer, room.back.boards, 1.55)));
+      entities.push({ id, kind: "boards", material: "wood", maxHealth: 120, yaw: 0, center: { x: 8.35, y: 1.55, z: room.back.boards }, shape: { type: "box", half: [0.15, 0.95, 1.0] } });
+    }
+  }
+  const shopLamps = lampSet("pendant", SHOP_LAMPS.map(({ x, z }) => at(x, 3.3, z)), materials.lampGlow);
+  SHOP_LAMPS.forEach(({ id, room, x, z }, index) => lamps.add(`lamp:${id}`, { x, y: 3.3, z }, { type: "box", half: [0.17, 0.12, 0.17] }, 0, shopLamps.slice(index, index + 1), [shopLights.get(room)!]));
+  // A kitchen line against the back wall: units laid north to south, each stretched to its length.
+  const kitchenLine = (shop: KitPlacer, units: [string, number, number][]): void => { for (const [name, z, length] of units) shop.place(name, turned(7.8, 0, z, -Math.PI / 2, length / (name === "kitchen_range" ? 1.5 : 1))); };
+  const shelf = (shop: KitPlacer, face: "pz" | "nz", wall: number, x: number, goods: [string, string]): void => {
+    shop.place("pantry_shelf", wallMatrix(face, wall, x, 0));
+    shop.place(goods[0], wallMatrix(face, wall, x - 0.4, 1.725, 0.02));
+    shop.place(goods[1], wallMatrix(face, wall, x + 0.4, 2.275, 0.02));
+  };
+  // Boba: a bar with stools, a drinks fridge and a table by the window.
+  bobaKit.place("boba_bar", turned(4.7, 0, 10.725, 0));
+  for (const x of [3.3, 4.7, 6.1]) bobaKit.place("bar_stool", new Matrix4().makeTranslation(x, 0, 11.5));
+  bobaKit.place("drink_fridge", turned(6.2, 0, 14.25, Math.PI));
+  bobaKit.place("cafe_table", turned(2.2, 0, 13.4, 0));
+  for (const a of [0.5, 3.6]) bobaKit.place("plastic_stool", turned(2.2 + Math.cos(a) * 0.95, 0, 13.4 + Math.sin(a) * 0.95, a), a < 1 ? 0xc94f6d : 0x3fa7a0);
+  shelf(bobaKit, "pz", 9.61, 4.4, ["goods_jars", "goods_bowls"]);
+  bobaKit.place("menu_boba", wallMatrix("nz", 14.59, 3.4, 2.0));
+  // Dumplings: a counter with steamers behind it, and two tables by the window.
+  dumplingsKit.place("dumpling_counter", turned(5.95, 0, 22.4, -Math.PI / 2));
+  kitchenLine(dumplingsKit, [["kitchen_counter", 21.175, 1.15], ["kitchen_range", 22.5, 1.5], ["kitchen_counter", 23.825, 1.15]]);
+  for (const z of [22.1, 22.9]) dumplingsKit.place("steamer_stack", turned(7.8, 1.0, z, z));
+  for (const z of [21.0, 23.0]) {
+    dumplingsKit.place("cafe_table", turned(2.4, 0, z, 0));
+    for (const a of [0.1, 3.3]) dumplingsKit.place("plastic_stool", turned(2.4 + Math.cos(a) * 0.95, 0, z + Math.sin(a) * 0.95, a), a < 1 ? 0xc9402f : 0xe0a030);
+  }
+  shelf(dumplingsKit, "nz", 24.39, 2.85, ["goods_sacks", "goods_tins"]);
+  dumplingsKit.place("menu_dumplings", wallMatrix("nx", 8.19, 22.5, 2.0));
+  // Pho: stockpots behind the counter, and dining tables.
+  phoKit.place("pho_counter", turned(5.95, 0, -22.9, -Math.PI / 2));
+  kitchenLine(phoKit, [["kitchen_counter", -24.025, 0.75], ["kitchen_range", -22.9, 1.5], ["kitchen_counter", -21.775, 0.75]]);
+  phoKit.place("stock_pots", turned(7.8, 1.0, -22.9, 0));
+  for (const [x, z] of PHO_TABLES) {
+    phoKit.place("dining_table", turned(x, 0, z, 0));
+    for (const dx of [-0.75, 0.75]) phoKit.place("dining_chair", turned(x + dx, 0, z, Math.atan2(-dx, 0)));
+  }
+  shelf(phoKit, "nz", -17.41, 5.8, ["goods_bowls", "goods_jars"]);
+  phoKit.place("menu_pho", wallMatrix("nx", 8.19, -22.9, 2.0));
+
   // ---------- restaurant and bar interiors ----------
   for (const z of [-2, 2.4, 6.8]) {
     // Four cafe chairs round each table, each facing it.
@@ -956,6 +1040,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   addClimbing(placer, ladders, [stair]);
   // Only the fire escapes stand high enough in the low sun to throw shadows worth drawing.
   placer.build(root, (name) => name.startsWith("escape"));
+  shopKit.build(root);
   const doors = new Doors(root, kit);
   for (const [id, objects] of doors.groups) groups.set(id, objects);
   stallViews.show();

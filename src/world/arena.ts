@@ -25,6 +25,9 @@ export interface LayoutBox {
 }
 
 // Something players can open and close: where they reach for it, and whether it starts open.
+// What a shop's counter holds for a player to eat or drink.
+export type FoodKind = "dumplings" | "pho" | "boba";
+
 export interface MapToggle { id: string; label: string; at: { x: number; y: number; z: number }; open: boolean }
 
 // What every client must agree on for a map: where players start, where weapons and
@@ -34,7 +37,7 @@ export interface MapLayout {
   name: string;
   spawns: { east: number; north: number; heading: number }[];
   // A gun, or spare magazines for one; y is the height of the surface it rests on.
-  pickups: { id: string; weapon: "pistol" | "rifle"; item?: "gun" | "magazines"; east: number; north: number; y?: number }[];
+  pickups: ({ id: string; weapon: "pistol" | "rifle"; item?: "gun" | "magazines"; east: number; north: number; y?: number } | { id: string; item: "food"; food: FoodKind; east: number; north: number; y?: number })[];
   solids: LayoutBox[];
   toggles: MapToggle[];
 }

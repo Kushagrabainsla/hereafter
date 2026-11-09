@@ -3,9 +3,10 @@ import { type MapToggle } from "./arena";
 import { type Material } from "./materials";
 import { type Vec3, type WorldEntity } from "./entities";
 import { kitObject, type KitPiece } from "./kit";
+import { SHOP_ROOMS } from "./shops";
 
 // The market's doors: the restaurant's and the bar's double doors, the French doors onto the
-// bar's balcony, and the record shop's front and back doors. Each opens inward, all its
+// bar's balcony, and the front and back doors of the record shop and the shops beside it. Each opens inward, all its
 // leaves together, when a player presses E at it or kicks it with the knife. Rounds pass
 // through a leaf and wear it down; enough of them, or a grenade, blows it off its hinges.
 //
@@ -35,6 +36,10 @@ export const DOORWAYS: Doorway[] = [
   { id: "door:balcony", label: "the balcony door", at: { x: 17.15, y: 4.2, z: 5.8 }, face: "nx", model: "french", leaves: 2, open: true },
   { id: "door:records-front", label: "the record shop door", at: { x: 0.65, y: 0, z: -9.9 }, face: "nx", model: "glass", leaves: 2, open: false },
   { id: "door:records-back", label: "the back door", at: { x: 8.35, y: 0, z: -8.1 }, face: "px", model: "steel", leaves: 1, open: false, tint: 0x3d5a4c },
+  ...SHOP_ROOMS.flatMap((room): Doorway[] => [
+    { id: `door:${room.id}-front`, label: `the ${room.label} door`, at: { x: 0.65, y: 0, z: (room.door[0] + room.door[1]) / 2 }, face: "nx", model: "glass", leaves: 2, open: room.doorOpen },
+    ...("door" in room.back ? [{ id: `door:${room.id}-back`, label: "the back door", at: { x: 8.35, y: 0, z: room.back.door }, face: "px" as Face, model: "steel" as const, leaves: 1 as const, open: false, tint: room.back.paint }] : []),
+  ]),
 ];
 
 export const DOOR_TOGGLES: MapToggle[] = DOORWAYS.map((door) => ({ id: door.id, label: door.label, at: { x: door.at.x, y: door.at.y + 1.3, z: door.at.z }, open: door.open }));

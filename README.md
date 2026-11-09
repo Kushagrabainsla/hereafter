@@ -85,7 +85,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Aim down the sights, with a gun | hold right-click (on a Mac trackpad, press and hold with two fingers) |
 | Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
 | Reload | <kbd>R</kbd> |
-| Pick up, open doors and hatches | <kbd>E</kbd> |
+| Pick up, eat, open doors and hatches | <kbd>E</kbd> |
 | Frag grenade, smoke grenade | <kbd>G</kbd>, <kbd>T</kbd> |
 | Respawn, three seconds after you fall | <kbd>Enter</kbd> |
 | Scoreboard | hold <kbd>Tab</kbd> |
@@ -115,6 +115,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - Windows shatter. Doors open, kick in, or come off their hinges.
 - Every lamp and sign can be shot out. One breaker box blacks out the whole service alley.
 - Steam pipes burst into cover. Fuel drums vent and explode. The food truck's propane cylinders go up.
+- Walk into the dumpling shop, the boba shop and the pho house. Eat at the counter for health, or grab a boba for a burst of speed.
 
 **▸ MATCHES**
 - Five-minute rounds, or first to 15 kills. The winner is shown on the scoreboard, and the next round starts 12 seconds later with the market rebuilt.
@@ -214,7 +215,7 @@ docs/              design and engineering notes
 
 - One map. Its layout is written in code, not built in an editor. The walls and ground are flat surfaces with photographed textures and baked light, and smoke, steam, fire, haze and tracers are particles; everything else is modelled in Blender (see the [asset pipeline](docs/asset-pipeline.md)).
 - Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
-- Only the restaurant, the bar and the record shop can be entered.
+- The noodle bar, the tea house and the laundry cannot be entered yet; the other shops, the restaurant and the bar can.
 - No voice chat, and no computer opponents in single player yet.
 - Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the next round.
 - The view-model animations are generated from a simple motion description. There are no reload, crouch or aim-down-sights clips yet.

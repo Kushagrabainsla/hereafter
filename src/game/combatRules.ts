@@ -1,4 +1,4 @@
-import { type ArenaData, terrainHeight } from "../world/arena";
+import { type ArenaData, type FoodKind, terrainHeight } from "../world/arena";
 import { type PlayerPose } from "./playerController";
 import { type ShotRay } from "../world/physics";
 
@@ -6,6 +6,7 @@ export type ShotClear = (ray: ShotRay) => boolean;
 
 export type WeaponKind = "knife" | "pistol" | "rifle";
 export type GunKind = Exclude<WeaponKind, "knife">;
+export type { FoodKind };
 
 export interface WeaponDefinition {
   label: string;
@@ -118,20 +119,30 @@ export function deviateAim(aim: { heading: number; pitch: number }, spread: numb
   return { heading, pitch };
 }
 
-// A gun lying ready to take, or spare magazines for one. y is the height of the surface
-// the item rests on, for the ones on tables, the fire escape and the bar's upper floor.
-export interface WeaponPickup {
-  id: string;
-  weapon: GunKind;
-  item: "gun" | "magazines";
-  east: number;
-  north: number;
-  y: number;
-}
+// A gun lying ready to take, spare magazines for one, or food on a shop's counter. y is the
+// height of the surface the item rests on, for the ones on tables, counters, the fire escape
+// and the bar's upper floor.
+interface PickupSpot { id: string; east: number; north: number; y: number }
+export type WeaponPickup = PickupSpot & ({ item: "gun" | "magazines"; weapon: GunKind } | { item: "food"; food: FoodKind });
 
 export function makeWeaponPickups(data: ArenaData): WeaponPickup[] {
-  return data.layout.pickups.map((pickup) => ({ item: "gun", y: 0, ...pickup }));
+  return data.layout.pickups.map((pickup) => ({ item: "gun", y: 0, ...pickup }) as WeaponPickup);
 }
+
+// What the shops serve. Food comes back on the counter after a while and goes back on it at
+// the start of a round. Eating or drinking keeps the hands busy for a moment.
+export const FULL_HEALTH = 100;
+export const FOOD_RETURN_MS = 40_000;
+export const EAT_MS = 1000;
+// How much faster a sugar rush moves a player. Sprinting while boosted stays within the 10 m/s
+// other peers accept (peerRoom.ts).
+export const RUSH_SPEED = 1.15;
+export const FOOD_KINDS: FoodKind[] = ["dumplings", "pho", "boba"];
+export const FOOD: Record<FoodKind, { verb: string; name: string; heal: number; rushSeconds: number }> = {
+  dumplings: { verb: "eat", name: "the dumplings", heal: 40, rushSeconds: 0 },
+  pho: { verb: "eat", name: "the pho", heal: 40, rushSeconds: 0 },
+  boba: { verb: "drink", name: "the boba", heal: 0, rushSeconds: 12 },
+};
 
 // How far a player can reach to pick something up: across, and up or down.
 export const PICKUP_REACH = 2.3;

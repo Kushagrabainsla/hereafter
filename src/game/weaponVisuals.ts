@@ -45,6 +45,8 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
   return t * t * (3 - 2 * t);
 }
 
+const SWITCH_SECONDS = 0.56;
+
 // The procedural side of the first-person weapon: switching, the spring sway and breathing,
 // reload cants and quick throws, which the authored view models (authoredViewModel.ts) read
 // each frame; and the gun pickups, each spinning above a modelled stand.
@@ -53,6 +55,7 @@ export class WeaponVisuals {
   private active: WeaponKind = "knife";
   private requested: WeaponKind = "knife";
   private switchPhase = 0;
+  private switchSeconds = SWITCH_SECONDS;
   private switching = false;
   private lower = 0;
   private vault = 0;
@@ -101,8 +104,18 @@ export class WeaponVisuals {
     }
   }
 
+  // Lowers the weapon and raises it again over this long, the hands busy with something else.
+  dip(seconds: number): void {
+    if (this.switching) return;
+    this.switching = true;
+    this.switchPhase = 0;
+    this.switchSeconds = seconds;
+    this.cancelReload();
+  }
+
   setActive(kind: WeaponKind): void {
     if (kind === this.requested) return;
+    this.switchSeconds = SWITCH_SECONDS;
     this.requested = kind;
     if (!this.switching) { this.switching = true; this.switchPhase = 0; }
     else if (this.switchPhase >= 0.5) this.switchPhase = 1 - this.switchPhase;
@@ -208,7 +221,7 @@ export class WeaponVisuals {
     const elapsed = Math.max(0, seconds);
     seconds = Math.min(elapsed, 0.05);
     if (this.switching) {
-      this.switchPhase = Math.min(1, this.switchPhase + elapsed / 0.56);
+      this.switchPhase = Math.min(1, this.switchPhase + elapsed / this.switchSeconds);
       if (this.switchPhase >= 0.5) this.active = this.requested;
       if (this.switchPhase >= 1 - 1e-6) { this.switchPhase = 1; this.switching = false; }
     }

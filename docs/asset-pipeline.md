@@ -166,6 +166,16 @@ Phase 6 (effects and the last code shapes), at six spots: bullet holes on a wall
 
 Eight effect pieces (578 triangles, 18 KB), the kitchen's counter and range (1,456 triangles) and the fire escape's walkway (228). The first burst of debris after loading took no longer a frame than the screen did standing still.
 
+The shops (`scripts/assets/families/shops.py`): the counters, the boba shop's fridge, what stands on the cooking lines, the menus and the food a player takes. Twelve pieces, 14,700 triangles in all and 172 KB compressed. Measured at a MacBook Pro's Retina size (1728 × 1117 at 2×) with production builds in three alternating rounds over eight spots on both alleys, against the release before, on a busy machine:
+
+| | Before | After |
+|---|---|---|
+| Frame rate, mean of the eight spots | 45.1 FPS | 43.6 FPS |
+| Triangles | | +3.1% to +6.4% |
+| Draw calls | 173 to 405 | +5% to +23% (9 to 56 more) |
+
+Draw calls are over the 10% budget at most spots. Most of them are the new door leaves, shop glass, food and wall colours, and the frame rate is inside its 3 FPS budget, so they stay. Toggling parts of the shops within one session showed where the frames went: two real lights per shop cost 2 to 3 FPS, because a light costs every pixel it reaches, through walls as well, while the glass cost about 1 FPS and the furniture nothing measurable. Each shop now has one light of 5.5 m range between its two pendants. The shops' furniture is placed apart from the same chairs and shelves elsewhere, since one instanced mesh is drawn whole whenever any copy of it is in view, which had drawn about 36,000 more triangles of the restaurant's furniture in views of the alley.
+
 ## Phases
 
 Each phase replaces one group of shapes drawn in code with modelled pieces, measured as above.

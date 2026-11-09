@@ -10,7 +10,7 @@ It has three lanes running north to south:
 - **The restaurant** is the indoor lane on the west side. Two pairs of glass doors and two glass storefronts open onto the market alley. Inside, a pass counter splits the dining room from a kitchen walkway, where a carbine lies.
 - **The service alley** is on the east side, behind the middle block. It holds dumpsters, back doors, wall lamps, posters, a mural and the bar.
 
-A cut-through in the middle block joins the two alleys, with a carbine on crates. Passages at both ends join them too, and the record shop runs through the block's south half: glass doors and a shop window on the market alley, a steel back door and a boarded-up window on the service alley.
+A cut-through in the middle block joins the two alleys, with a carbine on crates. Passages at both ends join them too, and the record shop runs through the block's south half: glass doors and a shop window on the market alley, a steel back door and a boarded-up window on the service alley. Three more shops open off the market alley along that block, the dumpling shop, the boba shop and the pho house (see [the shops](#the-shops)); the dumpling shop and the pho house also run through to the service alley.
 
 There is high ground in two places:
 
@@ -81,9 +81,23 @@ All of it is drawn as instanced meshes, and none of it has colliders: it is flat
 - **Stalls** (`src/world/stalls.ts`) come from the same kit: a plank counter, posts, a back rack with two shelves, a chalk price board, a striped awning in the stall's colour and the goods of its trade. Each also has a torn awning and a collapsed pile, shown as it takes damage.
 - **The record shop** cuts a new route through the middle block. Inside are record bins down the middle, shelves along both side walls and a counter with a turntable and a pair of spare pistol magazines. Two pendant lamps light it. The bins are waist-high cover, and the shop window, the doors and the boarded window all break.
 
+## The shops
+
+The dumpling shop, the boba shop and the pho house (`src/world/shops.ts`) are built like the record shop: a glass front and a pair of doors on the market alley, a counter, a ceiling, a wooden floor and pendants that can be shot out. Their shop windows shatter with one round and can be climbed through, and their doors open with E or a knife kick.
+
+| Shop | Size | Way through | On the counter |
+|---|---|---|---|
+| Dumpling shop | 7.4 × 7.2 m | Steel back door onto the service alley | Dumplings: +40 health |
+| Pho house | 7.4 × 7.2 m | Steel back door onto the service alley | Pho: +40 health |
+| Boba shop | 7.4 × 5 m | A boarded window onto the service alley, which takes 5 pistol rounds or a grenade | Boba: 15% faster for 12 s |
+
+Food is a pickup: press E at the counter, from either side. It keeps the hands busy for 1 s, with the weapon lowered and no shots or throws, and comes back on the counter after 40 s or at the start of a round. A player at full health cannot eat. Food heals at once and the coordinator applies it; a sugar rush is applied by the player's own peer, and its top speed of 9.4 m/s stays inside the 10 m/s other peers accept.
+
+Counters and tables are cover: the counters are wood, so rounds pass through them weakened, and the kitchen lines and the boba shop's fridge are solid metal.
+
 ## Look
 
-The market is lit at dusk by a painted sky, a low orange sun on the upper floors and 90 real lights from its lamps, strings, lanterns and signs, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`. See [rendering notes](rendering.md).
+The market is lit at dusk by a painted sky, a low orange sun on the upper floors and 93 real lights from its lamps, strings, lanterns and signs, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`. See [rendering notes](rendering.md).
 
 ## How it is built
 
@@ -92,7 +106,7 @@ The market is lit at dusk by a painted sky, a low orange sun on the upper floors
 - **`solids`** are boxes with a material. Walls, floors, counters, the stair ramp and railings are all solids. Railings use the `boundary` material, so they block players but not bullets.
 - **`spawns`** are the starting points.
 - **`pickups`** are the gun and magazine spots, each with the height of the surface it rests on.
-- **`toggles`** are things players open and close, the food truck's doors and hatch and the market's seven doorways, with where a player reaches for each and how it starts.
+- **`toggles`** are things players open and close, the food truck's doors and hatch and the market's twelve doorways, with where a player reaches for each and how it starts.
 
 The physics world adds every solid as a box collider. Spawns and pickups come straight from the layout, and footsteps are always on a hard surface.
 
@@ -105,7 +119,7 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 | Check | Result |
 |---|---|
 | Frame rate at the south spawn | 60 FPS, about 224,000 triangles |
-| Entities | 247 windows, 7 stalls, 4 glass storefronts, 13 door leaves, 4 steam pipes, 6 extinguishers, 1 boarded window, 103 lamps and 27 props |
+| Entities | 247 windows, 7 stalls, 7 glass storefronts, 21 door leaves, 4 steam pipes, 6 extinguishers, 2 boarded windows, 109 lamps and 27 props |
 | All 8 spawns | the player stands on the ground at each |
 | Walking into the restaurant glass | stopped at the sill |
 | One pistol round at the glass | shattered, and a running jump carried the player inside |
@@ -116,7 +130,7 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 
 ## Limits
 
-- The steel back doors other than the record shop's are part of the wall and stay shut. Shopfronts other than the restaurant's, the bar's and the record shop's are pictures behind solid walls.
+- The steel back doors other than those of the record shop, the dumpling shop and the pho house are part of the wall and stay shut. The noodle bar, the tea house and the laundry are still pictures behind solid walls.
 - The fire escapes other than the one on the market alley's west side cannot be reached and have no colliders, so rounds and grenades pass through them.
 - A door swung shut onto a player can trap them against its frame.
 - Upper floors other than the bar's upper room cannot be entered, and their windows only break.

@@ -1,0 +1,219 @@
+{
+ "family": "shops",
+ "pieces": {
+  "dumpling_counter": {
+   "triangles": 2292,
+   "budget": 9000,
+   "size": [
+    4.0,
+    0.74,
+    1.337
+   ],
+   "materials": [
+    "shop_bamboo",
+    "shop_bamboo_dark",
+    "shop_chili",
+    "shop_cream",
+    "shop_dark",
+    "shop_dough",
+    "shop_laminate",
+    "shop_red",
+    "shop_steel"
+   ],
+   "notes": "The dumpling shop's counter and what stands on it."
+  },
+  "pho_counter": {
+   "triangles": 2596,
+   "budget": 6000,
+   "size": [
+    3.4,
+    0.74,
+    1.31
+   ],
+   "materials": [
+    "shop_bamboo",
+    "shop_ceramic",
+    "shop_ceramic_blue",
+    "shop_dark",
+    "shop_green",
+    "shop_herb",
+    "shop_lime",
+    "shop_mustard",
+    "shop_wood"
+   ],
+   "notes": "The pho house's counter and what stands on it."
+  },
+  "boba_bar": {
+   "triangles": 2468,
+   "budget": 7000,
+   "size": [
+    4.6,
+    0.69,
+    1.52
+   ],
+   "materials": [
+    "shop_cup_lid",
+    "shop_dark",
+    "shop_matcha",
+    "shop_milk_tea",
+    "shop_pearl",
+    "shop_pink",
+    "shop_steel",
+    "shop_taro",
+    "shop_teal",
+    "shop_white"
+   ],
+   "notes": "The boba shop's bar and what stands on it."
+  },
+  "drink_fridge": {
+   "triangles": 1124,
+   "budget": 2600,
+   "size": [
+    1.2,
+    0.702,
+    2.0
+   ],
+   "materials": [
+    "glow_fridge",
+    "shop_can_a",
+    "shop_can_b",
+    "shop_can_c",
+    "shop_dark",
+    "shop_steel",
+    "shop_teal",
+    "shop_white"
+   ],
+   "notes": "The boba shop's lit drinks fridge."
+  },
+  "steamer_stack": {
+   "triangles": 744,
+   "budget": 1200,
+   "size": [
+    0.408,
+    0.408,
+    0.422
+   ],
+   "materials": [
+    "shop_bamboo",
+    "shop_bamboo_dark"
+   ],
+   "notes": "Stands on the dumpling shop's range."
+  },
+  "stock_pots": {
+   "triangles": 872,
+   "budget": 1600,
+   "size": [
+    1.31,
+    0.456,
+    0.623
+   ],
+   "materials": [
+    "shop_broth",
+    "shop_dark",
+    "shop_steel"
+   ],
+   "notes": "Stands on the pho house's range."
+  },
+  "food_dumplings": {
+   "triangles": 684,
+   "budget": 1400,
+   "size": [
+    0.27,
+    0.266,
+    0.073
+   ],
+   "materials": [
+    "shop_bamboo",
+    "shop_bamboo_dark",
+    "shop_ceramic",
+    "shop_dough"
+   ],
+   "notes": "Taken from the dumpling counter for health."
+  },
+  "food_pho": {
+   "triangles": 1178,
+   "budget": 1500,
+   "size": [
+    0.32,
+    0.273,
+    0.109
+   ],
+   "materials": [
+    "shop_beef",
+    "shop_broth",
+    "shop_ceramic",
+    "shop_ceramic_blue",
+    "shop_herb",
+    "shop_noodle",
+    "shop_wood"
+   ],
+   "notes": "Taken from the pho counter for health."
+  },
+  "food_boba": {
+   "triangles": 580,
+   "budget": 1100,
+   "size": [
+    0.108,
+    0.108,
+    0.255
+   ],
+   "materials": [
+    "shop_cup_lid",
+    "shop_milk_tea",
+    "shop_pearl",
+    "shop_straw"
+   ],
+   "notes": "Taken from the boba bar for speed."
+  },
+  "menu_dumplings": {
+   "triangles": 825,
+   "budget": 5000,
+   "size": [
+    1.36,
+    0.03,
+    0.88
+   ],
+   "materials": [
+    "shop_board",
+    "shop_chalk",
+    "shop_chalk_warm",
+    "shop_wood"
+   ],
+   "notes": "Above the dumpling counter."
+  },
+  "menu_pho": {
+   "triangles": 730,
+   "budget": 5000,
+   "size": [
+    1.36,
+    0.03,
+    0.88
+   ],
+   "materials": [
+    "shop_board",
+    "shop_chalk",
+    "shop_chalk_warm",
+    "shop_wood"
+   ],
+   "notes": "Above the pho counter."
+  },
+  "menu_boba": {
+   "triangles": 579,
+   "budget": 5000,
+   "size": [
+    1.36,
+    0.03,
+    0.88
+   ],
+   "materials": [
+    "shop_board",
+    "shop_chalk",
+    "shop_chalk_warm",
+    "shop_wood"
+   ],
+   "notes": "On the boba shop's wall."
+  }
+ },
+ "triangles": 14672,
+ "bytes": 475400
+}

@@ -2,7 +2,7 @@ import { MARKET_ARENA } from "./world/nightMarket";
 import { createMapViewer, type MapViewer } from "./world/mapViewer";
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
-import { carriedMass, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
+import { carriedMass, EAT_MS, FOOD, FULL_HEALTH, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
 import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
@@ -370,6 +370,13 @@ function playEvent(event: CombatEvent): void {
     toast(event.item === "magazines" ? `${MAGAZINES_PER_PICKUP} × ${MAGAZINE_LABEL[gun]}s` : event.item === "drop" ? `Took the dropped ${WEAPONS[gun].label.toLowerCase()}` : match?.player(selfId)?.active === gun ? `${WEAPONS[gun].label} · one magazine` : `Took its ${MAGAZINE_LABEL[gun]}`);
     gameAudio.pickup();
   }
+  if (event.kind === "pickup" && event.actor === selfId && event.food) {
+    const food = FOOD[event.food];
+    viewer?.busyHands(EAT_MS / 1000);
+    if (food.rushSeconds) viewer?.startRush(food.rushSeconds);
+    toast(food.rushSeconds ? `Sugar rush: faster for ${food.rushSeconds} s` : `+${food.heal} health`);
+    gameAudio.pickup();
+  }
   if (event.kind === "reload" && event.actor === selfId && match) {
     const player = match.player(selfId);
     if (player && player.active !== "knife" && !player.mags[player.active].length) window.setTimeout(() => toast("That was your last magazine"), 600);
@@ -524,15 +531,20 @@ function submit(intent: CombatIntent): void {
 }
 
 // The closest thing in reach to pick up, placed or dropped, with what taking it would give.
-function nearestPickup(): { id: string; label: string; full: boolean } | null {
+function nearestPickup(): { id: string; label: string; full: boolean; idle?: boolean } | null {
   if (!viewer || !match) return null;
   const player = match.player(selfId);
   if (!player) return null;
   const pose = viewer.playerPose(), state = match.getState(), taken = new Set(state.taken);
   const room = (gun: GunKind): boolean => player.mags[gun].length < MAX_SPARE_MAGAZINES;
-  const candidates: { id: string; east: number; north: number; y: number; label: string; full: boolean }[] = [];
+  const candidates: { id: string; east: number; north: number; y: number; label: string; full: boolean; idle?: boolean }[] = [];
   for (const pickup of match.pickups) {
     if (taken.has(pickup.id)) continue;
+    if (pickup.item === "food") {
+      const food = FOOD[pickup.food], idle = food.heal > 0 && player.health >= FULL_HEALTH;
+      candidates.push({ ...pickup, full: false, idle, label: idle ? `You're at full health. ${food.verb === "eat" ? "Eat" : "Drink"} when you're hurt` : `${food.verb} ${food.name} (${food.heal ? `+${food.heal} health` : `faster for ${food.rushSeconds} s`})` });
+      continue;
+    }
     const gun = pickup.weapon, owned = player.owned.includes(gun);
     const label = pickup.item === "magazines" ? `${MAGAZINES_PER_PICKUP} × ${MAGAZINE_LABEL[gun]}s` : owned ? `the ${MAGAZINE_LABEL[gun]} from this ${WEAPONS[gun].label.toLowerCase()}` : `the ${WEAPONS[gun].label.toLowerCase()} (${WEAPONS[gun].magazine} rounds)`;
     candidates.push({ id: pickup.id, east: pickup.east, north: pickup.north, y: pickup.y, label, full: (pickup.item === "magazines" || owned) && !room(gun) });
@@ -597,12 +609,13 @@ function attack(stroke: KnifeStroke = "slash"): void {
 // E takes the nearest pickup, or else opens or closes the nearest door or hatch.
 function interact(): void {
   const pickup = nearestPickup();
-  if (pickup?.full) toast("Your magazine pouches are full");
+  const usable = viewer?.nearestUse();
+  // Food a player does not need never gets in the way of the door beside it.
+  if (pickup?.idle && usable) submit({ kind: "use", target: usable.id });
+  else if (pickup?.idle) toast(pickup.label);
+  else if (pickup?.full) toast("Your magazine pouches are full");
   else if (pickup) submit({ kind: "pickup", pickupId: pickup.id });
-  else {
-    const usable = viewer?.nearestUse();
-    if (usable) submit({ kind: "use", target: usable.id });
-  }
+  else if (usable) submit({ kind: "use", target: usable.id });
 }
 
 function reload(): void {
@@ -824,9 +837,9 @@ window.setInterval(() => {
   if (peerRoom) peerRoom.tickCombat();
   else match.tick();
   const pickup = nearestPickup();
-  const usable = pickup ? null : viewer.nearestUse();
+  const usable = pickup && !pickup.idle ? null : viewer.nearestUse();
   pickupHint.hidden = (!pickup && !usable) || (match.player(selfId)?.health ?? 0) <= 0;
-  if (pickup) pickupHint.textContent = pickup.full ? `Your magazine pouches are full` : `Press E to take ${pickup.label}`;
+  if (pickup && !(pickup.idle && usable)) pickupHint.textContent = pickup.idle ? pickup.label : pickup.full ? `Your magazine pouches are full` : `Press E to ${pickup.id.startsWith("food-") ? "" : "take "}${pickup.label}`;
   else if (usable) pickupHint.textContent = `Press E to ${usable.open ? "close" : "open"} ${usable.label}`;
   const player = match.player(selfId);
   if (player?.health === 0) {

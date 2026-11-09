@@ -41,7 +41,7 @@ const REST_LIFT = 0.04;
 
 interface DropView { root: Group; body: Group; path: GrenadePath | null; start: number; spin: Vector3 }
 
-// Spare magazines lying where the map puts them, and the guns and magazines fallen players
+// Spare magazines and shop food lying where the map puts them, and the guns and magazines fallen players
 // drop. A small marker ring makes each one findable without the beam guns stand in.
 export class LootViews {
   private magazines = new Map<string, Group>();
@@ -51,6 +51,14 @@ export class LootViews {
 
   constructor(private scene: Scene, pickups: WeaponPickup[], private pieces: Map<string, KitPiece>) {
     for (const pickup of pickups) {
+      if (pickup.item === "food") {
+        const root = new Group();
+        root.position.set(pickup.east, pickup.y + 0.002, pickup.north);
+        root.add(kitObject(pieces.get(`food_${pickup.food}`)), this.ring(0.2));
+        scene.add(root);
+        this.magazines.set(pickup.id, root);
+        continue;
+      }
       if (pickup.item !== "magazines") continue;
       const root = new Group();
       root.position.set(pickup.east, pickup.y + 0.002, pickup.north);

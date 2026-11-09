@@ -1,8 +1,8 @@
 import { type ArenaData, terrainHeight } from "../world/arena";
 import {
   targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects,
-  KNIFE, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
-  type GunKind, type HitZone, type KnifeStroke, type WeaponKind, type WeaponPickup,
+  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, KNIFE, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
+  type FoodKind, type GunKind, type HitZone, type KnifeStroke, type WeaponKind, type WeaponPickup,
 } from "./combatRules";
 import { type ShotRay } from "../world/physics";
 import { type PlayerPose } from "./playerController";
@@ -105,8 +105,9 @@ export interface CombatEvent {
   stroke?: KnifeStroke;
   // A knife stroke into someone's back.
   behind?: boolean;
-  // What a pickup was: a gun, spare magazines or something a fallen player dropped.
-  item?: "gun" | "magazines" | "drop";
+  // What a pickup was: a gun, spare magazines, something a fallen player dropped, or food.
+  item?: "gun" | "magazines" | "drop" | "food";
+  food?: FoodKind;
   // A reload that threw away an empty magazine.
   dropped?: boolean;
   // The dropped item a "drop" event made.
@@ -224,7 +225,8 @@ function validEvent(event: CombatEvent): boolean {
     && validVec(event.from) && validVec(event.position) && validVec(event.velocity)
     && (event.fuseMs === undefined || (finite(event.fuseMs) && event.fuseMs >= 0 && event.fuseMs <= 10_000))
     && (event.stroke === undefined || event.stroke === "slash" || event.stroke === "stab")
-    && (event.item === undefined || ["gun", "magazines", "drop"].includes(event.item))
+    && (event.item === undefined || ["gun", "magazines", "drop", "food"].includes(event.item))
+    && (event.food === undefined || FOOD_KINDS.includes(event.food))
     && (event.drop === undefined || (typeof event.drop === "string" && event.drop.length < 40))
     && (event.entity === undefined || (typeof event.entity === "string" && event.entity.length < 40))
     && (event.open === undefined || typeof event.open === "boolean")
@@ -543,6 +545,19 @@ export class MatchState {
       if (drop) return within(drop.position.x, drop.position.z, drop.position.y - terrainHeight(this.data, drop.position.x, drop.position.z)) && this.takeDrop(actor, player, drop, now);
       const pickup = this.pickups.find((item) => item.id === intent.pickupId);
       if (!pickup || this.snapshot.taken.includes(pickup.id) || !within(pickup.east, pickup.north, pickup.y)) return false;
+      if (pickup.item === "food") {
+        const food = FOOD[pickup.food];
+        // A healthy player leaves the dumplings for someone who needs them.
+        if (food.heal && player.health >= FULL_HEALTH) return false;
+        player.health = Math.min(FULL_HEALTH, player.health + food.heal);
+        // The hands are busy: the same wait as switching weapons keeps them from firing.
+        this.equipUntil.set(actor, Math.max(this.equipUntil.get(actor) ?? 0, now + EAT_MS));
+        this.snapshot.taken.push(pickup.id);
+        this.snapshot.pickupReturns[pickup.id] = now + FOOD_RETURN_MS;
+        this.emit({ kind: "pickup", actor, item: "food", food: pickup.food });
+        this.changed();
+        return true;
+      }
       const gun = pickup.weapon, spares = player.mags[gun];
       if (pickup.item === "magazines") {
         if (spares.length >= MAX_SPARE_MAGAZINES) return false;
