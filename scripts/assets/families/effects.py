@@ -14,7 +14,8 @@ crater runs 6 cm toward +Y, into the surface it is set on. marker_ring lies flat
 radius; marker_beam rises 1.7 m from z = 0. Their glow_* faces take the game's own glowing
 materials. breach_rim is the broken brick round a hole 2 m wide along X and 2.4 m tall, in a wall
 30 cm thick along Y, standing on z = 0, and breach_rubble what fell out of it; the game stretches
-both to each hole.
+both to each hole. breach_cracks_a and breach_cracks_b are the same wall starting to go and nearly
+gone, as dark lines right through it that show on both faces.
 """
 
 import math
@@ -37,6 +38,7 @@ def materials():
     material("fx_brick", 0x8a4f3a, 0.0, 0.95)
     material("fx_brick_dark", 0x62392c, 0.0, 0.95)
     material("fx_mortar", 0x9b9488, 0.0, 1.0)
+    material("fx_crack", 0xc4b9a6, 0.0, 1.0)
 
 
 def debris_chip():
@@ -189,6 +191,40 @@ def breach_rubble():
     return join(parts, "breach_rubble")
 
 
+def cracks(name, seed, rays, steps, holes):
+    """Jagged cracks running out from the middle of a wall, and with holes, patches gone dark
+    where the face has fallen away."""
+    rng = random.Random(seed)
+    half_d = 0.178
+    parts = []
+    for ray in range(rays):
+        heading = 2 * math.pi * (ray + rng.uniform(-0.3, 0.3)) / rays
+        x, z = rng.uniform(-0.2, 0.2), rng.uniform(0.9, 1.4)
+        for step in range(steps):
+            length = rng.uniform(0.14, 0.3)
+            nx, nz = max(-0.97, min(0.97, x + math.cos(heading) * length)), max(0.05, min(2.35, z + math.sin(heading) * length))
+            width = 0.011 * (1 - step / (steps + 1)) + 0.003
+            dx, dz = nx - x, nz - z
+            span = math.hypot(dx, dz) or 1
+            px, pz = -dz / span * width, dx / span * width
+            parts.append(prism("crack", [(x + px, z + pz), (nx + px * 0.7, nz + pz * 0.7), (nx - px * 0.7, nz - pz * 0.7), (x - px, z - pz)], -half_d, half_d, "fx_crack"))
+            x, z = nx, nz
+            heading += rng.uniform(-0.7, 0.7)
+    for _ in range(holes):
+        cx, cz, r = rng.uniform(-0.75, 0.75), rng.uniform(0.25, 2.1), rng.uniform(0.05, 0.12)
+        outline = [(cx + math.cos(a) * r * rng.uniform(0.6, 1.3), cz + math.sin(a) * r * rng.uniform(0.6, 1.3)) for a in (2 * math.pi * k / 6 for k in range(6))]
+        parts.append(prism("chip", outline, -half_d, half_d, rng.choice(("fx_brick", "fx_brick_dark"))))
+    return join(parts, name)
+
+
+def breach_cracks_a():
+    return cracks("breach_cracks_a", 31, 7, 5, 0)
+
+
+def breach_cracks_b():
+    return cracks("breach_cracks_b", 32, 15, 7, 9)
+
+
 PIECES = [
     Piece("debris_chip", debris_chip, 40, None, None, "Chips of stone, plaster, soil and flesh."),
     Piece("debris_splinter", debris_splinter, 40, None, None, "Wood splinters, stretched along Y."),
@@ -200,4 +236,6 @@ PIECES = [
     Piece("marker_beam", marker_beam, 64, (0.76, 0.76, 1.7), "base", "Over gun pickups.", 60),
     Piece("breach_rim", breach_rim, 900, None, None, "Broken brick round a wall a blast knocked through."),
     Piece("breach_rubble", breach_rubble, 600, None, None, "The heap of brick under it."),
+    Piece("breach_cracks_a", breach_cracks_a, 700, None, None, "A wall starting to go."),
+    Piece("breach_cracks_b", breach_cracks_b, 2200, None, None, "A wall nearly gone."),
 ]

@@ -438,6 +438,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const burningPeople = (): FlameSpot[] => burning.flatMap((id) => { const at = remotePlayers.position(id); return at ? [{ x: at.x, y: at.y + 0.1, z: at.z, wide: 0.22, deep: 0.22, high: 1.7 }] : []; });
   const litStoves = (): FlameSpot[] => STOVES.filter((stove) => toggleState[stove.id]).map((stove) => ({ x: stove.at.x, y: stove.at.y, z: stove.at.z, wide: 0.2, deep: stove.long, high: 0.2, gas: true }));
   const offWall = new Set<string>();
+  // How burned each thing looks; it goes on looking it after the fire is out, until the round ends.
+  const charred = new Map<string, number>();
+  const char = (id: string, amount: number): void => { charred.set(id, amount); propViews.setChar(id, amount); built.stalls.setChar(id, amount); };
   // What is burning, as flames to draw: a burning object from its feet, and a loose one where it now is.
   const flameSpots = (): FlameSpot[] => fires.map((fire) => {
     const entity = fire.entity ? entities.get(fire.entity) : undefined, shape = entity?.shape;
@@ -686,7 +689,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           if (entity.kind === "wall") breaches.setOpen(entity.id, false);
         }
       }
-      if (!Object.keys(health).length) entities.resetHealth();
+      if (!Object.keys(health).length) { entities.resetHealth(); for (const id of [...charred.keys()]) { char(id, 0); charred.delete(id); } }
       for (const entity of entities.applyHealth(health)) {
         // A shot fuel drum stays put and whole while it vents, until its burst arrives; one
         // that burst before this peer joined is simply gone.
@@ -717,6 +720,18 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         // A cylinder bursts when its explosion arrives; this catches one that burst before
         // this peer joined.
         if (entity.kind === "tank") window.setTimeout(() => truck.burst(entity.id), 2200);
+      }
+      // What is burning blackens as it goes.
+      for (const fire of fires) {
+        const entity = fire.entity ? entities.get(fire.entity) : undefined;
+        if (!entity || entities.destroyed(entity.id)) continue;
+        const amount = Math.min(1, 0.3 + (1 - entities.healthOf(entity.id) / entity.maxHealth) * 1.5);
+        if (amount > (charred.get(entity.id) ?? 0) + 0.02) char(entity.id, amount);
+      }
+      // Walls crack before they give way.
+      for (const entity of entities.all()) {
+        if (entity.kind !== "wall" || entities.destroyed(entity.id)) continue;
+        if (breaches.setHealth(entity.id, entities.healthOf(entity.id) / entity.maxHealth) && healthSeen) { effects.knock(entity.center); gameAudio.impact("masonry", entity.center); }
       }
       // Stalls show their damage: an awning shot to rags at half health, then the pile.
       for (const entity of entities.all()) {
@@ -940,7 +955,16 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setRemotePose(peerId, pose, sentAt) {
       remotePlayers.setPose(peerId, pose, sentAt);
     },
-    setFires(list) { fires = list; },
+    setFires(list) {
+      // Each fire that has gone leaves its mark, on whatever it was burning over.
+      const keyOf = (fire: Fire): string => fire.entity ?? `${fire.position.x},${fire.position.z}`, still = new Set(list.map(keyOf));
+      for (const fire of fires) {
+        if (still.has(keyOf(fire))) continue;
+        const down = physics.sweep(fire.position, { x: 0, y: -1, z: 0 }, 4)?.distance ?? fire.position.y;
+        effects.scorch({ x: fire.position.x, y: fire.position.y - down, z: fire.position.z }, fire.radius * 2.4);
+      }
+      fires = list;
+    },
     setBurning(peers) { burning = peers; },
     setTool(held) { toolHeld = held; authoredViewModel.showTool(held); },
     setRemoteTool(peerId, held) { remotePlayers.setTool(peerId, held); },

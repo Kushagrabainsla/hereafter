@@ -372,6 +372,11 @@ export class WorldEffects {
     this.hidden.set(id, saved);
   }
 
+  // The black mark a fire leaves on what it burned on.
+  scorch(at: Vec3, size: number): void {
+    this.decal({ x: at.x, y: at.y + 0.012, z: at.z }, { x: 0, y: 1, z: 0 }, size, 0x1c1a18);
+  }
+
   // Powder from an extinguisher, widening as it goes.
   spray(at: Vec3, direction: Vec3): void {
     for (let i = 0; i < 5; i += 1) {

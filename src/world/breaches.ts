@@ -45,20 +45,21 @@ export function aroundBreach(solid: LayoutBox): LayoutBox[] {
 // under it are modelled pieces (effects.glb) drawn only once something has broken.
 export class BreachViews {
   private open = new Map<string, ReturnType<typeof float> & { value: number }>();
-  private broken = new Set<string>();
-  private meshes: { mesh: InstancedMesh; rubble: boolean }[] = [];
+  // How far each section has gone: 0 whole, 1 cracked, 2 badly cracked, and 3 open.
+  private stage = new Map<string, number>();
+  private meshes: { mesh: InstancedMesh; shows: number; rubble: boolean }[] = [];
 
   constructor(scene: Scene, surfaces: Mesh[], pieces: Map<string, KitPiece>) {
     for (const breach of BREACHES) this.open.set(`wall:${breach.id}`, uniform(0) as unknown as ReturnType<typeof float> & { value: number });
     for (const mesh of surfaces) this.cut(mesh);
-    for (const [name, rubble] of [["breach_rim", false], ["breach_rubble", true]] as const) {
+    for (const [name, shows, rubble] of [["breach_rim", 3, false], ["breach_rubble", 3, true], ["breach_cracks_a", 1, false], ["breach_cracks_b", 2, false]] as const) {
       for (const part of pieces.get(name)?.parts ?? []) {
         const instanced = new InstancedMesh(part.geometry, part.material, BREACHES.length);
         hideAll(instanced);
         instanced.frustumCulled = false;
         instanced.receiveShadow = true;
         scene.add(instanced);
-        this.meshes.push({ mesh: instanced, rubble });
+        this.meshes.push({ mesh: instanced, shows, rubble });
       }
     }
   }
@@ -100,9 +101,25 @@ export class BreachViews {
     const flag = this.open.get(id);
     if (!flag) return;
     flag.value = open ? 1 : 0;
-    if (open) this.broken.add(id); else this.broken.delete(id);
-    const live = BREACHES.filter((breach) => this.broken.has(`wall:${breach.id}`));
-    for (const { mesh, rubble } of this.meshes) {
+    if (open) this.stage.set(id, 3); else this.stage.set(id, 0);
+    this.show();
+  }
+
+  // How much of a section's strength is left, 0 to 1, shown as cracks. Returns its new stage
+  // when that has just got worse, or 0.
+  setHealth(id: string, share: number): number {
+    const before = this.stage.get(id) ?? 0;
+    if (before === 3 || share <= 0) return 0;
+    const stage = share <= 0.45 ? 2 : share <= 0.8 ? 1 : 0;
+    if (stage === before) return 0;
+    this.stage.set(id, stage);
+    this.show();
+    return stage > before ? stage : 0;
+  }
+
+  private show(): void {
+    for (const { mesh, rubble, shows } of this.meshes) {
+      const live = BREACHES.filter((breach) => this.stage.get(`wall:${breach.id}`) === shows);
       if (!live.length) { hideAll(mesh); continue; }
       live.forEach((breach, index) => {
         const long = (breach.z1 - breach.z0) / 2;

@@ -1,4 +1,4 @@
-import { Matrix4, Quaternion, Vector3 } from "three/webgpu";
+import { Color, Matrix4, Quaternion, Vector3 } from "three/webgpu";
 import { type InstanceRef, type Vec3 } from "./entities";
 import { type KitPlacer } from "./kit";
 
@@ -13,8 +13,9 @@ export interface StallSpot { x: number; z: number; side: 1 | -1; goods: Goods; a
 // The pile a broken stall leaves, in the stall's own frame (counter facing +x).
 const WRECK = { center: new Vector3(0.15, 0.35, 0), half: [0.75, 0.35, 1.6] as [number, number, number] };
 const HIDDEN = new Matrix4().makeScale(0, 0, 0);
+const CHARRED = new Color();
 
-interface Part { refs: InstanceRef[]; matrix: Matrix4 }
+interface Part { refs: InstanceRef[]; matrix: Matrix4; colors?: Color[] }
 interface Stall { whole: Part[]; awning: Part; torn: Part; wreck: Part; stage: number }
 
 export class Stalls {
@@ -55,6 +56,20 @@ export class Stalls {
     this.visible(stall.torn, stage === 1);
     this.visible(stall.wreck, stage === 2);
     return stage;
+  }
+
+  // How burned a stall looks, 0 to 1: every part going toward black.
+  setChar(id: string, amount: number): void {
+    const stall = this.stalls.get(id);
+    if (!stall) return;
+    for (const part of [...stall.whole, stall.awning, stall.torn, stall.wreck]) {
+      part.colors ??= part.refs.map((ref) => { const color = new Color(1, 1, 1); ref.mesh.getColorAt(ref.index, color); return color; });
+      part.refs.forEach((ref, index) => {
+        if (!ref.mesh.instanceColor) return;
+        ref.mesh.setColorAt(ref.index, CHARRED.copy(part.colors![index]).multiplyScalar(1 - 0.92 * amount));
+        ref.mesh.instanceColor.needsUpdate = true;
+      });
+    }
   }
 
   private visible(part: Part, visible: boolean): void {

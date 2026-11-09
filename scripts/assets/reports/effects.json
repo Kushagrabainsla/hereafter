@@ -136,8 +136,36 @@
     "fx_mortar"
    ],
    "notes": "The heap of brick under it."
+  },
+  "breach_cracks_a": {
+   "triangles": 420,
+   "budget": 700,
+   "size": [
+    1.614,
+    0.356,
+    2.155
+   ],
+   "materials": [
+    "fx_crack"
+   ],
+   "notes": "A wall starting to go."
+  },
+  "breach_cracks_b": {
+   "triangles": 1440,
+   "budget": 2200,
+   "size": [
+    1.954,
+    0.356,
+    2.257
+   ],
+   "materials": [
+    "fx_brick",
+    "fx_brick_dark",
+    "fx_crack"
+   ],
+   "notes": "A wall nearly gone."
   }
  },
- "triangles": 1658,
- "bytes": 89192
+ "triangles": 3518,
+ "bytes": 190616
 }

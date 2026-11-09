@@ -100,6 +100,8 @@ Fire is worked out twice a second by the coordinator and kept in its state (`ste
 
 **Hurting players.** Standing in flames costs 5 health every half second, whoever started the fire getting the credit if it kills. Blast damage is unchanged.
 
+**What it leaves.** Loose props and stalls blacken as they burn, and stay blackened if the fire is put out, until the round ends. Each fire that goes leaves a scorch mark on what it burned over. Both use a per-copy colour and the bullet-hole decals, so they add no draw calls.
+
 **Putting it out.** A burst extinguisher's powder smothers every flame within 4.5 m and cools what they had heated. Fires also burn out by themselves, and a new round puts everything out.
 
 **What it costs.** Flames are one instanced mesh of up to 170 camera-facing cards. The burning thing nearest the player borrows the explosion's light rather than adding one, so no new light is ever paid for. At a MacBook Pro's Retina size, the same view measured 43.5 to 44.3 FPS with no fire and 43.5 to 44.5 FPS with 24 fires in view, with 6 to 12 more draw calls, on a machine varying by about a frame a second. The coordinator's update during a fire is two small changes a second.
@@ -125,6 +127,8 @@ Fire is worked out twice a second by the coordinator and kept in its state (`ste
 ## Breakable walls
 
 Six sections of the 30 cm walls can be knocked through (`src/world/breaches.ts`): the restaurant's front, the bar's front, the pho house's front and back, the dumpling shop's back and the record shop's back. Each is about 2.4 m tall and 1.3 to 2.2 m wide. The market's other walls are the sides of solid buildings, with nothing behind them to break into.
+
+A section shows what it has taken: thin cracks once a fifth of its strength has gone, and a web of them with patches knocked out of its face below 45%, modelled in `breach_cracks_a` and `breach_cracks_b`.
 
 A section is a world entity of `masonry`, with 400 points of strength. A frag 1.15 m from one took 246, so two good frags or a frag and a fuel drum open it. Rounds stop in it and do an eighth of their damage, so a carbine would take about 180 rounds. Once it goes, the collider goes with it: players, rounds, blasts and heat all pass, and a new round rebuilds it.
 

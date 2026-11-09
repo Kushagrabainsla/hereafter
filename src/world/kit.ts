@@ -144,7 +144,9 @@ export class KitPlacer {
         const mesh = new InstancedMesh(geometry, material, list.length);
         list.forEach((placement, index) => {
           mesh.setMatrixAt(index, placement.matrix);
+          // Stalls can char, so all their copies carry a colour of their own.
           if (tinted(material)) mesh.setColorAt(index, color.set(placement.tint ?? 0xffffff));
+          else if (name.startsWith("stall_") || name.startsWith("goods_")) mesh.setColorAt(index, color.set(0xffffff));
           placement.refs.push({ mesh, index });
         });
         mesh.name = `kit:${name}`;

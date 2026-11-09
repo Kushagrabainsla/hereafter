@@ -51,7 +51,8 @@ export function propEntity(id: string, model: PropModel, east: number, north: nu
 export class PropViews {
   private parts = new Map<string, { geometry: BufferGeometry; material: SurfaceMaterial | SurfaceMaterial[]; matrix: Matrix4 }[]>();
   private meshes = new Map<string, InstancedMesh[]>();
-  private slots = new Map<string, { model: string; index: number; drop: number; hidden: boolean; last: number[] }>();
+  private slots = new Map<string, { model: string; index: number; drop: number; hidden: boolean; last: number[]; tint?: number }>();
+  private shade = new Color();
   private counts = new Map<string, number>();
   private body = new Matrix4();
   private part = new Matrix4();
@@ -89,7 +90,7 @@ export class PropViews {
     this.counts.set(entity.prop, index + 1);
     // Models sit with their base at y = 0; bodies are centred, so drop the model half its height.
     const drop = entity.shape?.type === "box" ? entity.shape.half[1] : entity.shape?.type === "cylinder" ? entity.shape.halfHeight : 0;
-    this.slots.set(entity.id, { model: entity.prop, index, drop, hidden: false, last: [] });
+    this.slots.set(entity.id, { model: entity.prop, index, drop, hidden: false, last: [], tint: entity.tint });
   }
 
   build(entities: WorldEntity[]): void {
@@ -108,8 +109,9 @@ export class PropViews {
     for (const entity of entities) {
       const slot = this.slots.get(entity.id);
       if (!slot) continue;
-      // Pale parts take each copy's own colour, like the plastic stools.
-      for (const mesh of this.meshes.get(slot.model) ?? []) if (entity.tint !== undefined && (mesh.material as SurfaceMaterial).name.startsWith("paint_")) mesh.setColorAt(slot.index, new Color(entity.tint));
+      // Pale parts take each copy's own colour, like the plastic stools; every copy has a colour
+      // so that it can char.
+      this.paint(slot, 0);
       this.place(entity.id, entity.center, { x: 0, y: Math.sin(entity.yaw / 2), z: 0, w: Math.cos(entity.yaw / 2) });
     }
   }
@@ -130,6 +132,20 @@ export class PropViews {
       mesh.setMatrixAt(slot.index, this.part.multiplyMatrices(this.body, parts[index].matrix));
       mesh.instanceMatrix.needsUpdate = true;
     });
+  }
+
+  private paint(slot: { model: string; index: number; tint?: number }, char: number): void {
+    for (const mesh of this.meshes.get(slot.model) ?? []) {
+      this.shade.set(slot.tint !== undefined && (mesh.material as SurfaceMaterial).name.startsWith("paint_") ? slot.tint : 0xffffff).multiplyScalar(1 - 0.94 * char);
+      mesh.setColorAt(slot.index, this.shade);
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+  }
+
+  // How burned a prop looks, 0 to 1.
+  setChar(id: string, amount: number): void {
+    const slot = this.slots.get(id);
+    if (slot) this.paint(slot, amount);
   }
 
   setVisible(id: string, visible: boolean): void {
