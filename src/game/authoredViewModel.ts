@@ -18,6 +18,22 @@ const ATTACKS = ["fire", "slash", "stab"];
 // barrel line up on the view's centre, and how far the gun comes back toward the eye, in metres.
 const SIGHTS: Record<WeaponKind, { height: number; back: number }> = { knife: { height: 0, back: 0 }, pistol: { height: 0.051, back: 0.02 }, rifle: { height: 0.07, back: 0.02 } };
 
+// How each weapon sits in the view: drawn through a narrower lens than the world and brought in
+// and up, so it looks big low on the right and the arm runs off the edge of the screen with only
+// the hand showing. Metres in the camera's frame (x right, y up, z toward the eye) and degrees.
+// Aiming eases the offset away, so the sights still line up, and keeps a narrower lens than the
+// world's so the arm stays out of the picture. fov and aimFov are at the normal 75 degrees of
+// view, and follow it as a sprint or a crouch changes it.
+interface Framing { x: number; y: number; z: number; fov: number; aimFov: number }
+const FRAMING: Record<WeaponKind, Framing> = {
+  rifle: { x: 0.015, y: 0.035, z: 0.08, fov: 44, aimFov: 52 },
+  pistol: { x: -0.04, y: 0.05, z: 0.04, fov: 45, aimFov: 52 },
+  knife: { x: -0.05, y: 0.06, z: 0, fov: 50, aimFov: 50 },
+};
+// Empty hands on something carried, or an extinguisher, want more of the view.
+const HANDS_FRAMING: Framing = { x: 0.02, y: 0.02, z: 0.07, fov: 46, aimFov: 46 };
+const BASE_FOV = 75;
+
 // Skin and cloth from the one arm texture. Skin is told apart by colour: it is redder than
 // it is green, where the gloves, sleeves and watch strap are grey or grey-green. Cloth gets
 // a soft sheen at grazing angles and stays rough; skin is smoother with a faint sheen of
@@ -69,6 +85,8 @@ export class AuthoredViewModel {
   // is what they hold when that is an extinguisher.
   private tool: Object3D | null = null;
   private toolShown = false;
+  private framing: Framing = FRAMING.knife;
+  private aimed = 0;
   constructor(private camera: PerspectiveCamera) {
     for (const kind of ["knife", "pistol", "rifle"] as const) {
       void loadWeaponFile(kind).then((gltf) => {
@@ -153,6 +171,20 @@ export class AuthoredViewModel {
     const muzzle = this.models.get(this.active)?.muzzle;
     return muzzle ? muzzle.getWorldPosition(new Vector3()) : undefined;
   }
+  // The lens to draw the weapon through, given what the plain view would be.
+  viewFov(handFov: number): number {
+    return (this.framing.fov + (this.framing.aimFov - this.framing.fov) * this.aimed) * handFov / BASE_FOV;
+  }
+  // The same muzzle, moved to where it appears on screen when looked at through the world's
+  // lens instead of the weapon's, so a tracer leaves from where the muzzle is seen.
+  muzzleOnScreen(viewFov: number, worldFov: number): Vector3 | undefined {
+    const at = this.muzzle();
+    if (!at) return undefined;
+    const scale = Math.tan(worldFov * Math.PI / 360) / Math.tan(viewFov * Math.PI / 360);
+    at.x *= scale;
+    at.y *= scale;
+    return at;
+  }
   // The gun's recoil clip, or the knife stroke's.
   fire(stroke?: KnifeStroke): void {
     const clips = this.models.get(this.active)?.clips;
@@ -184,7 +216,7 @@ export class AuthoredViewModel {
         // In the view's own metres: the rig is scaled, so it cannot sit on the weapon's bones.
         const root = this.models.get("rifle")!.root;
         if (this.tool.parent !== root) root.add(this.tool);
-        this.tool.position.set(0.17, -0.74, -0.62);
+        this.tool.position.set(0.2, -0.64, -1.2);
         this.tool.rotation.set(0.2, 0, -0.08);
         this.tool.visible = dynamics.hands && this.toolShown;
       }
@@ -214,6 +246,11 @@ export class AuthoredViewModel {
     const aim = motion.aim, steady = 1 - 0.75 * aim, raw = dynamics.sway;
     const sway = { x: raw.x * steady, y: raw.y * steady, z: raw.z * steady, pitch: raw.pitch * steady, yaw: raw.yaw * steady, roll: raw.roll * steady };
     model.root.position.set(sway.x + lower * 0.05 - reload * 0.06 + model.aim.x * aim, sway.y + (dynamics.hands ? 0.05 : 0) - lower * 0.55 - reload * 0.1 + jolt * 0.012 - kick * 0.01 + model.aim.y * aim, sway.z + lower * 0.06 + kick * 0.035 + model.aim.z * aim);
+    this.framing = dynamics.hands ? HANDS_FRAMING : FRAMING[this.active];
+    this.aimed = aim;
+    model.root.position.x += this.framing.x * (1 - aim);
+    model.root.position.y += this.framing.y * (1 - aim);
+    model.root.position.z += this.framing.z * (1 - aim);
     model.root.rotation.set(sway.pitch - lower * 0.6 + reload * 0.1 + jolt * 0.03 + kick * 0.12, sway.yaw + lower * 0.25 - kick * 0.05, sway.roll - lower * 0.3 + reload * 0.32 + kick * 0.08);
   }
   private release(root: Group): void {

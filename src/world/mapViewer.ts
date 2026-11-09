@@ -408,7 +408,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   // A spent case from the local gun's ejection port, behind the muzzle on the right side.
   const ejectLocal = (gun: GunKind): void => {
-    const muzzle = authoredViewModel.muzzle()?.applyMatrix4(camera.matrixWorld);
+    const muzzle = authoredViewModel.muzzleOnScreen(viewCamera.fov, camera.fov)?.applyMatrix4(camera.matrixWorld);
     const right = new Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up = new Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
     const forward = new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate();
     const port = (muzzle ?? camera.position.clone().addScaledVector(forward, 0.6).addScaledVector(up, -0.15)).addScaledVector(forward, gun === "rifle" ? -0.33 : -0.13).addScaledVector(right, 0.02).addScaledVector(up, 0.03);
@@ -588,7 +588,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     previousFrame = time;
     viewCamera.aspect = camera.aspect;
     // The weapon in hand is drawn without the sights' magnification.
-    viewCamera.fov = player.handFov();
+    viewCamera.fov = authoredViewModel.viewFov(player.handFov());
     viewCamera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     viewLighting.update(Math.min(delta, 0.1), camera);
@@ -640,7 +640,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       return player.pose();
     },
     traceShot(ray) { return physics.traceShot(ray); },
-    showShot(event, local) { shotEffects.show(event, local ? authoredViewModel.muzzle()?.applyMatrix4(camera.matrixWorld) : remotePlayers.muzzle(event.actor) ?? undefined); },
+    showShot(event, local) { shotEffects.show(event, local ? authoredViewModel.muzzleOnScreen(viewCamera.fov, camera.fov)?.applyMatrix4(camera.matrixWorld) : remotePlayers.muzzle(event.actor) ?? undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
     },

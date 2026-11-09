@@ -24,7 +24,7 @@ import sys
 import bmesh
 import bpy
 import numpy as np
-from mathutils import Euler, Matrix, Vector
+from mathutils import Euler, Matrix, Quaternion, Vector
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 SRC = os.path.join(ROOT, "assets-src", "viewmodels")
@@ -37,6 +37,9 @@ ARM_TEXTURE = 1200
 ARM_BONE_KEYS = (" UpperArm", " Forearm", " Hand", " Finger")
 KEEP_BONES = {"Bip01 Pelvis", "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2", "Bip01 Neck", "Bip01 L Clavicle", "Bip01 R Clavicle"}
 FINGERS = {"thumb": 0, "index": 1, "middle": 2, "ring": 3, "pinky": 4}
+# The bone that carries the hand's turn up the forearm, and how far along the forearm it starts.
+TWIST = "Bip01 {} Forearm Twist"
+TWIST_FROM = 0.25
 
 # Sleeve insignia in the 2048 px body atlas (x, y from top, width, height, source dx):
 # the rectangle is replaced by the fabric dx pixels to its side.
@@ -352,6 +355,44 @@ def rebuild_bones(arm, info):
             for name in names:
                 eb[name].align_roll(n)
     bpy.ops.object.mode_set(mode="OBJECT")
+    for pb in arm.pose.bones:
+        pb.rotation_mode = "QUATERNION"
+
+
+def add_twist_bones(arm, mesh):
+    """A real forearm turns along its length; only the end at the wrist follows the hand. Without
+    that all the turn lands on the wrist's own skin, which folds the cuff of the glove over. Each
+    forearm gets a second bone for its far part, which the bake turns with the hand, and the skin
+    moves onto it gradually from elbow to wrist."""
+    select_only([arm])
+    bpy.ops.object.mode_set(mode="EDIT")
+    eb = arm.data.edit_bones
+    spans = {}
+    for side in "LR":
+        fore = eb[f"Bip01 {side} Forearm"]
+        twist = eb.new(TWIST.format(side))
+        twist.head = fore.head + (fore.tail - fore.head) * TWIST_FROM
+        twist.tail = fore.tail.copy()
+        twist.roll = fore.roll
+        twist.parent = fore
+        twist.use_connect = False
+        spans[side] = (fore.head.copy(), fore.tail.copy())
+    bpy.ops.object.mode_set(mode="OBJECT")
+    for side, (head, tail) in spans.items():
+        fore_group = mesh.vertex_groups[f"Bip01 {side} Forearm"]
+        twist_group = mesh.vertex_groups.new(name=TWIST.format(side))
+        axis = tail - head
+        for v in mesh.data.vertices:
+            weight = next((g.weight for g in v.groups if g.group == fore_group.index), 0.0)
+            if weight <= 0:
+                continue
+            along = max(0.0, min(1.0, (v.co - head).dot(axis) / axis.length_squared))
+            share = max(0.0, min(1.0, (along - TWIST_FROM) / (0.95 - TWIST_FROM)))
+            share = share * share * (3 - 2 * share)
+            if share <= 0:
+                continue
+            fore_group.add([v.index], weight * (1 - share), "REPLACE")
+            twist_group.add([v.index], weight * share, "REPLACE")
     for pb in arm.pose.bones:
         pb.rotation_mode = "QUATERNION"
 
@@ -766,6 +807,18 @@ def bake_arms(arm, root, body, flash, clips):
         for f in range(start, end + 1):
             scene.frame_set(f)
             frames[f] = {pb.name: arm.convert_space(pose_bone=pb, matrix=pb.matrix, from_space="POSE", to_space="LOCAL") for pb in arm.pose.bones}
+            # The hand's turn about its own length goes up the forearm by the twist bone.
+            for side in "LR":
+                turn = frames[f][f"Bip01 {side} Hand"].to_quaternion()
+                angle = 2 * math.atan2(turn.y, turn.w)
+                if angle > math.pi:
+                    angle -= 2 * math.pi
+                elif angle < -math.pi:
+                    angle += 2 * math.pi
+                swing = math.degrees(2 * math.acos(min(1.0, math.hypot(turn.w, turn.y)))) if abs(turn.w) + abs(turn.y) > 0 else 0.0
+                if f == start:
+                    log(f"{name} {side} wrist: turn {math.degrees(angle):.0f} deg, bend {swing:.0f} deg")
+                frames[f][TWIST.format(side)] = Quaternion((math.cos(angle / 2), 0, math.sin(angle / 2), 0)).to_matrix().to_4x4()
             if target is not None:
                 wrist = arm.matrix_world @ arm.pose.bones["Bip01 R Hand"].head
                 worst = max(worst, (wrist - target.matrix_world.translation).length)
@@ -908,6 +961,7 @@ def main():
     for side in "LR":
         log(side, "wrist", tuple(round(v, 3) for v in info[side]["wrist"]), "palm normal", tuple(round(v, 2) for v in info[side]["n"]), "d_palm", round(info[side]["d_palm"], 3))
     rebuild_bones(arm, info)
+    add_twist_bones(arm, mesh)
     build_arm_textures(mesh)
     arm.rotation_euler = Euler((0, 0, cfg.get("torso_yaw", 0.0)))
     arm.scale = (cfg.get("arm_scale", 1.0),) * 3
