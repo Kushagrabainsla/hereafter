@@ -703,18 +703,25 @@ export class GameAudio {
   }
 
   // Sputtering clicks of an arc: very short high-passed noise bursts at random moments.
-  private crackle(at: Vec3, seconds: number, level: number): void {
+  private crackle(at: Vec3, seconds: number, level: number, perSecond = 40): void {
     const context = this.live();
     if (!context || !this.noise || this.distanceTo(at) > 35) return;
     const now = context.currentTime, out = new GainNode(context, { gain: 1 });
     out.connect(this.panner(at, 2, 1.4)).connect(this.mix);
-    for (let k = 0; k < Math.round(seconds * 40); k += 1) {
+    for (let k = 0; k < Math.round(seconds * perSecond); k += 1) {
       const when = now + Math.random() * seconds;
       const burst = this.noiseSource(when, 0.006 + Math.random() * 0.01);
       const filter = new BiquadFilterNode(context, { type: "highpass", frequency: 3000 });
       const gain = new GainNode(context, { gain: level * (0.3 + Math.random() * 0.7) });
       burst.connect(filter).connect(gain).connect(out);
     }
+  }
+
+  // A second of something burning, played again for as long as it does: a low roar with crackling
+  // on top.
+  fireBurn(at: Vec3, level: number): void {
+    this.hiss(at, 1.1, 420, 0.3 * level);
+    this.crackle(at, 1, 0.16 * level, 12);
   }
 
   // A tyre bursting: a sharp bang, then the air rushing out.

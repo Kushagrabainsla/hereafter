@@ -924,6 +924,17 @@ export class PhysicsWorld {
     return this.world.castRay(new RAPIER.Ray(origin, direction), distance, true, undefined, undefined, this.collider, undefined, this.solid)?.timeOfImpact ?? distance;
   }
 
+  // Whether a wall or other fixed part of the map stands between two points. Loose props, stalls
+  // and the like let heat by, and so, for this purpose, does the ground.
+  walled(a: Vec3, b: Vec3): boolean {
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, distance = Math.hypot(dx, dy, dz);
+    if (distance < 0.01) return false;
+    return this.world.castRay(new RAPIER.Ray(a, { x: dx / distance, y: dy / distance, z: dz / distance }), distance, true, undefined, undefined, this.collider, undefined, (collider) => {
+      const tag = this.tags.get(collider.handle);
+      return !!tag && !tag.entity && tag.material !== "ground" && tag.material !== "boundary";
+    }) !== null;
+  }
+
   clearShot({ origin, direction, distance }: ShotRay): boolean {
     if (distance <= 0) return true;
     const ray = new RAPIER.Ray(origin, direction);

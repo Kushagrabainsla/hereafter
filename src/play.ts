@@ -66,7 +66,7 @@ const magPips = element<HTMLElement>("mag-pips");
 const loadCount = element<HTMLElement>("load-count");
 const woundRow = element<HTMLElement>("wound-row");
 const bandageCount = element<HTMLElement>("bandage-count");
-const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object", bleed: "Bled out" };
+const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object", bleed: "Bled out", fire: "Fire" };
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const playerNameInput = element<HTMLInputElement>("player-name");
@@ -331,6 +331,10 @@ function onMatchChange(state: CombatSnapshot): void {
   viewer?.setWeapon(player.active);
   viewer?.setTakenPickups(state.taken);
   viewer?.setOpen(state.open);
+  viewer?.setFires(state.fires);
+  // Nobody keeps hold of something that has caught fire.
+  const held = viewer?.holding();
+  if (held && state.fires.some((fire) => fire.entity === held.id)) { viewer?.putDown(); toast("It caught fire"); }
   viewer?.setWounds(player.leg, player.arm);
   showWounds(player);
   for (const [peerId, remote] of Object.entries(state.players)) if (peerId !== selfId) {
@@ -408,7 +412,7 @@ function playEvent(event: CombatEvent): void {
     if (event.from && event.cause !== "fall") showDamageDirection(event.from);
   }
   if (event.kind === "death" && event.target === selfId) {
-    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.cause === "struck" && event.actor === selfId ? "Something heavy hit you" : event.cause === "bleed" && event.actor === selfId ? "You bled out" : event.actor === selfId ? "Caught in your own blast"
+    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.cause === "struck" && event.actor === selfId ? "Something heavy hit you" : event.cause === "bleed" && event.actor === selfId ? "You bled out" : event.cause === "fire" && event.actor === selfId ? "You burned" : event.actor === selfId ? "Caught in your own blast"
       : [`By ${nameOf(event.actor)}`, CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "Headshot" : "", event.behind ? "From behind" : ""].filter(Boolean).join(" · ");
   }
 }
@@ -445,8 +449,8 @@ function addToKillFeed(event: CombatEvent): void {
   } else if (event.cause === "struck" && event.actor === victim) {
     how.textContent = "was flattened";
     line.append(who(victim), how);
-  } else if (event.cause === "bleed" && event.actor === victim) {
-    how.textContent = "bled out";
+  } else if ((event.cause === "bleed" || event.cause === "fire") && event.actor === victim) {
+    how.textContent = event.cause === "fire" ? "burned" : "bled out";
     line.append(who(victim), how);
   } else if (event.actor === victim || !event.actor) {
     how.textContent = `${CAUSE_LABEL[event.cause ?? ""] ?? ""} · own blast`;
@@ -639,7 +643,8 @@ function attack(stroke: KnifeStroke = "slash"): void {
 function liftTarget(): ReturnType<MapViewer["liftable"]> {
   const player = match?.player(selfId), pickup = nearestPickup();
   if (!viewer || !player || player.health <= 0 || player.reloadUntil > Date.now() || (pickup && !pickup.idle && !pickup.full)) return null;
-  return viewer.liftable();
+  const prop = viewer.liftable();
+  return prop && !match?.burning(prop.id) ? prop : null;
 }
 
 // E puts down what the hands hold. Otherwise it takes the nearest pickup, lifts the loose prop

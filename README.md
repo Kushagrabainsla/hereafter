@@ -121,6 +121,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - Walk into the dumpling shop, the boba shop and the pho house. Eat at the counter for health, or grab a boba for a burst of speed.
 - Chairs, stools and tables are real objects with real weight: barge through them, knock them over or shoot them apart. Everything loose is simulated by whoever touches it, so it reacts instantly.
 - Pick up anything up to 25 kg and throw it. A stool flies and a crate barely leaves your hands, a thrown chair hits like a bullet, and what hits a wall hard enough breaks.
+- Fire spreads. Burst a fuel drum and the flames work through wood, cardboard and plastic, setting off the next drum, until they burn out or someone shoots an extinguisher.
 - Wounds last. A shot leg limps, a shot arm shakes and reloads slowly, and cuts and bullets bleed until you stop to tie a bandage.
 
 **▸ MATCHES**

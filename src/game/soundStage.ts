@@ -98,7 +98,7 @@ export class SoundStage {
       const at = this.positionOf(event.target);
       if (!at) return;
       const chest = { x: at.x, y: at.y + 1.1, z: at.z };
-      if (event.cause !== "fall") gameAudio.bodyHit(chest, event.cause === "knife");
+      if (event.cause !== "fall" && event.cause !== "fire" && event.cause !== "bleed") gameAudio.bodyHit(chest, event.cause === "knife");
       if (event.kind === "death") gameAudio.bodyFall(chest);
       return;
     }

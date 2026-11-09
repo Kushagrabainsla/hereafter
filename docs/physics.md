@@ -88,6 +88,22 @@ Being hit leaves more than a lower health number (`wound` in `src/game/matchStat
 
 **Bandages.** Each life has two. B ties one: 2.5 s with the hands busy, after which the bleeding stops and leg and arm wounds halve. A fresh wound while tying it undoes the attempt, without using the bandage. Food restores health but does not treat wounds. The HUD lists the player's wounds and bandages.
 
+## Fire
+
+Fire is worked out twice a second by the coordinator and kept in its state (`stepFires` in `src/game/matchState.ts`, numbers in `src/game/combatRules.ts`). Up to 24 things burn at once.
+
+**What starts one.** A burst fuel drum or gas tank throws burning fuel over 2.2 m for 14 s, and whatever its blast tears apart is left as scraps alight for 9 s where it stood. A drum or tank venting flame heats what stands around it. A frag sets light only to cardboard, within about 3 m, as scraps.
+
+**How it spreads.** Everything near a fire warms up, at 40 units a second against the fire and falling to nothing at 1.2 m plus both objects' sizes, unless a wall stands between them; heat fades when the fire is gone. Cardboard catches at 30, plastic at 70 and wood at 100. A fuel drum or gas tank that reaches 60 goes off, which can chain. Metal, glass and brick do not burn.
+
+**How long it lasts.** A burning object wears down until it is gone, over `(10 s + 2 s/kg)` for wood, 0.8 of that for plastic and half for cardboard, between 8 and 60 s; a stall or door takes 60 s. A chair burned away in 21 s and set the rest of its table alight within 7 s. A burning prop that is moving carries its fire with it. It cannot be lifted, and something a player is carrying that catches fire is dropped.
+
+**Hurting players.** Standing in flames costs 5 health every half second, whoever started the fire getting the credit if it kills. Blast damage is unchanged.
+
+**Putting it out.** A burst extinguisher's powder smothers every flame within 4.5 m and cools what they had heated. Fires also burn out by themselves, and a new round puts everything out.
+
+**What it costs.** Flames are one instanced mesh of up to 170 camera-facing cards. The burning thing nearest the player borrows the explosion's light rather than adding one, so no new light is ever paid for. At a MacBook Pro's Retina size, the same view measured 43.5 to 44.3 FPS with no fire and 43.5 to 44.5 FPS with 24 fires in view, with 6 to 12 more draw calls, on a machine varying by about a frame a second. The coordinator's update during a fire is two small changes a second.
+
 ## Weight
 
 Everything a player carries has its real mass (`MASS` in `src/game/combatRules.ts`): the knife 0.25 kg, a grenade 0.4 kg, a smoke grenade 0.54 kg, the pistol 0.72 kg with a 70 g magazine and 12 g cartridges, and the carbine 3.1 kg with a 330 g steel magazine and 16.3 g cartridges. A loaded pistol and magazine weigh 0.94 kg; a full carbine magazine 0.82 kg. Beyond the basic kit of knife and four grenades (2.1 kg), each kilogram costs 1.2% of walking speed and 1.8% of sprinting speed, to at most a fifth. The same legs launch more mass, so a jump starts slower in proportion to the square root of the total mass, and the body's inertia grows with it, so starting, stopping and climbing take longer. A carbine with six spare magazines, a pistol with four and the four grenades weigh 12.8 kg: walking drops to 87%, sprinting to 81% (6.6 m/s), the jump to 94%. Heavier landings also hurt more, in proportion to the mass coming down. The HUD shows the load and turns amber above 7 kg.

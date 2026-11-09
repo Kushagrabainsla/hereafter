@@ -13,7 +13,7 @@ import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
 import { PlayerModelLibrary } from "../game/playerModel";
 import { ShotEffects } from "../game/shotEffects";
-import { BLAST_RADIUS, type CombatEvent, type CombatWorld, type Drop } from "../game/matchState";
+import { BLAST_RADIUS, type CombatEvent, type CombatWorld, type Drop, type Fire } from "../game/matchState";
 import { ViewLighting } from "../game/viewLighting";
 import { LootViews } from "../game/loot";
 import { Ejecta } from "../game/ejecta";
@@ -34,7 +34,7 @@ import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeTarget } from "./physics";
 import { EntityRegistry } from "./entities";
-import { WorldEffects } from "./worldEffects";
+import { WorldEffects, type FlameSpot } from "./worldEffects";
 import { FUEL_DRUM, FURNITURE, loadPropModels, PROP_LABEL, PropViews } from "./props";
 import { type PropPush, type PropState } from "../network/peerRoom";
 
@@ -130,6 +130,7 @@ export interface MapViewer {
   setRemotePose: (peerId: string, pose: PlayerPose, sentAt?: number) => void;
   setRemoteHealth: (peerId: string, health: number) => void;
   // How bad this player's own wounds are, 0 to 1, and another player's leg.
+  setFires: (fires: Fire[]) => void;
   setWounds: (leg: number, arm: number) => void;
   setRemoteLeg: (peerId: string, leg: number) => void;
   // Blood falling from another player who is bleeding.
@@ -414,15 +415,25 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     entity: (id) => {
       const entity = entities.get(id);
       // Loose props report where they are now, so a moved drum bursts where it lies.
-      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth, center: entities.locate(entity), explosive: entity.explosive, mass: entity.mass } : null;
+      const shape = entity?.shape, size = !shape ? 0.3 : shape.type === "box" ? Math.max(shape.half[0], shape.half[2]) : shape.radius;
+      return entity && !entities.destroyed(id) ? { kind: entity.kind, material: entity.material, maxHealth: entity.maxHealth, center: entities.locate(entity), explosive: entity.explosive, mass: entity.mass, size } : null;
     },
     entitiesNear: (center, radius) => entities.near(center, radius),
+    walled: (a, b) => physics.walled(a, b),
     grenadeRest: (origin, velocity, seconds) => physics.grenadePath(origin, velocity, seconds).points.at(-1)!,
     push: (id, point, impulse) => physics.push(id, point, impulse),
   };
   let lastLandings = 0;
   // When the player started drawing back a throw, and the weight now in their hands.
   let throwStart = 0, handsHold = 0, armWound = 0;
+  let fires: Fire[] = [];
+  // What is burning, as flames to draw: a burning object from its feet, and a loose one where it now is.
+  const flameSpots = (): FlameSpot[] => fires.map((fire) => {
+    const entity = fire.entity ? entities.get(fire.entity) : undefined, shape = entity?.shape;
+    if (!entity || !shape) return { x: fire.position.x, y: fire.position.y - (physics.sweep(fire.position, { x: 0, y: -1, z: 0 }, 3)?.distance ?? 0.4), z: fire.position.z, wide: fire.radius * 0.75, deep: fire.radius * 0.75, high: Math.min(1.6, fire.radius + 0.4) };
+    const at = entities.locate(entity), [wide, high, deep] = shape.type === "box" ? shape.half : [shape.radius, shape.halfHeight, shape.radius];
+    return { x: at.x, y: at.y - high, z: at.z, wide, deep, high: Math.min(3.2, high * 2 + 0.7) };
+  });
   // The first-person view drops and rolls when eliminated, from the pose at that moment.
   let deathView: { position: Vector3; quaternion: Quaternion; time: number } | null = null;
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
@@ -518,6 +529,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (gait.landingSpeed > 9) events.onHardLanding?.(gait.landingSpeed);
     }
     shotEffects.update(delta);
+    effects.setFlames(fires.length ? flameSpots() : []);
     effects.update(Math.min(delta, 0.1));
     loot.update(Math.min(delta, 0.1));
     ejecta.update(delta);
@@ -775,7 +787,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         if (event.grenade !== undefined) effects.removeGrenade(event.grenade);
         effects.explosion(event.position);
       }
-      if ((event.kind === "hit" || event.kind === "death") && event.target && event.target !== selfId && event.cause !== "fall") {
+      if ((event.kind === "hit" || event.kind === "death") && event.target && event.target !== selfId && event.cause !== "fall" && (event.cause !== "fire" || event.kind === "death")) {
         const at = remotePlayers.position(event.target);
         if (at) {
           effects.impact({ x: at.x, y: at.y + (event.zone === "head" ? 1.65 : 1.15), z: at.z }, { x: 0, y: 0.4, z: 0 }, "flesh");
@@ -784,7 +796,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
             const from = event.from ?? { x: at.x, y: at.y + 1, z: at.z - 1 };
             const dx = at.x - from.x, dz = at.z - from.z, length = Math.hypot(dx, dz) || 1;
             const blast = event.cause === "grenade" ? 140 * Math.max(0.2, 1 - Math.hypot(dx, dz) / 7) : 0;
-            const strength = blast || { knife: 10, pistol: 20, rifle: 28, bleed: 1 }[event.cause as "knife" | "pistol" | "rifle" | "bleed"] || 15;
+            const strength = blast || { knife: 10, pistol: 20, rifle: 28, bleed: 1, fire: 1 }[event.cause as "knife" | "pistol" | "rifle" | "bleed" | "fire"] || 15;
             remotePlayers.kill(event.target, event.zone === "head" ? "head" : "chest", { x: dx / length * strength, y: blast ? strength * 0.6 : 2, z: dz / length * strength });
           }
         }
@@ -903,6 +915,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setRemotePose(peerId, pose, sentAt) {
       remotePlayers.setPose(peerId, pose, sentAt);
     },
+    setFires(list) { fires = list; },
     setWounds(leg, arm) {
       armWound = arm;
       player.setLegWound(leg);

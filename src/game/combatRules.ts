@@ -121,6 +121,33 @@ export function smashShare(speed: number, material: Material): number {
   return Math.max(0, 0.5 * speed * speed - SAFE_STOP) / (TOUGHNESS[material] ?? 200);
 }
 
+// Fire. Things warm up until they catch, by how close they are to something burning; wood takes
+// more heat than plastic and plastic more than cardboard. A burning thing wears down over a time
+// set by its weight, and a fuel drum or gas tank that gets hot enough goes off. Worked out twice
+// a second by the coordinator.
+export const FIRE_STEP_MS = 500;
+export const MAX_FIRES = 24;
+export const FIRE_HEAT = 40;
+export const FIRE_REACH = 1.2;
+export const FIRE_DAMAGE = 5;
+export const EXPLOSIVE_CATCHES = 60;
+export const FRAG_HEAT = 60;
+export const FUEL_HEAT = 170;
+// Burning fuel spreads this far from a burst drum or tank and burns for this long.
+export const POOL_RADIUS = 2.2;
+export const POOL_MS = 14_000;
+// What a blast tears apart while it is burning leaves scraps alight where it stood, for a while.
+export const SCRAPS_RADIUS = 0.7;
+export const SCRAPS_MS = 9000;
+// A frag only sets light to cardboard, and only this close: the share of its blast at that range.
+export const FRAG_LIGHTS = 0.55;
+// How far a burst extinguisher's powder puts out flames.
+export const DOUSE_RADIUS = 4.5;
+const BURNS: Partial<Record<Material, { catches: number; pace: number }>> = { cardboard: { catches: 30, pace: 0.5 }, plastic: { catches: 70, pace: 0.8 }, wood: { catches: 100, pace: 1 } };
+export const catchesAt = (material: Material): number | undefined => BURNS[material]?.catches;
+// How long something takes to burn away; a stall or door has no mass of its own and takes longest.
+export const burnSeconds = (material: Material, mass = 25): number => Math.max(8, Math.min(60, (10 + 2 * mass) * (BURNS[material]?.pace ?? 1)));
+
 // Hip-fire spread, as the half-angle of the cone in degrees. Moving, jumping and sliding
 // widen it, crouching steadies it, and sustained fire blooms it until the trigger rests.
 // Aiming down the sights halves it.

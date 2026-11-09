@@ -1,6 +1,6 @@
 import {
   AdditiveBlending, BufferGeometry, CanvasTexture, Color, Euler, Group, InstancedMesh, Matrix4,
-  MeshBasicMaterial, MeshStandardMaterial, PointLight, Quaternion, Scene, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
+  MeshBasicMaterial, MeshStandardMaterial, PlaneGeometry, PointLight, Quaternion, Scene, Sprite, SpriteMaterial, SRGBColorSpace, Vector3, type Object3D,
 } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "./arena";
 import { type InstanceRef, type WorldEntity, type Vec3 } from "./entities";
@@ -147,6 +147,37 @@ function puffTexture(): CanvasTexture {
 }
 interface FlyingGrenade { mesh: Object3D; path: GrenadePath; start: number; bounce: number; linger: number }
 
+// A tongue of flame, for jets from shot drums and things on fire: wide low down, narrowing to
+// a tip, white-hot in its core and fading to red and nothing at its edges.
+function flameTexture(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64; canvas.height = 128;
+  const g = canvas.getContext("2d")!, image = g.createImageData(64, 128);
+  const clamp = (value: number): number => Math.max(0, Math.min(1, value));
+  for (let row = 0; row < 128; row += 1) for (let column = 0; column < 64; column += 1) {
+    const across = Math.abs((column + 0.5) / 32 - 1), up = 1 - (row + 0.5) / 128;
+    const half = Math.min(0.92, 2.4 * (1 - up) ** 0.9 * (up + 0.1) ** 0.4);
+    const out = across / Math.max(0.001, half), heat = clamp(out * 0.75 + up * 0.55);
+    const alpha = clamp(1 - out) ** 1.3 * clamp((1 - up) * 3.5) * clamp(up * 14 + 0.15);
+    const index = (row * 64 + column) * 4;
+    image.data[index] = 255;
+    image.data[index + 1] = 240 - 190 * heat;
+    image.data[index + 2] = 190 * clamp(1 - heat * 2.2);
+    image.data[index + 3] = 255 * alpha;
+  }
+  g.putImageData(image, 0, 0);
+  const map = new CanvasTexture(canvas);
+  map.colorSpace = SRGBColorSpace;
+  return map;
+}
+
+// Something on fire, as drawn: its base, how far it spreads each way and how tall the flames get.
+export interface FlameSpot { x: number; y: number; z: number; wide: number; deep: number; high: number }
+// Tongues of flame drawn at once, as one mesh, with no light of their own to pay for.
+const FLAME_TONGUES = 170;
+const FLAME_UP = new Vector3(0, 1, 0);
+const noise = (seed: number): number => { const value = Math.sin(seed * 12.9898) * 43758.5453; return value - Math.floor(value); };
+
 // Visual effects of combat on the world: impacts, bullet holes, breaking objects,
 // explosions and grenades in flight. Nothing here affects the game state.
 export class WorldEffects {
@@ -162,10 +193,15 @@ export class WorldEffects {
   private fireAge = 9;
   // Burning jets from shot fuel drums, following the drum until they run out.
   private jets: { sprite: Sprite; follow: () => Vec3 | null; until: number }[] = [];
-  private jetMap: CanvasTexture | null = null;
+  private jetMap = flameTexture();
+  private flames: InstancedMesh;
+  private flameSpots: FlameSpot[] = [];
+  private nextBurnSound = 0;
   private grenades = new Map<number, FlyingGrenade>();
   private matrix = new Matrix4();
   private quaternion = new Quaternion();
+  private flameAt = new Vector3();
+  private flameSize = new Vector3();
   shake = 0;
 
   // `groups` holds plain objects drawn for an entity (hand-built maps), hidden while it is destroyed.
@@ -185,6 +221,10 @@ export class WorldEffects {
     this.fireball = new Sprite(new SpriteMaterial({ map: this.puffMap, color: 0xffa54a, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
     this.fireball.visible = false;
     scene.add(this.fireball);
+    this.flames = new InstancedMesh(new PlaneGeometry(1, 1).translate(0, 0.5, 0), new MeshBasicMaterial({ map: this.jetMap, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }), FLAME_TONGUES);
+    hideAll(this.flames);
+    this.flames.frustumCulled = false;
+    scene.add(this.flames);
     for (let i = 0; i < 28; i += 1) {
       const material = new SpriteMaterial({ map: this.puffMap, color: 0x77736c, transparent: true, opacity: 0, depthWrite: false });
       const mesh = new Sprite(material);
@@ -302,19 +342,46 @@ export class WorldEffects {
 
   // A drum shot open vents a roaring jet of burning fuel from its top until it bursts.
   vent(follow: () => Vec3 | null, seconds: number): void {
-    if (!this.jetMap) {
-      const canvas = document.createElement("canvas");
-      canvas.width = 64; canvas.height = 128;
-      const g = canvas.getContext("2d")!;
-      const flame = g.createRadialGradient(32, 110, 2, 32, 80, 60);
-      flame.addColorStop(0, "rgba(255,250,220,1)"); flame.addColorStop(0.3, "rgba(255,170,60,0.85)"); flame.addColorStop(1, "rgba(255,60,10,0)");
-      g.fillStyle = flame; g.fillRect(0, 0, 64, 128);
-      this.jetMap = new CanvasTexture(canvas);
-      this.jetMap.colorSpace = SRGBColorSpace;
-    }
     const sprite = new Sprite(new SpriteMaterial({ map: this.jetMap, color: 0xffffff, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
     this.scene.add(sprite);
     this.jets.push({ sprite, follow, until: performance.now() + seconds * 1000 });
+  }
+
+  setFlames(spots: FlameSpot[]): void { this.flameSpots = spots; }
+
+  // Flames face the viewer, each flickering in its own time. The fire nearest the viewer lights
+  // its surroundings with the blast light, so burning costs no extra light, and is the one heard.
+  private drawFlames(seconds: number): void {
+    const time = performance.now() / 1000, camera = this.camera();
+    let drawn = 0, nearest: FlameSpot | null = null, closest = Infinity;
+    for (let s = 0; s < this.flameSpots.length; s += 1) {
+      const spot = this.flameSpots[s];
+      const distance = Math.hypot(spot.x - camera.x, spot.z - camera.z);
+      if (distance < closest) { closest = distance; nearest = spot; }
+      this.quaternion.setFromAxisAngle(FLAME_UP, Math.atan2(camera.x - spot.x, camera.z - spot.z));
+      const tongues = distance > 28 ? 3 : Math.max(3, Math.min(8, Math.ceil(4 * (spot.wide + spot.deep) + 2)));
+      for (let k = 0; k < tongues && drawn < FLAME_TONGUES; k += 1, drawn += 1) {
+        const seed = s * 7.3 + k * 3.1;
+        const flicker = 0.75 + 0.2 * Math.sin(time * (9 + k) + seed) + 0.1 * Math.sin(time * 23 + seed * 2);
+        const high = spot.high * (0.55 + 0.45 * noise(seed)) * flicker;
+        this.flameAt.set(spot.x + (noise(seed + 1) - 0.5) * 2 * spot.wide, spot.y, spot.z + (noise(seed + 2) - 0.5) * 2 * spot.deep);
+        this.flames.setMatrixAt(drawn, this.matrix.compose(this.flameAt, this.quaternion, this.flameSize.set(high * 0.62, high, 1)));
+      }
+      const top = { x: spot.x, y: spot.y + spot.high, z: spot.z };
+      if (Math.random() < seconds * 3) this.glow.spawn(top, { x: 0, y: 1, z: 0 }, 1, "embers", this.floor(top), 0.6);
+      if (Math.random() < seconds * 1.1 * Math.min(1, 5 / this.flameSpots.length)) this.puff(top, 1.4 + spot.wide, 2.8, 1.1, 0x38342f, 0.4);
+    }
+    if (drawn) { this.flames.count = drawn; this.flames.instanceMatrix.needsUpdate = true; this.flames.userData.live = true; }
+    else if (this.flames.userData.live) { hideAll(this.flames); this.flames.userData.live = false; }
+    if (!nearest || closest > 34) return;
+    if (this.flash.intensity < 7) {
+      this.flash.position.set(nearest.x, nearest.y + nearest.high * 0.7, nearest.z);
+      this.flash.intensity = 5 + Math.sin(time * 17) * 0.8 + Math.sin(time * 41) * 0.6;
+    }
+    if (time >= this.nextBurnSound) {
+      this.nextBurnSound = time + 1;
+      gameAudio.fireBurn({ x: nearest.x, y: nearest.y + 0.5, z: nearest.z }, Math.min(1, 0.45 + this.flameSpots.length * 0.08));
+    }
   }
 
   restore(entity: WorldEntity): void {
@@ -385,6 +452,7 @@ export class WorldEffects {
     }
     this.flash.intensity *= Math.exp(-seconds * 14);
     if (this.flash.intensity < 0.05) this.flash.intensity = 0;
+    this.drawFlames(seconds);
     for (const smoke of this.smoke) {
       if (!smoke.mesh.visible) continue;
       smoke.age += seconds;
