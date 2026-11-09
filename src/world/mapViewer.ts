@@ -22,7 +22,7 @@ import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio, type AmbientSource } from "../game/gameAudio";
 import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
-import { bloomAfterShot, currentBloom, makeWeaponPickups, spreadDegrees, KNIFE, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
+import { bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, MAX_CARRY, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
 import { buildNightMarket, nightMarketData, MARKET_SUN } from "./nightMarket";
 import { duskSky } from "./duskSky";
@@ -32,10 +32,10 @@ import { DOOR_LEAVES } from "./doors";
 import { kitPieces, loadKits } from "./kit";
 import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
-import { PhysicsWorld, type GrenadePath, type ShotRay } from "./physics";
+import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeTarget } from "./physics";
 import { EntityRegistry } from "./entities";
 import { WorldEffects } from "./worldEffects";
-import { FUEL_DRUM, FURNITURE, loadPropModels, PropViews } from "./props";
+import { FUEL_DRUM, FURNITURE, loadPropModels, PROP_LABEL, PropViews } from "./props";
 import { type PropPush, type PropState } from "../network/peerRoom";
 
 export type MapState = "loading" | "ready" | "error";
@@ -107,6 +107,22 @@ export interface MapViewer {
   // Props another peer owns that this player pushed since the last call, by that peer.
   takeShoves: () => Map<string, PropPush[]>;
   applyShoves: (shoves: PropPush[]) => void;
+  // What the player holds in both hands, and the loose prop they are looking at within reach,
+  // heavy being too much to lift.
+  holding: () => { id: string; mass: number } | null;
+  liftable: () => { id: string; label: string; mass: number; heavy: boolean } | null;
+  lift: (id: string) => boolean;
+  putDown: () => void;
+  // Holding the throw draws it back; letting go throws, harder the longer it was held.
+  beginThrow: () => void;
+  releaseThrow: () => void;
+  cancelThrow: () => void;
+  // What loose props this peer simulates have done since the last call.
+  takeStrikes: () => Strike[];
+  takeSmashes: () => [string, number][];
+  takeKnocks: () => [string, number][];
+  // Knocks of loose props, by id and how much their speed changed, to be heard.
+  hearKnocks: (knocks: [string, number][]) => void;
   startReload: (weapon: WeaponKind, durationMs: number) => void;
   cancelReload: () => void;
   combatSound: (event: CombatEvent, selfId: string) => void;
@@ -393,13 +409,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     entity: (id) => {
       const entity = entities.get(id);
       // Loose props report where they are now, so a moved drum bursts where it lies.
-      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth, center: entities.locate(entity), explosive: entity.explosive } : null;
+      return entity && !entities.destroyed(id) ? { material: entity.material, maxHealth: entity.maxHealth, center: entities.locate(entity), explosive: entity.explosive, mass: entity.mass } : null;
     },
     entitiesNear: (center, radius) => entities.near(center, radius),
     grenadeRest: (origin, velocity, seconds) => physics.grenadePath(origin, velocity, seconds).points.at(-1)!,
     push: (id, point, impulse) => physics.push(id, point, impulse),
   };
   let lastLandings = 0;
+  // When the player started drawing back a throw, and the weight now in their hands.
+  let throwStart = 0, handsHold = 0;
   // The first-person view drops and rolls when eliminated, from the pose at that moment.
   let deathView: { position: Vector3; quaternion: Quaternion; time: number } | null = null;
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
@@ -456,6 +474,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
     const delta = previousFrame ? (time - previousFrame) / 1000 : 0;
     const steps = physics.steps;
+    // A flying prop is tested against everyone where this player sees them.
+    if (physics.simulating()) {
+      const targets: StrikeTarget[] = [];
+      remotePlayers.each((id, feet, pose, dead) => { if (!dead) targets.push({ id, east: feet.x, feet: feet.y, north: feet.z, crouching: pose.crouching }); });
+      physics.setStrikeTargets(targets);
+    }
+    if (throwStart) physics.setDraw(Math.min(1, (performance.now() - throwStart) / THROW_CHARGE_MS));
     player.update(delta);
     camera.updateMatrixWorld();
     const eye = camera.position.clone();
@@ -465,6 +490,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const axes = { right: new Vector3().setFromMatrixColumn(camera.matrixWorld, 0), up: new Vector3().setFromMatrixColumn(camera.matrixWorld, 1), forward: new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).negate() };
     // Paused or eliminated players do not move the world, so step it for ragdolls and props.
     if (physics.steps === steps) physics.advance(delta);
+    // Losing a grip happens in the physics: a wall in the way, someone else's claim, or the prop
+    // being shot apart. Whatever the reason, the hands and the load follow it.
+    const inHands = physics.heldProp()?.mass ?? 0;
+    if (inHands !== handsHold) {
+      handsHold = inHands;
+      player.setCarried(inHands);
+      weaponVisuals.setHandsFull(inHands > 0);
+      if (!inHands) throwStart = 0;
+    }
     if (deathView) {
       deathView.time += delta;
       const fall = Math.min(1, deathView.time / 0.7), eased = 1 - (1 - fall) ** 3;
@@ -698,6 +732,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         const strength = event.cause === "knife" ? (event.stroke === "stab" ? 1.8 : 1.1) : 0.6;
         player.shove(dx / length * strength, dz / length * strength);
       }
+      // A heavy thing thrown at a player staggers them.
+      if ((event.kind === "hit" || event.kind === "death") && event.target === selfId && event.cause === "struck" && event.velocity) player.shove(event.velocity.x, event.velocity.z);
       // A blast in the open throws the player away from it; cover shelters them.
       if (event.kind === "vent" && event.entity && event.position) {
         if (event.entity.startsWith("truck:")) truck.vent(event.entity, (event.fuseMs ?? 1600) / 1000);
@@ -801,6 +837,42 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       flashAt(camera.position.clone().add(new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-0.8)), 1);
     },
     setLoad(kilograms) { player.setLoad(kilograms); },
+    holding() { return physics.heldProp(); },
+    liftable() {
+      const motion = player.motion(), id = motion.climbing || motion.mantling ? null : physics.propInView(CARRY_REACH);
+      const entity = id ? entities.get(id) : undefined;
+      return id && entity?.mass ? { id, label: PROP_LABEL[entity.prop ?? ""] ?? "it", mass: entity.mass, heavy: entity.mass > MAX_CARRY } : null;
+    },
+    lift(id) {
+      const lifted = physics.lift(id);
+      if (lifted) gameAudio.pickup();
+      return lifted;
+    },
+    putDown() { physics.letGo(); },
+    beginThrow() { if (physics.heldProp() && !throwStart) throwStart = performance.now(); },
+    releaseThrow() {
+      if (!throwStart) return;
+      const charge = (performance.now() - throwStart) / THROW_CHARGE_MS, mass = physics.heldProp()?.mass ?? 0;
+      throwStart = 0;
+      if (!mass) return;
+      const speed = throwSpeed(mass, charge), direction = physics.throwHeld(speed);
+      if (!direction) return;
+      // Whatever goes forward pushes the thrower back.
+      const recoil = mass * speed / (BODY_MASS + mass);
+      player.shove(-direction.x * recoil, -direction.z * recoil, 0, true);
+      player.holdSprint(0.5);
+      gameAudio.throwGrenade();
+    },
+    cancelThrow() { throwStart = 0; physics.setDraw(0); },
+    takeStrikes() { return physics.takeStrikes(); },
+    takeSmashes() { return physics.takeSmashes(); },
+    takeKnocks() { return physics.takeKnocks(); },
+    hearKnocks(knocks) {
+      for (const [id, speed] of knocks) {
+        const entity = entities.get(id), at = physics.propPose(id)?.position;
+        if (entity?.mass && at) gameAudio.propKnock(entity.material, at, speed, entity.mass);
+      }
+    },
     takeShoves() { return physics.takeShoves(); },
     applyShoves(shoves) { physics.applyShoves(shoves); },
     setDrops(drops, fresh) {

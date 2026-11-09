@@ -86,6 +86,8 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
 | Reload | <kbd>R</kbd> |
 | Pick up, eat, open doors and hatches | <kbd>E</kbd> |
+| Lift what you look at, put it down | <kbd>E</kbd> |
+| Throw what you carry | click, hold for more power |
 | Frag grenade, smoke grenade | <kbd>G</kbd>, <kbd>T</kbd> |
 | Respawn, three seconds after you fall | <kbd>Enter</kbd> |
 | Scoreboard | hold <kbd>Tab</kbd> |
@@ -117,6 +119,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - Steam pipes burst into cover. Fuel drums vent and explode. The food truck's propane cylinders go up.
 - Walk into the dumpling shop, the boba shop and the pho house. Eat at the counter for health, or grab a boba for a burst of speed.
 - Chairs, stools and tables are real objects with real weight: barge through them, knock them over or shoot them apart. Everything loose is simulated by whoever touches it, so it reacts instantly.
+- Pick up anything up to 25 kg and throw it. A stool flies and a crate barely leaves your hands, a thrown chair hits like a bullet, and what hits a wall hard enough breaks.
 
 **▸ MATCHES**
 - Five-minute rounds, or first to 15 kills. The winner is shown on the scoreboard, and the next round starts 12 seconds later with the market rebuilt.

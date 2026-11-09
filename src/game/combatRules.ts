@@ -1,6 +1,7 @@
 import { type ArenaData, type FoodKind, terrainHeight } from "../world/arena";
 import { type PlayerPose } from "./playerController";
 import { type ShotRay } from "../world/physics";
+import { type Material } from "../world/materials";
 
 export type ShotClear = (ray: ShotRay) => boolean;
 
@@ -78,6 +79,46 @@ export function loadEffects(mass: number): { walk: number; sprint: number; jump:
     jump: Math.sqrt((BODY_MASS + BASE_LOAD) / (BODY_MASS + Math.max(mass, BASE_LOAD))),
     inertia: (BODY_MASS + Math.max(mass, BASE_LOAD)) / (BODY_MASS + BASE_LOAD),
   };
+}
+
+// Lifting and throwing loose objects: both hands, from within reach of the eyes, up to what a
+// player can walk with. Heavier things can only be pushed.
+export const CARRY_REACH = 2.2;
+export const MAX_CARRY = 25;
+export const THROW_CHARGE_MS = 700;
+// A throw is a fixed amount of work shared between the object and the arm moving with it, so
+// the lightest things are limited by how fast an arm can go and heavy ones barely leave the
+// hands: about 15 m/s for a stool, 10 for a chair and 6 for a loaded crate at full effort.
+const THROW_WORK = 340;
+const ARM_MASS = 2;
+export function throwSpeed(mass: number, charge: number): number {
+  return Math.sqrt(2 * THROW_WORK * (0.25 + 0.75 * Math.max(0, Math.min(1, charge))) / (mass + ARM_MASS));
+}
+// What a load in both hands does to the feet, on top of its weight (loadEffects): a slower walk,
+// and no sprinting with anything really heavy.
+export const carrySpeed = (mass: number): number => Math.max(0.45, 1 - 0.022 * mass);
+export const CARRY_SPRINT_LIMIT = 10;
+
+// A flying object hurts by the energy it brings and how hard it is: a thrown chair lands about
+// like a pistol round to the chest, a plastic stool barely stings, and a crate dropped from
+// the bar's upper floor onto someone's head can kill.
+export const STRIKE_SPEED = 3.5;
+const HARDNESS: Partial<Record<Material, number>> = { cardboard: 0.15, plastic: 0.35, "metal-thin": 0.9, "metal-solid": 1.3 };
+const STRIKE_ZONE: Record<HitZone, number> = { head: 1.6, torso: 1, legs: 0.6 };
+export function strikeDamage(mass: number, speed: number, material: Material, zone: HitZone): number {
+  return Math.min(100, Math.round(Math.max(0, 0.5 * mass * speed * speed * (HARDNESS[material] ?? 1) - 15) * 0.14 * STRIKE_ZONE[zone]));
+}
+// How much the same blow knocks a body aside, in m/s: its share of the momentum, made larger
+// because a blow lands high on someone balanced on two feet.
+export function strikeKnock(mass: number, speed: number): number { return 3 * mass * speed / (mass + BODY_MASS); }
+
+// A stop hurts the object itself by how fast it stopped, not by its weight, since heavy things
+// are built to be: a share of its strength per J/kg above what a drop from the hands costs. A
+// chair thrown at a wall is half gone, cardboard bursts, and plastic takes a lot of it.
+const SAFE_STOP = 20;
+const TOUGHNESS: Partial<Record<Material, number>> = { cardboard: 25, wood: 70, plastic: 300, "metal-thin": 400, "metal-solid": 2000 };
+export function smashShare(speed: number, material: Material): number {
+  return Math.max(0, 0.5 * speed * speed - SAFE_STOP) / (TOUGHNESS[material] ?? 200);
 }
 
 // Hip-fire spread, as the half-angle of the cone in degrees. Moving, jumping and sliding

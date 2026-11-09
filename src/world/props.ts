@@ -23,6 +23,11 @@ export const FURNITURE: PropModel[] = [
   { name: "bar_stool", file: "", size: [0.41, 0.75, 0.41], material: "metal-thin", mass: 9 },
   { name: "plastic_stool", file: "", size: [0.42, 0.46, 0.42], material: "plastic", mass: 1.2 },
 ];
+// What the game calls each prop when offering it to the player.
+export const PROP_LABEL: Record<string, string> = {
+  crate_wood: "the crate", crate_wood_large: "the big crate", trash_can: "the trash can", oil_drum: "the oil drum", cardboard_box: "the cardboard box", aircon_unit: "the air conditioner", plastic_crate: "the plastic crate",
+  fuel_drum: "the fuel drum", dining_chair: "the chair", dining_table: "the table", cafe_table: "the folding table", bar_stool: "the bar stool", plastic_stool: "the stool",
+};
 const SHADOWLESS = new Set(["cardboard_box", "plastic_crate", ...FURNITURE.map((model) => model.name)]);
 
 export async function loadPropModels(): Promise<PropModel[]> {

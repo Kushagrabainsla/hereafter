@@ -2,6 +2,7 @@ import RAPIER from "@dimforge/rapier3d";
 import { terrainHeight, type Arena, type ArenaData } from "./arena";
 import { type WorldEntity } from "./entities";
 import { type Material } from "./materials";
+import { STRIKE_SPEED, type HitZone } from "../game/combatRules";
 
 const RADIUS = 0.3;
 const STANDING_HALF_HEIGHT = 0.58;
@@ -27,10 +28,51 @@ const OWNER_SILENCE_MS = 1500;
 const QUIET_SPEED = 0.06;
 const QUIET_SPIN = 0.12;
 const QUIET_SECONDS = 0.5;
+// A carried prop is steered, not placed: the hands close the gap to where it should be at this
+// rate, up to this speed relative to the player, with this much force, so a stool snaps into
+// place and a loaded crate swings after the player. It collides with the world on the way.
+const HOLD_GAIN = 14;
+const HOLD_SPEED = 12;
+const HOLD_FORCE = 500;
+const HOLD_TURN = 9;
+const HOLD_TURN_GAIN = 10;
+// Held this far from where the hands want it for this long, something has got in the way, and
+// the player loses their grip.
+const HOLD_SLACK = 0.5;
+const HOLD_STRAIN_SECONDS = 0.3;
+// A lifted prop comes straight up for up to this long before coming in to the hands, so a stool
+// on the far side of a table is lifted over it instead of pulled into it.
+const HOLD_RISE_SECONDS = 0.3;
+// The hands follow the eyes only so far up and down, and less than the eyes do.
+const HOLD_LOOK = 30 * Math.PI / 180;
+const HOLD_LOOK_SHARE = 0.6;
+// A sudden change of speed this large is a knock worth hearing, and one this large can hurt the
+// prop itself. The player who let go of a prop is out of its way for a moment.
+const KNOCK_SPEED = 1.6;
+const SMASH_SPEED = 6.3;
+const KNOCK_GAP_MS = 130;
+const CLEAR_OF_THROWER_MS = 500;
+// The most a throw can lift its aim for gravity: as for a flight of this long.
+const AIM_FLIGHT_SECONDS = 0.6;
+// A body struck by a prop counts as this heavy, and the prop rebounds from it this much.
+const STRUCK_BODY_MASS = 80;
+const STRUCK_BOUNCE = 0.25;
+const STRUCK_GAP_MS = 600;
+// Hit zones by height above the feet, as for a bullet (combatRules.ts).
+const HEAD_HEIGHT = 1.45;
+const TORSO_HEIGHT = 0.73;
 
 export interface Quat { x: number; y: number; z: number; w: number }
 export type PropTransform = [string, number, number, number, number, number, number, number];
 interface Followed { owner: string; from: number[]; to: number[]; progress: number; resting: boolean; heard: number }
+// out and low place it from the eyes; turn keeps the way it faced the player when lifted; draw
+// is how far it has been pulled back for a throw, 0 to 1.
+interface Held { id: string; body: RAPIER.RigidBody; handle: number; mass: number; out: number; low: number; high: number; turn: number; draw: number; strain: number; rise: number }
+// Another player, for working out what a flying prop hits.
+export interface StrikeTarget { id: string; east: number; feet: number; north: number; crouching: boolean }
+// A prop this peer simulates hit a player, target "" being this peer's own player. thrown says
+// a player threw it, rather than it falling or being knocked.
+export interface Strike { prop: string; target: string; speed: number; zone: HitZone; thrown: boolean }
 export interface RagdollPart { name: string; position: Vec3; rotation: Quat; shape: { type: "capsule"; halfHeight: number; radius: number; rotation: Quat } | { type: "ball"; radius: number } }
 export interface RagdollJoint { a: string; b: string; anchor: Vec3; hinge?: { axis: Vec3; limits: [number, number] } }
 export interface Ragdoll { pose(name: string): { position: Vec3; rotation: Quat } | null; remove(): void }
@@ -91,6 +133,25 @@ export class PhysicsWorld {
   private movers = new Map<string, RAPIER.Collider>();
   // Shoves the player gave props another peer owns, waiting to be sent to that peer.
   private shoves = new Map<string, { owner: string; push: Vec3; speed: number }>();
+  // The prop in the player's hands, and where the player is looking.
+  private held: Held | null = null;
+  private view = { heading: 0, pitch: 0, eyeHeight: 1.72 };
+  private walking = { x: 0, y: 0, z: 0 };
+  private released: { id: string; at: number } | null = null;
+  // Props a player threw, until they settle: what they hit is that player's doing.
+  private thrown = new Set<string>();
+  private targets: StrikeTarget[] = [];
+  private struck = new Map<string, number>();
+  private strikes: Strike[] = [];
+  private smashes: [string, number][] = [];
+  private knocks: [string, number][] = [];
+  private knocked = new Map<string, number>();
+  private speeds = new Map<string, [number, number, number]>();
+  private lastPlace = new Map<string, number[]>();
+  private standing = new RAPIER.Capsule(STANDING_HALF_HEIGHT, RADIUS);
+  private crouchingBody = new RAPIER.Capsule(CROUCHED_HALF_HEIGHT, RADIUS);
+  // Players walk through what they carry, and bullets do not.
+  private walkable = (collider: RAPIER.Collider): boolean => this.solid(collider) && collider.handle !== this.held?.handle;
 
   constructor(private data: ArenaData, arena: Arena) {
     this.world = new RAPIER.World({ x: 0, y: -14, z: 0 });
@@ -174,6 +235,8 @@ export class PhysicsWorld {
     this.owned.delete(id);
     this.quiet.delete(id);
     this.followed.delete(id);
+    this.forget(id);
+    if (this.held?.id === id) this.held = null;
     if (body) { this.world.removeRigidBody(body); this.props.delete(id); }
     else this.world.removeCollider(collider, true);
     this.entityColliders.delete(id);
@@ -217,6 +280,7 @@ export class PhysicsWorld {
       settled.push(state);
       this.owned.delete(id);
       this.quiet.delete(id);
+      this.forget(id);
       const t = body.translation(), r = body.rotation();
       body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
       body.setNextKinematicTranslation(t);
@@ -255,7 +319,9 @@ export class PhysicsWorld {
       if (!body || ![x, y, z, qx, qy, qz, qw].every(Number.isFinite) || Math.abs(x) > 60 || Math.abs(z) > 60 || y < -5 || y > 40) continue;
       if (this.owned.has(id)) {
         if (resting || owner > self) continue;
+        if (this.held?.id === id) this.letGo();
         this.owned.delete(id);
+        this.forget(id);
         body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
       }
       const current = this.followed.get(id);
@@ -291,11 +357,16 @@ export class PhysicsWorld {
     for (const id of this.owned) {
       const body = this.props.get(id), shape = this.entities.get(id)?.shape;
       if (!body || !shape) continue;
-      const v = body.linvel(), w = body.angvel();
-      const still = Math.hypot(v.x, v.y, v.z) < QUIET_SPEED && Math.hypot(w.x, w.y, w.z) < QUIET_SPIN;
-      this.quiet.set(id, still ? (this.quiet.get(id) ?? 0) + STEP_SECONDS : 0);
+      // A body pinned in place by its contacts can go on reporting a small velocity for ever,
+      // so what counts is how far it really went in the last step.
+      const v = body.linvel(), w = body.angvel(), t = body.translation(), r = body.rotation(), was = this.lastPlace.get(id);
+      this.lastPlace.set(id, [t.x, t.y, t.z, r.x, r.y, r.z, r.w]);
+      const moved = was ? Math.hypot(t.x - was[0], t.y - was[1], t.z - was[2]) / STEP_SECONDS : Math.hypot(v.x, v.y, v.z);
+      const turned = was ? 2 * Math.hypot(r.x - was[3], r.y - was[4], r.z - was[5], r.w - was[6]) / STEP_SECONDS : Math.hypot(w.x, w.y, w.z);
+      const still = moved < QUIET_SPEED && turned < QUIET_SPIN;
+      this.quiet.set(id, still && id !== this.held?.id ? (this.quiet.get(id) ?? 0) + STEP_SECONDS : 0);
       const size = shape.type === "box" ? Math.hypot(...shape.half) : Math.hypot(shape.halfHeight, shape.radius);
-      const speed = Math.hypot(v.x, v.y, v.z) + Math.hypot(w.x, w.y, w.z) * size;
+      const speed = moved + turned * size;
       if (speed < 0.05) continue;
       const reach = size + speed * STEP_SECONDS * 2 + 0.05;
       this.world.collidersWithAabbIntersectingAabb(body.translation(), { x: reach, y: reach, z: reach }, (collider) => {
@@ -311,8 +382,191 @@ export class PhysicsWorld {
   private stepWorld(): void {
     this.spreadOwnership();
     this.followProps();
+    this.steerHeld();
     this.world.step();
+    this.noteKnocks();
+    this.strikeBodies();
   }
+
+  private forget(id: string): void {
+    this.thrown.delete(id);
+    this.speeds.delete(id);
+    this.knocked.delete(id);
+    this.lastPlace.delete(id);
+  }
+
+  // Where the player is looking, and how high their eyes are above their feet.
+  setHoldView(heading: number, pitch: number, eyeHeight: number): void {
+    this.view.heading = heading * Math.PI / 180;
+    this.view.pitch = pitch * Math.PI / 180;
+    this.view.eyeHeight = eyeHeight;
+  }
+
+  private eye(): Vec3 {
+    const at = this.body.translation();
+    return { x: at.x, y: at.y - this.halfHeight - RADIUS + this.view.eyeHeight, z: at.z };
+  }
+
+  private forward(pitch = this.view.pitch): Vec3 {
+    return { x: Math.sin(this.view.heading) * Math.cos(pitch), y: Math.sin(pitch), z: Math.cos(this.view.heading) * Math.cos(pitch) };
+  }
+
+  // The nearest thing along the line of sight, if it is a loose prop nobody else is moving.
+  // Nothing can be lifted through a wall or from behind the thing in front of it.
+  propInView(reach: number): string | null {
+    const hit = this.world.castRay(new RAPIER.Ray(this.eye(), this.forward()), reach, true, undefined, undefined, this.collider, undefined, this.solid);
+    if (!hit || !this.propHandles.has(hit.collider.handle)) return null;
+    const id = this.tags.get(hit.collider.handle)?.entity;
+    return id && !this.followed.has(id) ? id : null;
+  }
+
+  // Takes a prop into the player's hands, held clear of their body and low enough to see over.
+  lift(id: string): boolean {
+    const body = this.props.get(id), entity = this.entities.get(id), collider = this.entityColliders.get(id);
+    if (this.held || !body || !collider || !entity?.shape || !entity.mass || this.followed.has(id)) return false;
+    this.claim(id, body);
+    body.setGravityScale(0, true);
+    const shape = entity.shape;
+    const [wide, high, deep] = shape.type === "box" ? shape.half : [shape.radius, shape.halfHeight, shape.radius];
+    const r = body.rotation();
+    const yaw = Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x));
+    this.held = { id, body, handle: collider.handle, mass: entity.mass, out: RADIUS + Math.hypot(wide, deep) + 0.12, low: 0.22 + high, high, turn: yaw - this.view.heading, draw: 0, strain: 0, rise: HOLD_RISE_SECONDS };
+    this.speeds.delete(id);
+    return true;
+  }
+
+  heldProp(): { id: string; mass: number } | null { return this.held ? { id: this.held.id, mass: this.held.mass } : null; }
+
+  // How far a throw has been drawn back, 0 to 1.
+  setDraw(draw: number): void { if (this.held) this.held.draw = draw; }
+
+  // Lets go of what the player holds. It keeps the speed it had and falls.
+  letGo(): void {
+    const held = this.held;
+    if (!held) return;
+    held.body.setGravityScale(1, true);
+    this.held = null;
+    this.released = { id: held.id, at: performance.now() };
+    this.quiet.set(held.id, 0);
+  }
+
+  // Throws what the player holds at this speed toward what the crosshair is on, on top of the
+  // player's own speed, lifted to make up for the fall on the way, with some tumble. Returns
+  // the direction it went.
+  throwHeld(speed: number): Vec3 | null {
+    const held = this.held;
+    if (!held) return null;
+    const eye = this.eye(), forward = this.forward(), at = held.body.translation();
+    const sight = this.world.castRay(new RAPIER.Ray(eye, forward), 40, true, undefined, undefined, this.collider, held.body, this.solid)?.timeOfImpact ?? 40;
+    const far = Math.max(sight, 4);
+    const dx = eye.x + forward.x * far - at.x, dy = eye.y + forward.y * far - at.y, dz = eye.z + forward.z * far - at.z, length = Math.hypot(dx, dy, dz) || 1;
+    const direction = { x: dx / length, y: dy / length, z: dz / length };
+    const lift = 14 * Math.min(AIM_FLIGHT_SECONDS, length / speed) / 2;
+    held.body.setLinvel({ x: this.walking.x + direction.x * speed, y: this.walking.y * 0.5 + direction.y * speed + lift, z: this.walking.z + direction.z * speed }, true);
+    const spin = 2 + 14 / (held.mass + 2), right = { x: -Math.cos(this.view.heading), z: Math.sin(this.view.heading) };
+    held.body.setAngvel({ x: right.x * spin, y: (Math.random() - 0.5) * spin, z: right.z * spin }, true);
+    this.thrown.add(held.id);
+    this.letGo();
+    this.speeds.delete(this.released!.id);
+    return direction;
+  }
+
+  // Before each step: the hands bring the prop toward where it should be, with no more force
+  // than arms have and in no time at all for something light.
+  private steerHeld(): void {
+    const held = this.held;
+    if (!held) return;
+    const { body, mass } = held;
+    const eye = this.eye(), forward = this.forward(Math.max(-HOLD_LOOK, Math.min(HOLD_LOOK, this.view.pitch)));
+    const out = held.out - 0.22 * held.draw;
+    const at = body.translation(), v = body.linvel();
+    // Never below where it would stand on the floor under the player's feet, or it would be
+    // pressed into the ground.
+    const feet = this.body.translation().y - this.halfHeight - RADIUS;
+    const ey = Math.max(feet + held.high + 0.03, eye.y + forward.y * out * HOLD_LOOK_SHARE - held.low + 0.08 * held.draw) - at.y;
+    const rising = held.rise > 0 && ey > 0.12;
+    held.rise = rising ? held.rise - STEP_SECONDS : 0;
+    const ex = rising ? 0 : eye.x + forward.x * out - at.x, ez = rising ? 0 : eye.z + forward.z * out - at.z;
+    const gap = Math.hypot(ex, ey, ez);
+    const closing = ((v.x - this.walking.x) * ex + (v.y - this.walking.y) * ey + (v.z - this.walking.z) * ez) / (gap || 1);
+    held.strain = gap > held.out * 0.6 + HOLD_SLACK && closing < 0.3 ? held.strain + STEP_SECONDS : 0;
+    if (held.strain > HOLD_STRAIN_SECONDS) { this.letGo(); return; }
+    const pull = Math.min(HOLD_SPEED, gap * HOLD_GAIN) / (gap || 1);
+    const dx = this.walking.x + ex * pull - v.x, dy = this.walking.y + ey * pull - v.y, dz = this.walking.z + ez * pull - v.z;
+    const change = Math.hypot(dx, dy, dz), most = HOLD_FORCE / mass * STEP_SECONDS, share = change > most ? most / change : 1;
+    body.setLinvel({ x: v.x + dx * share, y: v.y + dy * share, z: v.z + dz * share }, true);
+    // The turn from where it is to level, facing the way it faced the player when lifted.
+    const half = (this.view.heading + held.turn) / 2, ty = Math.sin(half), tw = Math.cos(half), r = body.rotation();
+    let qx = -tw * r.x - ty * r.z, qy = ty * r.w - tw * r.y, qz = -tw * r.z + ty * r.x, qw = tw * r.w + ty * r.y;
+    if (qw < 0) { qx = -qx; qy = -qy; qz = -qz; qw = -qw; }
+    const sine = Math.hypot(qx, qy, qz), angle = 2 * Math.atan2(sine, qw);
+    const rate = sine > 1e-5 ? Math.min(HOLD_TURN / (1 + mass / 15), angle * HOLD_TURN_GAIN) / sine : 0;
+    body.setAngvel({ x: qx * rate, y: qy * rate, z: qz * rate }, true);
+  }
+
+  // After each step: a prop whose speed changed sharply has hit something. Pushes from bullets,
+  // blasts and players are not knocks; those clear the speed it is compared with.
+  private noteKnocks(): void {
+    const now = performance.now();
+    for (const id of this.owned) {
+      const body = this.props.get(id);
+      if (!body) continue;
+      const v = body.linvel(), was = this.speeds.get(id);
+      this.speeds.set(id, [v.x, v.y, v.z]);
+      if (!was || id === this.held?.id) continue;
+      const change = Math.hypot(v.x - was[0], v.y - was[1], v.z - was[2]);
+      if (change < KNOCK_SPEED || now - (this.knocked.get(id) ?? 0) < KNOCK_GAP_MS) continue;
+      this.knocked.set(id, now);
+      if (this.knocks.length < 16) this.knocks.push([id, Math.round(change * 10) / 10]);
+      if (change >= SMASH_SPEED && this.smashes.length < 16) this.smashes.push([id, Math.round(change * 10) / 10]);
+    }
+  }
+
+  // Whether any prop is being simulated here, so the frame loop can skip listing players.
+  simulating(): boolean { return this.owned.size > 0; }
+  setStrikeTargets(targets: StrikeTarget[]): void { this.targets = targets; }
+
+  // After each step: props moving fast enough to hurt, against each player's body. Players take
+  // no part in the solver, so the prop's rebound is worked out here, from the two masses.
+  private strikeBodies(): void {
+    let everyone: StrikeTarget[] | null = null;
+    for (const id of this.owned) {
+      if (id === this.held?.id) continue;
+      const body = this.props.get(id), collider = this.entityColliders.get(id), mass = this.entities.get(id)?.mass;
+      if (!body || !collider || !mass) continue;
+      const v = body.linvel();
+      if (Math.hypot(v.x, v.y, v.z) < STRIKE_SPEED) continue;
+      if (!everyone) {
+        const self = this.body.translation();
+        everyone = [...this.targets, { id: "", east: self.x, feet: self.y - this.halfHeight - RADIUS, north: self.z, crouching: this.crouched }];
+      }
+      const at = body.translation(), now = performance.now();
+      for (const target of everyone) {
+        if (target.id === "" && this.released?.id === id && now - this.released.at < CLEAR_OF_THROWER_MS) continue;
+        if (Math.hypot(at.x - target.east, at.z - target.north) > 2) continue;
+        const half = target.crouching ? CROUCHED_HALF_HEIGHT : STANDING_HALF_HEIGHT;
+        const middle = target.feet + half + RADIUS, top = middle + half + RADIUS;
+        const contact = collider.contactShape(target.crouching ? this.crouchingBody : this.standing, { x: target.east, y: middle, z: target.north }, IDENTITY, 0.03);
+        if (!contact || contact.distance > 0.03) continue;
+        const nearest = Math.max(middle - half, Math.min(middle + half, at.y));
+        const nx = target.east - at.x, ny = nearest - at.y, nz = target.north - at.z, length = Math.hypot(nx, ny, nz) || 1;
+        const along = (v.x * nx + v.y * ny + v.z * nz) / length;
+        const key = `${id}|${target.id}`;
+        if (along < STRIKE_SPEED || now - (this.struck.get(key) ?? -Infinity) < STRUCK_GAP_MS) continue;
+        this.struck.set(key, now);
+        const loss = along * (1 + STRUCK_BOUNCE) * STRUCK_BODY_MASS / (mass + STRUCK_BODY_MASS) / length;
+        body.setLinvel({ x: v.x - nx * loss, y: v.y - ny * loss, z: v.z - nz * loss }, true);
+        this.speeds.delete(id);
+        const height = (Math.min(top, Math.max(target.feet, at.y)) - target.feet) / (target.crouching ? 0.72 : 1);
+        this.strikes.push({ prop: id, target: target.id, speed: Math.round(along * 10) / 10, zone: height >= HEAD_HEIGHT ? "head" : height >= TORSO_HEIGHT ? "torso" : "legs", thrown: this.thrown.has(id) });
+        break;
+      }
+    }
+  }
+
+  takeStrikes(): Strike[] { const list = this.strikes; this.strikes = []; return list; }
+  takeSmashes(): [string, number][] { const list = this.smashes; this.smashes = []; return list; }
+  takeKnocks(): [string, number][] { const list = this.knocks; this.knocks = []; return list; }
 
   // A bullet or blast pushing a loose prop: this peer starts simulating a prop nobody owns,
   // and passes the push to the owner of one that somebody does.
@@ -323,6 +577,7 @@ export class PhysicsWorld {
     if (follow) { this.addShove(id, follow.owner, impulse, 0); return; }
     this.claim(id, body);
     body.applyImpulseAtPoint(impulse, point, true);
+    this.speeds.delete(id);
   }
 
   // speed is how fast the player pushing was walking into the prop, or 0 for a bullet or blast.
@@ -362,6 +617,16 @@ export class PhysicsWorld {
 
   // Back to the starting layout, for a new room.
   resetProps(): void {
+    this.letGo();
+    this.released = null;
+    this.thrown.clear();
+    this.speeds.clear();
+    this.knocked.clear();
+    this.lastPlace.clear();
+    this.struck.clear();
+    this.strikes = [];
+    this.smashes = [];
+    this.knocks = [];
     for (const [id, body] of this.props) {
       const entity = this.entities.get(id)!;
       body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, false);
@@ -409,7 +674,7 @@ export class PhysicsWorld {
     const nextPosition = { x: current.x, y: feet + nextHalfHeight + RADIUS, z: current.z };
     const nextShape = new RAPIER.Capsule(nextHalfHeight, RADIUS);
     if (!wantsCrouch && this.world.intersectionWithShape(nextPosition, { x: 0, y: 0, z: 0, w: 1 }, nextShape,
-      undefined, undefined, this.collider, undefined, (candidate) => candidate.handle !== this.terrainCollider.handle && this.solid(candidate))) return this.crouched;
+      undefined, undefined, this.collider, undefined, (candidate) => candidate.handle !== this.terrainCollider.handle && this.walkable(candidate))) return this.crouched;
     this.collider.setShape(nextShape);
     this.body.setTranslation(nextPosition, true);
     this.world.propagateModifiedBodyPositionsToColliders();
@@ -419,10 +684,11 @@ export class PhysicsWorld {
   }
 
   move(east: number, north: number, vertical: number): CharacterStep {
-    this.controller.computeColliderMovement(this.collider, { x: east, y: vertical, z: north }, undefined, undefined, this.solid);
+    this.controller.computeColliderMovement(this.collider, { x: east, y: vertical, z: north }, undefined, undefined, this.walkable);
     this.collectShoves(east, north);
     this.steps += 1;
     const movement = this.controller.computedMovement();
+    this.walking = { x: movement.x / STEP_SECONDS, y: movement.y / STEP_SECONDS, z: movement.z / STEP_SECONDS };
     const current = this.body.translation();
     this.body.setNextKinematicTranslation({ x: current.x + movement.x, y: current.y + movement.y, z: current.z + movement.z });
     this.stepWorld();
@@ -478,6 +744,7 @@ export class PhysicsWorld {
       this.claim(id, body);
       const at = body.translation();
       body.applyImpulseAtPoint({ x, y, z }, { x: at.x, y: at.y + 0.1, z: at.z }, true);
+      this.speeds.delete(id);
       if (speed <= 0) continue;
       const length = Math.hypot(x, y, z) || 1, v = body.linvel();
       const over = (v.x * x + v.y * y + v.z * z) / length - speed;
@@ -591,6 +858,7 @@ export class PhysicsWorld {
   // Steps the world at 60 Hz when the player is not moving it (paused or eliminated), so
   // ragdolls and loose props keep falling.
   advance(seconds: number): void {
+    this.walking = { x: 0, y: 0, z: 0 };
     this.idleTime = Math.min(0.1, this.idleTime + seconds);
     while (this.idleTime >= STEP_SECONDS) { this.stepWorld(); this.idleTime -= STEP_SECONDS; }
   }

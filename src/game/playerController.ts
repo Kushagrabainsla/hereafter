@@ -2,7 +2,7 @@ import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
-import { BODY_MASS, LEAN_OFFSET, loadEffects, RUSH_SPEED } from "./combatRules";
+import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, loadEffects, RUSH_SPEED } from "./combatRules";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
 
@@ -52,6 +52,8 @@ export interface PlayerPose {
   lean?: number;
   // Looking down the sights of a gun.
   aiming?: boolean;
+  // Something held in both hands.
+  carrying?: boolean;
 }
 
 const EYE_HEIGHT = 1.72;
@@ -123,6 +125,9 @@ export class PlayerController {
   private punchYaw = 0;
   private tagged = 0;
   private load = loadEffects(0);
+  // What the player has on them, and what they hold in both hands, in kilograms.
+  private worn = 0;
+  private carried = 0;
   private shoveEast = 0;
   private shoveNorth = 0;
   private shoveUp = 0;
@@ -217,8 +222,20 @@ export class PlayerController {
 
   // The mass of everything carried, in kilograms (see loadEffects).
   setLoad(kilograms: number): void {
-    this.load = loadEffects(kilograms);
-    this.physics.setCharacterMass(BODY_MASS + kilograms);
+    this.worn = kilograms;
+    this.applyLoad();
+  }
+
+  // What the player holds in both hands, or 0. It weighs on them like anything else, and needs
+  // the hands that climbing, mantling and sliding would use.
+  setCarried(kilograms: number): void {
+    this.carried = kilograms;
+    this.applyLoad();
+  }
+
+  private applyLoad(): void {
+    this.load = loadEffects(this.worn + this.carried);
+    this.physics.setCharacterMass(BODY_MASS + this.worn + this.carried);
   }
 
   // Velocity added to the body in metres per second along east, north and up: a stab's
@@ -270,6 +287,7 @@ export class PlayerController {
       airborne: !this.grounded && !this.mantle,
       lean: Math.round(this.lean * 100) / 100,
       aiming: this.aim > 0.5,
+      carrying: this.carried > 0,
     };
   }
 
@@ -353,6 +371,7 @@ export class PlayerController {
     this.sprintHold = Math.max(0, this.sprintHold - delta);
     this.rushLeft = Math.max(0, this.rushLeft - delta);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - delta);
+    this.physics.setHoldView(this.heading, this.pitch, this.eyeHeight);
     if (this.mantle) { this.stepMantle(delta); return; }
     const forward = Number(this.keys.has("w") || this.keys.has("arrowup")) - Number(this.keys.has("s") || this.keys.has("arrowdown"));
     const strafe = Number(this.keys.has("d") || this.keys.has("arrowright")) - Number(this.keys.has("a") || this.keys.has("arrowleft"));
@@ -362,7 +381,7 @@ export class PlayerController {
     const heading = this.heading * Math.PI / 180;
     if (this.climbing) { this.stepLadder(delta, forward * this.load.walk); return; }
     // Walking into a ladder while facing the wall takes hold of it.
-    if (forward > 0 && !this.sliding && !crouchKey) {
+    if (forward > 0 && !this.sliding && !crouchKey && !this.carried) {
       const ladder = this.ladderInReach(heading);
       if (ladder && !this.physics.setCrouched(false)) {
         this.climbing = ladder;
@@ -372,10 +391,10 @@ export class PlayerController {
       }
     }
     // Mantle when jumping at a ledge, or when pushing forward into one in the air.
-    if ((this.jumpBuffer > 0 || (!this.grounded && forward > 0 && this.verticalSpeed < 3)) && !this.sliding && this.tryMantle(heading)) return;
+    if ((this.jumpBuffer > 0 || (!this.grounded && forward > 0 && this.verticalSpeed < 3)) && !this.sliding && !this.carried && this.tryMantle(heading)) return;
     // Crouching during a sprint starts a slide; letting go, leaving the ground, slowing
     // down or jumping ends it. A jump keeps the slide's speed.
-    if (crouchPressed && this.running && this.grounded && this.slideCooldown <= 0 && this.speed > 6) this.startSlide();
+    if (crouchPressed && this.running && this.grounded && this.slideCooldown <= 0 && this.speed > 6 && !this.carried) this.startSlide();
     const jumpFromSlide = this.sliding && this.jumpBuffer > 0;
     if (this.sliding) {
       this.slideTime += delta;
@@ -383,7 +402,7 @@ export class PlayerController {
       if (!crouchKey || !this.grounded || this.slideSpeed < SLIDE_END_SPEED || this.slideTime > SLIDE_LONGEST || jumpFromSlide) this.endSlide();
     }
     this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
-    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld;
+    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld && this.carried < CARRY_SPRINT_LIMIT;
     // Q and E lean while walking or standing; a wall at the side limits how far.
     const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.keys.has("e")) - Number(this.keys.has("q"));
     this.lean += (leanInput - this.lean) * Math.min(1, delta * 8);
@@ -402,7 +421,7 @@ export class PlayerController {
       this.velocityNorth = this.slideNorth * this.slideSpeed + Math.sin(heading) * strafe * 1.2;
     } else if (!jumpFromSlide) {
       // Looking down the sights, a player walks at little over half pace.
-      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1) * (this.rushLeft > 0 ? RUSH_SPEED : 1);
+      const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1) * (this.rushLeft > 0 ? RUSH_SPEED : 1) * carrySpeed(this.carried);
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;

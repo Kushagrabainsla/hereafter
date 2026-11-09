@@ -28,6 +28,7 @@ interface RemoteAvatar {
   tint: Color;
   pose: PlayerPose;
   heading: number;
+  carrying: boolean;
   weapons: Map<WeaponKind, Group>;
   samples: PoseSample[];
   dying: boolean;
@@ -58,7 +59,7 @@ function createAvatar(peerId: string): RemoteAvatar {
   return { root: new Group(), model: null, tint: new Color().setHSL(hue, 0.5, 0.78), pose: {
     east: 0, north: 0, heading: 0, pitch: 0, jumpHeight: 0,
     moving: false, running: false, crouching: false,
-  }, heading: 0, weapons: new Map(), samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
+  }, heading: 0, carrying: false, weapons: new Map(), samples: [], offset: null, offsetAt: 0, lateness: [], gaps: [], targetDelay: 100, delay: 100, displayTime: 0, pendingAnimation: 0, slot: Math.floor(Math.random() * 6), dying: false, ragdoll: null, previous: new Vector3(), velocity: new Vector3() };
 }
 
 export class RemotePlayers {
@@ -95,6 +96,8 @@ export class RemotePlayers {
       if (avatar.weapons.has(kind)) continue;
       const copy = source.clone(true) as Group;
       copy.visible = false;
+      // Cloning turns userData into plain JSON, and the grip holds real vectors and matrices.
+      copy.userData.grip = source.userData.grip;
       (kind === "knife" ? avatar.model.weaponSocket : avatar.model.root).add(copy);
       avatar.weapons.set(kind, copy);
     }
@@ -179,9 +182,11 @@ export class RemotePlayers {
     const avatar = this.avatars.get(peerId);
     // A fallen player's guns lie where they dropped, so the body holds nothing.
     if (!avatar) return;
-    for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && !this.dead.has(peerId);
-    const gun = weapon !== "knife" && !this.dead.has(peerId) ? avatar.weapons.get(weapon) ?? null : null;
-    avatar.model?.holdGun(gun);
+    // Both hands on something else, the weapon is away.
+    const out = !this.dead.has(peerId) && !avatar.carrying;
+    for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && out;
+    avatar.model?.holdGun(weapon !== "knife" && out ? avatar.weapons.get(weapon) ?? null : null);
+    avatar.model?.setCarrying(avatar.carrying && !this.dead.has(peerId));
   }
 
   // Another player's knife stroke or shot, on their character's arm.
@@ -297,6 +302,10 @@ export class RemotePlayers {
       avatar.delay += Math.max(-100 * delta, Math.min(100 * delta, avatar.targetDelay - avatar.delay));
       avatar.displayTime = Date.now() - (avatar.offset ?? 0) - avatar.delay;
       const pose = this.interpolated(avatar);
+      if ((pose.carrying === true) !== avatar.carrying) {
+        avatar.carrying = pose.carrying === true;
+        this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
+      }
       root.position.set(pose.east, terrainHeight(this.data, pose.east, pose.north) + pose.jumpHeight, pose.north);
       if (delta > 0) avatar.velocity.lerp(root.position.clone().sub(avatar.previous).divideScalar(delta), 0.3);
       if (avatar.velocity.length() > 15) avatar.velocity.setLength(0);

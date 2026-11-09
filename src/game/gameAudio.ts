@@ -614,6 +614,14 @@ export class GameAudio {
     this.spatial(name, at, { gain: name === "bullet-impact" ? 0.55 : 0.5, ref: 2.5, rolloff: 1.4, rate: 0.95 + Math.random() * 0.15 });
   }
 
+  // A loose object knocking against something: louder the harder it hit, deeper the heavier
+  // it is.
+  propKnock(material: Material, at: Vec3, speed: number, mass: number): void {
+    const name = IMPACT_SOUND[material];
+    if (!name || this.distanceTo(at) > 40) return;
+    this.spatial(name, at, { gain: Math.min(0.8, 0.1 + speed * 0.07), ref: 2.5, rolloff: 1.4, rate: Math.max(0.55, 1.15 - mass * 0.025) + Math.random() * 0.1 });
+  }
+
   // Objects breaking apart.
   shatter(at: Vec3): void { this.spatial("glass-break", at, { gain: 0.7, ref: 3, rolloff: 1.2, rate: 0.95 + Math.random() * 0.1, priority: "high" }); }
   splinter(at: Vec3): void { this.spatial("wood-break", at, { gain: 0.75, ref: 3, rolloff: 1.2, priority: "high" }); }

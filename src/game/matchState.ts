@@ -1,6 +1,6 @@
 import { type ArenaData, terrainHeight } from "../world/arena";
 import {
-  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects,
+  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects, smashShare, strikeDamage, strikeKnock,
   EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, KNIFE, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
   type FoodKind, type GunKind, type HitZone, type KnifeStroke, type WeaponKind, type WeaponPickup,
 } from "./combatRules";
@@ -76,11 +76,15 @@ export type CombatIntent =
   // Open or close something the map lets players open, such as a door or a hatch.
   | { kind: "use"; target: string }
   | { kind: "fall"; speed: number }
+  // A loose prop this player simulates hit someone (thrown by this player, or else just
+  // falling or flung), or stopped so suddenly it may have broken.
+  | { kind: "struck"; prop: string; target: string; speed: number; zone: HitZone; thrown: boolean }
+  | { kind: "smash"; prop: string; speed: number }
   // The player's name and voice.
   | { kind: "profile"; name: string; voice: string };
 export const VOICES = ["hi", "en", "grunts"];
 
-export type DamageCause = WeaponKind | "grenade" | "fall";
+export type DamageCause = WeaponKind | "grenade" | "fall" | "struck";
 
 export interface Impact { x: number; y: number; z: number; nx: number; ny: number; nz: number; material: Material; exit?: boolean }
 
@@ -171,7 +175,7 @@ export interface SurfaceHit { distance: number; thickness: number; point: Vec3; 
 export interface CombatWorld {
   clearShot(ray: ShotRay): boolean;
   traceBullet(ray: ShotRay): SurfaceHit[];
-  entity(id: string): { material: Material; maxHealth: number; center: Vec3; explosive?: boolean } | null;
+  entity(id: string): { material: Material; maxHealth: number; center: Vec3; explosive?: boolean; mass?: number } | null;
   entitiesNear(center: Vec3, radius: number): { id: string; distance: number; point: Vec3 }[];
   grenadeRest(origin: Vec3, velocity: Vec3, seconds: number): Vec3;
   push(entity: string, point: Vec3, impulse: Vec3): void;
@@ -204,7 +208,12 @@ const VENT_MS = 1600;
 // How far a player can reach to open or close something, from the eyes.
 const USE_REACH = 2.3;
 const GUNS = ["pistol", "rifle"] as const;
-const CAUSES = ["knife", "pistol", "rifle", "grenade", "fall"];
+const CAUSES = ["knife", "pistol", "rifle", "grenade", "fall", "struck"];
+// One prop hits one player once per impact, and breaks a bit at a time.
+const STRUCK_GAP_MS = 500;
+const SMASH_GAP_MS = 250;
+// How far from the player a prop that hit them can be by the time word of it arrives.
+const STRUCK_REACH = 6;
 
 const finite = (...values: unknown[]): boolean => values.every((value) => typeof value === "number" && Number.isFinite(value));
 const validVec = (value: Vec3 | undefined): boolean => value === undefined || (!!value && finite(value.x, value.y, value.z) && Math.abs(value.x) < 2000 && Math.abs(value.y) < 2000 && Math.abs(value.z) < 2000);
@@ -301,6 +310,8 @@ export class MatchState {
   private bloom = new Map<string, number>();
   private lastStroke = new Map<string, KnifeStroke>();
   private lastUse = new Map<string, number>();
+  private lastStruck = new Map<string, number>();
+  private lastSmash = new Map<string, number>();
   // Players whose positions have arrived, so they are in the game rather than loading it.
   private present = new Set<string>();
   private now = 0;
@@ -319,6 +330,8 @@ export class MatchState {
     this.bloom.clear();
     this.lastStroke.clear();
     this.equipUntil.clear();
+    this.lastStruck.clear();
+    this.lastSmash.clear();
     this.present.clear();
     this.onChange(this.snapshot);
   }
@@ -534,6 +547,9 @@ export class MatchState {
       this.changed();
       return true;
     }
+    // What has already been thrown still lands, whatever has become of the thrower.
+    if (intent.kind === "struck") return this.struck(actor, intent);
+    if (intent.kind === "smash") return this.smash(actor, intent.prop, intent.speed);
     if (player.health <= 0) return false;
     const pose = this.poses.get(actor);
     const fresh = !!pose && now - (this.poseTimes.get(actor) ?? 0) <= 1500;
@@ -662,6 +678,32 @@ export class MatchState {
       return true;
     }
     return false;
+  }
+
+  // A loose object hit someone. The peer simulating it says so; it has to be near them here too.
+  private struck(actor: string, { prop, target, speed, zone, thrown }: Extract<CombatIntent, { kind: "struck" }>): boolean {
+    const info = this.world?.entity(prop), victim = this.snapshot.players[target], pose = this.poses.get(target), key = `${prop}|${target}`;
+    if (!info?.mass || !victim || !pose || victim.health <= 0 || this.now - (this.lastStruck.get(key) ?? -Infinity) < STRUCK_GAP_MS) return false;
+    const dx = pose.east - info.center.x, dz = pose.north - info.center.z, apart = Math.hypot(dx, dz);
+    const damage = strikeDamage(info.mass, speed, info.material, zone);
+    if (apart > STRUCK_REACH || damage <= 0) return false;
+    this.lastStruck.set(key, this.now);
+    const knock = strikeKnock(info.mass, speed) / (apart || 1);
+    this.hurt(target, damage, { kind: "hit", actor: thrown ? actor : target, target, cause: "struck", zone, entity: prop, from: info.center, velocity: { x: dx * knock, y: 0, z: dz * knock } });
+    this.changed();
+    return true;
+  }
+
+  // A loose object stopped hard enough to be damaged by it.
+  private smash(actor: string, prop: string, speed: number): boolean {
+    const info = this.world?.entity(prop);
+    if (!info || !Number.isFinite(info.maxHealth) || this.now - (this.lastSmash.get(prop) ?? -Infinity) < SMASH_GAP_MS) return false;
+    const share = smashShare(speed, info.material);
+    if (share <= 0) return false;
+    this.lastSmash.set(prop, this.now);
+    this.damageEntity(actor, prop, share * info.maxHealth, info.center, { x: 0, y: 0, z: 0 });
+    this.changed();
+    return true;
   }
 
   private equip(actor: string, player: CombatPlayer, weapon: WeaponKind, now: number): void {
@@ -831,7 +873,7 @@ export class MatchState {
     if (!info) return;
     const current = this.snapshot.entities[id] ?? info.maxHealth;
     if (current <= 0) return;
-    this.world?.push(id, point, impulse);
+    if (impulse.x || impulse.y || impulse.z) this.world?.push(id, point, impulse);
     if (!Number.isFinite(info.maxHealth) || amount <= 0) return;
     const health = Math.max(0, Math.round((current - amount) * 10) / 10);
     this.snapshot.entities[id] = health;
@@ -985,7 +1027,7 @@ export class MatchState {
       this.removePose(id);
     }
     Object.assign(this.snapshot, { taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {} });
-    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.lastStroke, this.equipUntil, this.lastUse]) map.clear();
+    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.lastStroke, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash]) map.clear();
     this.emit({ kind: "round", actor: "" });
   }
 

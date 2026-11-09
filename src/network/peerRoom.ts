@@ -6,7 +6,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 20;
+const PROTOCOL_VERSION = 21;
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
 // of the five it picked failed or took seconds to pass a message on, and the rest took 135 to
@@ -35,6 +35,7 @@ type PosePacket = {
   away?: boolean;
   // Looking down the sights, which halves the spread of their shots.
   aiming?: boolean;
+  carrying?: boolean;
 };
 
 type IntentPacket = { version: number; map: string; sequence: number; intent: CombatIntent };
@@ -51,7 +52,8 @@ type FitnessPacket = { version: number; map: string; lag: number; rtt: Record<st
 // Loose prop transforms from whichever peer owns them: [id, x, y, z, qx, qy, qz, qw]. With
 // rest set, they have come to rest and nobody owns them any more.
 export type PropState = [string, number, number, number, number, number, number, number];
-type PropsPacket = { version: number; map: string; states: PropState[]; rest?: boolean };
+// knocks are props that have just hit something, [id, how much their speed changed], to be heard.
+type PropsPacket = { version: number; map: string; states: PropState[]; rest?: boolean; knocks?: [string, number][] };
 // Shoves a player gave loose props another peer owns: [id, impulse x, y, z] in N·s, and how
 // fast they were walking into it, or 0 for a bullet or blast.
 export type PropPush = [string, number, number, number, number];
@@ -64,7 +66,7 @@ export interface PeerRoomEvents {
   onPose: (peerId: string, pose: PlayerPose, sentAt: number) => void;
   onPeerLeave: (peerId: string) => void;
   onStatus: (message: string) => void;
-  onProps?: (states: PropState[], owner: string, rest: boolean) => void;
+  onProps?: (states: PropState[], owner: string, rest: boolean, knocks: [string, number][]) => void;
   onPushes?: (pushes: PropPush[]) => void;
   onMeme?: (peerId: string, code: string, seed: number) => void;
 }
@@ -100,14 +102,14 @@ const LANE_BACKLOG_BYTES = 8192;
 const POSITION_BYTES = 25;
 // A single byte, the protocol, on the lane: the sender is leaving the room.
 const GOODBYE = Uint8Array.of(PROTOCOL_VERSION);
-const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32, aiming: 64 } as const;
+const FLAG = { moving: 1, running: 2, crouching: 4, sliding: 8, airborne: 16, away: 32, aiming: 64, carrying: 128 } as const;
 // A player whose position has not changed sends it this often instead of every 33 ms: often
 // enough that the coordinator, which ignores positions over 1.5 s old, still counts them.
 const STILL_INTERVAL_MS = 250;
 // Intents sent this recently go again to a new coordinator: one that reached the last as it
 // handed over, or never reached it because it had gone, was lost.
 const RESEND_MS = 300;
-const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away", "aiming"] as const;
+const POSE_FIELDS = ["east", "north", "heading", "pitch", "moving", "running", "crouching", "sliding", "airborne", "lean", "away", "aiming", "carrying"] as const;
 // Standing on the ground, the height above it wavers by a centimetre from one frame to the
 // next, so a change of under 1.5 cm counts as none.
 const samePose = (a: PosePacket, b: PosePacket): boolean => POSE_FIELDS.every((key) => a[key] === b[key]) && Math.abs(a.jumpHeight - b.jumpHeight) < 0.015;
@@ -124,7 +126,7 @@ function encodePosition(packet: PosePacket): ArrayBuffer {
   view.setInt16(21, Math.round(packet.pitch * 100), true);
   view.setInt8(23, Math.round(Math.max(-1.27, Math.min(1.27, packet.lean ?? 0)) * 100));
   view.setUint8(24, (packet.moving ? FLAG.moving : 0) | (packet.running ? FLAG.running : 0) | (packet.crouching ? FLAG.crouching : 0)
-    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0) | (packet.away ? FLAG.away : 0) | (packet.aiming ? FLAG.aiming : 0));
+    | (packet.sliding ? FLAG.sliding : 0) | (packet.airborne ? FLAG.airborne : 0) | (packet.away ? FLAG.away : 0) | (packet.aiming ? FLAG.aiming : 0) | (packet.carrying ? FLAG.carrying : 0));
   return view.buffer;
 }
 
@@ -138,7 +140,7 @@ function decodePosition(data: ArrayBuffer, map: string): PosePacket | null {
     east: view.getInt16(13, true) / 100, north: view.getInt16(15, true) / 100, jumpHeight: view.getInt16(17, true) / 100,
     heading: view.getUint16(19, true) / 100, pitch: view.getInt16(21, true) / 100, lean: view.getInt8(23) / 100,
     moving: (flags & FLAG.moving) !== 0, running: (flags & FLAG.running) !== 0, crouching: (flags & FLAG.crouching) !== 0,
-    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0, away: (flags & FLAG.away) !== 0, aiming: (flags & FLAG.aiming) !== 0,
+    sliding: (flags & FLAG.sliding) !== 0, airborne: (flags & FLAG.airborne) !== 0, away: (flags & FLAG.away) !== 0, aiming: (flags & FLAG.aiming) !== 0, carrying: (flags & FLAG.carrying) !== 0,
   };
 }
 
@@ -165,7 +167,8 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean"
     && (packet.sliding === undefined || typeof packet.sliding === "boolean") && (packet.airborne === undefined || typeof packet.airborne === "boolean")
     && (packet.lean === undefined || (Number.isFinite(packet.lean) && Math.abs(packet.lean) <= 1))
-    && (packet.away === undefined || typeof packet.away === "boolean") && (packet.aiming === undefined || typeof packet.aiming === "boolean");
+    && (packet.away === undefined || typeof packet.away === "boolean") && (packet.aiming === undefined || typeof packet.aiming === "boolean")
+    && (packet.carrying === undefined || typeof packet.carrying === "boolean");
 }
 
 function validAim(aim: unknown): boolean {
@@ -188,6 +191,9 @@ function validIntent(value: unknown): value is CombatIntent {
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
   if (intent.kind === "throw") return validAim(intent.aim) && (intent.smoke === undefined || typeof intent.smoke === "boolean");
   if (intent.kind === "fall") return typeof intent.speed === "number" && Number.isFinite(intent.speed);
+  if (intent.kind === "struck") return typeof intent.prop === "string" && intent.prop.length < 40 && typeof intent.target === "string" && intent.target.length < 64
+    && typeof intent.speed === "number" && intent.speed >= 0 && intent.speed <= 40 && ["head", "torso", "legs"].includes(intent.zone) && typeof intent.thrown === "boolean";
+  if (intent.kind === "smash") return typeof intent.prop === "string" && intent.prop.length < 40 && typeof intent.speed === "number" && intent.speed >= 0 && intent.speed <= 60;
   if (intent.kind === "profile") return typeof intent.name === "string" && intent.name.length <= 64 && typeof intent.voice === "string" && intent.voice.length <= 8;
   return intent.kind === "reload" || intent.kind === "respawn";
 }
@@ -341,7 +347,8 @@ export class PeerRoom {
     this.propsAction.onMessage = (value, { peerId }) => {
       if (!this.peers.has(peerId) || value.version !== PROTOCOL_VERSION || value.map !== this.expectedMap || !Array.isArray(value.states)) return;
       const states = value.states.filter((state) => Array.isArray(state) && state.length === 8 && typeof state[0] === "string" && state[0].length < 40 && state.slice(1).every((n) => typeof n === "number" && Number.isFinite(n))).slice(0, 200);
-      this.events.onProps?.(states, peerId, value.rest === true);
+      const knocks = Array.isArray(value.knocks) ? value.knocks.filter((knock) => Array.isArray(knock) && knock.length === 2 && typeof knock[0] === "string" && knock[0].length < 40 && typeof knock[1] === "number" && knock[1] >= 0 && knock[1] <= 60).slice(0, 16) : [];
+      this.events.onProps?.(states, peerId, value.rest === true, knocks);
     };
     this.poseAction.onMessage = (value, { peerId }) => this.receivePose(value, peerId);
     this.intentAction.onMessage = (value, { peerId }) => {
@@ -469,6 +476,7 @@ export class PeerRoom {
       airborne: value.airborne === true,
       lean: value.lean ?? 0,
       aiming: value.aiming === true,
+      carrying: value.carrying === true,
     };
     this.match.setPose(peerId, pose, value.sentAt);
     this.events.onPose(peerId, pose, value.sentAt);
@@ -777,9 +785,9 @@ export class PeerRoom {
 
   leading(): boolean { return this.leaderId === selfId; }
 
-  sendProps(states: PropState[], rest: boolean): void {
-    if (!this.peers.size || !states.length) return;
-    void this.propsAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, states, ...(rest ? { rest } : {}) }).catch(() => undefined);
+  sendProps(states: PropState[], rest: boolean, knocks: [string, number][] = []): void {
+    if (!this.peers.size || (!states.length && !knocks.length)) return;
+    void this.propsAction.send({ version: PROTOCOL_VERSION, map: this.expectedMap, states, ...(rest ? { rest } : {}), ...(knocks.length ? { knocks } : {}) }).catch(() => undefined);
   }
 
   sendMeme(code: string, seed: number): void {
@@ -813,6 +821,7 @@ export class PeerRoom {
       lean: round(pose.lean ?? 0),
       away: document.hidden,
       aiming: pose.aiming === true,
+      carrying: pose.carrying === true,
     };
     // Standing still, a player sends the same position only every quarter second. When they
     // move again, the position they held goes out first, stamped at the moment before, so

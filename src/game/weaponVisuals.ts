@@ -60,6 +60,9 @@ export class WeaponVisuals {
   private lower = 0;
   private vault = 0;
   private throwTime = 0;
+  // Both hands on something else; the weapon stays out of sight until they are free.
+  private handsFull = false;
+  private stowed = 0;
   private reloadElapsed = 0;
   private reloadDuration = 0;
   private reloadWeapon: WeaponKind = "knife";
@@ -211,7 +214,12 @@ export class WeaponVisuals {
     for (const [id, pickup] of this.pickups) pickup.root.visible = !hidden.has(id);
   }
 
-  ready(): boolean { return !this.switching && this.throwTime <= 0; }
+  ready(): boolean { return !this.switching && this.throwTime <= 0 && !this.handsFull && this.stowed < 0.15; }
+
+  setHandsFull(full: boolean): void {
+    this.handsFull = full;
+    if (full) this.cancelReload();
+  }
 
   // Throwing a grenade dips the held weapon out of the way and back.
   quickThrow(): void { this.throwTime = 0.55; }
@@ -230,6 +238,7 @@ export class WeaponVisuals {
     // Both hands are busy climbing during a mantle, so the weapon tucks away.
     this.vault += ((motion.mantling || motion.climbing ? 1 : 0) - this.vault) * Math.min(1, seconds * 14);
     this.throwTime = Math.max(0, this.throwTime - elapsed);
+    this.stowed += (Number(this.handsFull) - this.stowed) * Math.min(1, seconds * 9);
     this.reloadTilt = 0;
     this.reloadJolt = 0;
     if (this.reloadDuration > 0) {
@@ -245,7 +254,7 @@ export class WeaponVisuals {
     }
     // Switching tucks the weapon down and inward, and so do a mantle and a quick throw.
     const throwing = this.throwTime > 0 ? Math.sin(Math.PI * (1 - this.throwTime / 0.55)) * 0.65 : 0;
-    this.lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7, throwing);
+    this.lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7, throwing, this.stowed);
     for (const pickup of this.pickups.values()) {
       pickup.beamMaterial.opacity = 0.085 + Math.sin(this.time * 2.5) * 0.025;
       pickup.holder.rotation.y += seconds * 0.55;

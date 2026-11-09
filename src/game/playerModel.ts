@@ -55,6 +55,11 @@ const LOW_READY_YAW = 18 * Math.PI / 180;
 const KICK_BACK = 0.045;
 const KICK_UP = 7 * Math.PI / 180;
 const FLASH_SECONDS = 0.05;
+// Hands on something carried: how far apart they sit from the body's middle, and how far ahead
+// of and below the shoulders.
+const CARRY_APART = 0.2;
+const CARRY_OUT = 0.42;
+const CARRY_DROP = 0.3;
 
 interface ArmChain { upper: Object3D; fore: Object3D; hand: Object3D }
 interface HeldGun { object: Object3D; grip: HeldGrip; flash: Object3D | null }
@@ -82,6 +87,9 @@ export class PlayerModelInstance {
   // low ready, its recoil and how long its flash still shows.
   private arms: { right: ArmChain; left: ArmChain } | null = null;
   private gun: HeldGun | null = null;
+  // Both hands out in front on something carried, and how far they have come up.
+  private carrying = false;
+  private carried = 0;
   private ready = 0;
   private recoil = 0;
   private flashFor = 0;
@@ -139,6 +147,8 @@ export class PlayerModelInstance {
     if (kind === "shot" && this.gun) { this.recoil = 1; this.flashFor = FLASH_SECONDS; this.ready = 0; return; }
     this.stroke = { kind, time: 0 };
   }
+
+  setCarrying(carrying: boolean): void { this.carrying = carrying; }
 
   // The gun to hold to the shoulder (it must be a child of root), or null for the knife or
   // empty hands, which the animation carries on the hand socket.
@@ -216,6 +226,24 @@ export class PlayerModelInstance {
     }
     this.strike(seconds);
     this.aimGun(seconds);
+    this.carryOut(seconds);
+  }
+
+  // Something carried in both hands: the hands come forward from the chest, to either side of
+  // it, a little higher or lower as the player looks up or down.
+  private carryOut(seconds: number): void {
+    this.carried += (Number(this.carrying) - this.carried) * Math.min(1, seconds * 10);
+    if (this.carried < 0.02 || !this.arms) return;
+    const { a, b, c, q, m, n } = this.temp;
+    this.root.updateWorldMatrix(true, true);
+    this.root.getWorldQuaternion(q);
+    n.identity();
+    for (const [arm, side] of [[this.arms.right, -1], [this.arms.left, 1]] as const) {
+      const shoulder = arm.upper.getWorldPosition(a);
+      const wrist = arm.hand.getWorldPosition(b);
+      const want = c.set(side * CARRY_APART - shoulder.clone().sub(this.root.getWorldPosition(new Vector3())).applyQuaternion(q.clone().invert()).x, -CARRY_DROP + Math.sin(this.pitch * Math.PI / 180) * 0.25, CARRY_OUT).applyQuaternion(q).add(shoulder);
+      this.reach(arm, m.makeTranslation(wrist.lerp(want, this.carried)), n, side);
+    }
   }
 
   // A gun held to the right shoulder, its barrel along where the player looks (dropping to a

@@ -64,7 +64,7 @@ const smokeCount = element<HTMLElement>("smoke-count");
 const magRow = element<HTMLElement>("mag-row");
 const magPips = element<HTMLElement>("mag-pips");
 const loadCount = element<HTMLElement>("load-count");
-const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall" };
+const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object" };
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const playerNameInput = element<HTMLInputElement>("player-name");
@@ -103,9 +103,9 @@ const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: numbe
 // Browsers only start audio from a user gesture; every gesture retries until it runs.
 for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(type, () => gameAudio.unlock(), { capture: true, passive: true });
 // Letting go of every button ends firing and aiming, whichever came up last.
-window.addEventListener("pointerup", (event) => { if (event.buttons === 0) { triggerHeld = false; viewer?.setAiming(false); } });
-window.addEventListener("blur", () => { triggerHeld = false; viewer?.setAiming(false); });
-document.addEventListener("pointerlockchange", () => { triggerHeld = false; });
+window.addEventListener("pointerup", (event) => { if (event.buttons === 0) { triggerHeld = false; viewer?.setAiming(false); viewer?.releaseThrow(); } });
+window.addEventListener("blur", () => { triggerHeld = false; viewer?.setAiming(false); viewer?.cancelThrow(); });
+document.addEventListener("pointerlockchange", () => { triggerHeld = false; viewer?.cancelThrow(); });
 window.setInterval(() => {
   if (triggerHeld && document.pointerLockElement && match?.player(selfId)?.active === "rifle") attack();
 }, 16);
@@ -275,9 +275,9 @@ function showAmmo(player: CombatPlayer): void {
     pip.style.setProperty("--fill", (rounds / WEAPONS[gun].magazine).toFixed(2));
     return pip;
   }) : [Object.assign(document.createElement("em"), { textContent: "NONE" })]));
-  const mass = carriedMass(player);
-  loadCount.textContent = `${mass.toFixed(1)} kg`;
-  loadCount.parentElement?.classList.toggle("heavy", mass > 7);
+  const mass = carriedMass(player), total = mass + (viewer?.holding()?.mass ?? 0);
+  loadCount.textContent = `${total.toFixed(1)} kg`;
+  loadCount.parentElement?.classList.toggle("heavy", total > 7);
   viewer?.setLoad(mass);
 }
 
@@ -292,7 +292,7 @@ function cueStateChanges(state: CombatSnapshot, fresh: CombatEvent[]): void {
       const pickedUp = fresh.some((event) => event.kind === "pickup" && event.actor === selfId);
       if (player.active !== before.active && !pickedUp && player.health > 0) gameAudio.switchWeapon(player.active);
       if (reloadStarted) viewer?.startReload(player.active, WEAPONS[player.active].reloadMs);
-      if (player.health <= 0 && before.health > 0) viewer?.cancelReload();
+      if (player.health <= 0 && before.health > 0) { viewer?.cancelReload(); viewer?.putDown(); }
     } else if (reloadStarted) viewer?.remoteReload(peerId, player.active);
   }
   for (const peerId of previousPlayers.keys()) if (!state.players[peerId]) previousPlayers.delete(peerId);
@@ -382,12 +382,14 @@ function playEvent(event: CombatEvent): void {
   }
   if (damaging && event.target === selfId) {
     pulse(damageFlash, 420);
+    // Nobody keeps hold of a crate through being shot.
+    viewer?.putDown();
     gameAudio.hurt(event.damage ?? 0, event.kind === "death");
     viewer?.flinch(event.damage ?? 0);
     if (event.from && event.cause !== "fall") showDamageDirection(event.from);
   }
   if (event.kind === "death" && event.target === selfId) {
-    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.actor === selfId ? "Caught in your own blast"
+    deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.cause === "struck" && event.actor === selfId ? "Something heavy hit you" : event.actor === selfId ? "Caught in your own blast"
       : [`By ${nameOf(event.actor)}`, CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "Headshot" : "", event.behind ? "From behind" : ""].filter(Boolean).join(" · ");
   }
 }
@@ -420,6 +422,9 @@ function addToKillFeed(event: CombatEvent): void {
   const how = document.createElement("span");
   if (event.cause === "fall") {
     how.textContent = "fell";
+    line.append(who(victim), how);
+  } else if (event.cause === "struck" && event.actor === victim) {
+    how.textContent = "was flattened";
     line.append(who(victim), how);
   } else if (event.actor === victim || !event.actor) {
     how.textContent = `${CAUSE_LABEL[event.cause ?? ""] ?? ""} · own blast`;
@@ -562,6 +567,8 @@ function nearestPickup(): { id: string; label: string; full: boolean; idle?: boo
 function attack(stroke: KnifeStroke = "slash"): void {
   if (!viewer || !match || dialogOpen() || ceasefire()) return;
   const player = match.player(selfId);
+  // With both hands on something, the attack is to throw it.
+  if (viewer.holding()) { if (stroke === "slash") viewer.beginThrow(); return; }
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   const weapon = player.active;
   if (weapon !== "knife" && stroke === "stab") return;
@@ -605,21 +612,33 @@ function attack(stroke: KnifeStroke = "slash"): void {
   viewer.playAttack(weapon);
 }
 
-// E takes the nearest pickup, or else opens or closes the nearest door or hatch.
+// What pressing E would lift: a loose prop in the crosshair, unless there is a useful pickup in
+// reach, and never mid-reload or for a fallen player.
+function liftTarget(): ReturnType<MapViewer["liftable"]> {
+  const player = match?.player(selfId), pickup = nearestPickup();
+  if (!viewer || !player || player.health <= 0 || player.reloadUntil > Date.now() || (pickup && !pickup.idle && !pickup.full)) return null;
+  return viewer.liftable();
+}
+
+// E puts down what the hands hold. Otherwise it takes the nearest pickup, lifts the loose prop
+// the player is looking at, or opens or closes the nearest door or hatch.
 function interact(): void {
+  if (viewer?.holding()) { viewer.putDown(); return; }
   const pickup = nearestPickup();
   const usable = viewer?.nearestUse();
-  // Food a player does not need never gets in the way of the door beside it.
-  if (pickup?.idle && usable) submit({ kind: "use", target: usable.id });
-  else if (pickup?.idle) toast(pickup.label);
+  const prop = liftTarget();
+  if (pickup && !pickup.idle && !pickup.full) submit({ kind: "pickup", pickupId: pickup.id });
+  else if (prop && !prop.heavy) viewer?.lift(prop.id);
   else if (pickup?.full) toast("Your magazine pouches are full");
-  else if (pickup) submit({ kind: "pickup", pickupId: pickup.id });
+  // Food a player does not need never gets in the way of the door beside it.
   else if (usable) submit({ kind: "use", target: usable.id });
+  else if (prop) toast(`Too heavy to lift: ${prop.mass} kg. Push it instead`);
+  else if (pickup?.idle) toast(pickup.label);
 }
 
 function reload(): void {
   const player = match?.player(selfId);
-  if (!player || player.health <= 0 || player.active === "knife") return;
+  if (!player || player.health <= 0 || player.active === "knife" || viewer?.holding()) return;
   if (!player.mags[player.active].length) { toast("No spare magazines. Find some on tables, counters and high ground"); return; }
   submit({ kind: "reload" });
 }
@@ -668,8 +687,9 @@ function enterRoom(rawCode: string): void {
       onStatus(message) {
         roomStatus.textContent = message;
       },
-      onProps(states, owner, rest) {
+      onProps(states, owner, rest, knocks) {
         viewer?.applyPropStates(states, owner, rest, selfId);
+        viewer?.hearKnocks(knocks);
       },
       onPushes(pushes) {
         viewer?.applyShoves(pushes);
@@ -760,10 +780,13 @@ document.addEventListener("keydown", (event) => {
   else if (key === "r") reload();
   else if (key === "enter") submit({ kind: "respawn" });
   else {
+    // Reaching for a weapon lets go of whatever the hands hold.
+    viewer?.putDown();
     const weapon: WeaponKind = key === "1" ? "knife" : key === "2" ? "pistol" : "rifle";
     submit({ kind: "select", weapon });
   }
 });
+document.addEventListener("keyup", (event) => { if (event.key.toLowerCase() === "f") viewer?.releaseThrow(); });
 
 // Each loose prop is simulated by the peer that first touched it, which shares it 15 times a
 // second while it moves and once more where it comes to rest. Every two seconds the coordinating
@@ -775,10 +798,13 @@ window.setInterval(() => {
   if (!viewer) return;
   const leading = !peerRoom || peerRoom.leading();
   const { moving, settled } = viewer.propTraffic(leading);
-  const shoves = viewer.takeShoves();
+  const shoves = viewer.takeShoves(), knocks = viewer.takeKnocks();
+  viewer.hearKnocks(knocks);
+  for (const { prop, target, speed, zone, thrown } of viewer.takeStrikes()) submit({ kind: "struck", prop, target: target || selfId, speed, zone, thrown });
+  for (const [prop, speed] of viewer.takeSmashes()) submit({ kind: "smash", prop, speed });
   if (!peerRoom) return;
   for (const [owner, pushes] of shoves) peerRoom.sendPushes(owner, pushes);
-  peerRoom.sendProps(moving, false);
+  peerRoom.sendProps(moving, false, knocks);
   peerRoom.sendProps(settled, true);
   for (const state of settled) sharedProps.set(state[0], state.join());
   propTick += 1;
@@ -833,12 +859,16 @@ window.setInterval(() => {
   if (!viewer || !match) return;
   if (peerRoom) peerRoom.tickCombat();
   else match.tick();
-  const pickup = nearestPickup();
-  const usable = pickup && !pickup.idle ? null : viewer.nearestUse();
-  pickupHint.hidden = (!pickup && !usable) || (match.player(selfId)?.health ?? 0) <= 0;
-  if (pickup && !(pickup.idle && usable)) pickupHint.textContent = pickup.idle ? pickup.label : pickup.full ? `Your magazine pouches are full` : `Press E to ${pickup.id.startsWith("food-") ? "" : "take "}${pickup.label}`;
+  const pickup = nearestPickup(), held = viewer.holding();
+  const prop = held ? null : liftTarget(), lift = prop && !prop.heavy ? prop : null;
+  const usable = lift || (pickup && !pickup.idle) ? null : viewer.nearestUse();
+  pickupHint.hidden = (!held && !pickup && !lift && !usable) || (match.player(selfId)?.health ?? 0) <= 0;
+  if (held) pickupHint.textContent = "Click to throw, hold to throw harder · E to put it down";
+  else if (lift && (!pickup || pickup.idle || pickup.full)) pickupHint.textContent = `Press E to lift ${lift.label} (${lift.mass} kg)`;
+  else if (pickup && !(pickup.idle && usable)) pickupHint.textContent = pickup.idle ? pickup.label : pickup.full ? `Your magazine pouches are full` : `Press E to ${pickup.id.startsWith("food-") ? "" : "take "}${pickup.label}`;
   else if (usable) pickupHint.textContent = `Press E to ${usable.open ? "close" : "open"} ${usable.label}`;
   const player = match.player(selfId);
+  if (player && (held?.mass ?? 0) !== shownHeld) { shownHeld = held?.mass ?? 0; showAmmo(player); }
   if (player?.health === 0) {
     const seconds = Math.max(0, Math.ceil((player.respawnAfter - roomClock()) / 1000));
     respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : "Press Enter to respawn";
@@ -853,7 +883,7 @@ window.setInterval(() => {
   const langs = [...new Set(Object.values(match.players()).map((other) => other.voice))].sort().join();
   if (launched && langs !== heardLangs) { heardLangs = langs; void loadVoices(); }
 }, 100);
-let heardLangs = "";
+let heardLangs = "", shownHeld = 0;
 // Mobile browsers often skip beforeunload when a page goes away; pagehide comes in either case.
 for (const event of ["beforeunload", "pagehide"]) window.addEventListener(event, () => { void peerRoom?.leave(); });
 
@@ -946,7 +976,7 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
         else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
       };
       const release = (event: PointerEvent): void => {
-        if (event.button === 0) triggerHeld = false;
+        if (event.button === 0) { triggerHeld = false; viewer?.releaseThrow(); }
         else if (event.button === 2) viewer?.setAiming(false);
       };
       canvas.addEventListener("pointerdown", press);
@@ -965,7 +995,7 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
         // it is held, and fills the screen again; a quick tap on a touch screen attacks.
         const still = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) < 7;
         if (still && event.pointerType === "mouse") { viewer?.lockPointer(); fillScreen(); }
-        else if (still && performance.now() - pointerDown.time < 350) attack();
+        else if (still && performance.now() - pointerDown.time < 350) { attack(); viewer?.releaseThrow(); }
         pointerDown = null;
       });
       canvas.addEventListener("pointercancel", () => { pointerDown = null; });
