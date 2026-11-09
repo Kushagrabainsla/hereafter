@@ -724,6 +724,12 @@ export class GameAudio {
     this.crackle(at, 1, 0.16 * level, 12);
   }
 
+  // A switch or a gas tap turned.
+  switchClick(at: Vec3): void { this.spatial("latch", at, { gain: 0.4, ref: 2, rolloff: 1.4, rate: 1.5 }); }
+
+  // A short blast of powder from an extinguisher.
+  spray(at: Vec3): void { this.hiss(at, 0.32, 3000, 0.4); }
+
   // A tyre bursting: a sharp bang, then the air rushing out.
   tyreBurst(at: Vec3): void {
     const context = this.live();

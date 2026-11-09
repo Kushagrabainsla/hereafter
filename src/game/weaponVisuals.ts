@@ -12,7 +12,8 @@ interface PickupView { root: Group; beamMaterial: MeshStandardMaterial; holder: 
 // included. reload is how far the weapon is canted for a reload (0 to 1) and jolt the
 // decaying kick when a magazine seats or the action closes.
 export interface Sway { x: number; y: number; z: number; pitch: number; yaw: number; roll: number }
-export interface ViewDynamics { active: WeaponKind; lower: number; sway: Sway; reload: number; jolt: number; }
+// hands is true once both hands are on something else: the weapon has gone and they have come up empty.
+export interface ViewDynamics { active: WeaponKind; lower: number; sway: Sway; reload: number; jolt: number; hands: boolean }
 
 // The weapon hangs off the hands like a mass on a spring. Turning drags it behind the view,
 // starting, stopping, jumping and landing swing it, and strafing rolls it. Heavier weapons
@@ -138,7 +139,7 @@ export class WeaponVisuals {
   cancelReload(): void { this.reloadDuration = 0; }
 
   dynamics(): ViewDynamics {
-    return { active: this.active, lower: this.lower, sway: this.sway, reload: this.reloadTilt, jolt: this.reloadJolt };
+    return { active: this.active, lower: this.lower, sway: this.sway, reload: this.reloadTilt, jolt: this.reloadJolt, hands: this.stowed > 0.5 };
   }
 
   // Drives the spring from how the view turned and how the eyes accelerated since the last
@@ -258,7 +259,7 @@ export class WeaponVisuals {
     }
     // Switching tucks the weapon down and inward, and so do a mantle and a quick throw.
     const throwing = this.throwTime > 0 ? Math.sin(Math.PI * (1 - this.throwTime / 0.55)) * 0.65 : 0;
-    this.lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7, throwing, this.stowed);
+    this.lower = Math.max(this.switching ? Math.sin(Math.PI * this.switchPhase) ** 2 : 0, this.vault * 0.7, throwing, 2 * Math.min(this.stowed, 1 - this.stowed));
     for (const pickup of this.pickups.values()) {
       pickup.beamMaterial.opacity = 0.085 + Math.sin(this.time * 2.5) * 0.025;
       pickup.holder.rotation.y += seconds * 0.55;

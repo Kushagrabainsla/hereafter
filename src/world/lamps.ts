@@ -17,7 +17,7 @@ export type LampPart =
 interface LightShare { index: number; lamps: string[] }
 
 // A lamp is out when it is broken or the circuit feeding it is.
-interface Lamp { parts: LampPart[]; broken: boolean; unpowered: boolean; flicker: number; circuit: string[] }
+interface Lamp { parts: LampPart[]; broken: boolean; unpowered: boolean; switchedOff: boolean; flicker: number; circuit: string[] }
 
 const HIDDEN = new Matrix4().makeScale(0, 0, 0);
 const scratch = new Matrix4();
@@ -43,7 +43,7 @@ export class Lamps {
   // Most are one-hit glass; a breaker box is tougher, and breaking it cuts its circuit.
   add(id: string, center: Vec3, shape: WorldEntity["shape"], yaw: number, parts: LampPart[], lights: number[] = [], options: { material?: Material; maxHealth?: number; circuit?: string[] } = {}): void {
     this.entities.push({ id, kind: "lamp", material: options.material ?? "glass", maxHealth: options.maxHealth ?? 1, yaw, center, shape });
-    this.lamps.set(id, { parts, broken: false, unpowered: false, flicker: 0, circuit: options.circuit ?? [] });
+    this.lamps.set(id, { parts, broken: false, unpowered: false, switchedOff: false, flicker: 0, circuit: options.circuit ?? [] });
     for (const index of lights) {
       const share = this.shares.find((item) => item.index === index);
       if (share) share.lamps.push(id); else this.shares.push({ index, lamps: [id] });
@@ -69,11 +69,23 @@ export class Lamps {
     const wasOut = this.out(lamp);
     lamp.broken = broken;
     this.changed(lamp, wasOut);
+    this.feed(lamp);
+  }
+
+  // A breaker thrown by hand: what it feeds goes out, though the breaker itself is whole.
+  setSwitched(id: string, on: boolean): void {
+    const lamp = this.lamps.get(id);
+    if (!lamp || lamp.switchedOff === !on) return;
+    lamp.switchedOff = !on;
+    this.feed(lamp);
+  }
+
+  private feed(lamp: Lamp): void {
     for (const fed of lamp.circuit) {
       const other = this.lamps.get(fed);
       if (!other) continue;
       const before = this.out(other);
-      other.unpowered = broken;
+      other.unpowered = lamp.broken || lamp.switchedOff;
       this.changed(other, before);
     }
     this.apply();

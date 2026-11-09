@@ -172,10 +172,12 @@ function flameTexture(): CanvasTexture {
 }
 
 // Something on fire, as drawn: its base, how far it spreads each way and how tall the flames get.
-export interface FlameSpot { x: number; y: number; z: number; wide: number; deep: number; high: number }
+// gas is the blue of a lit ring, which lights and sounds like nothing.
+export interface FlameSpot { x: number; y: number; z: number; wide: number; deep: number; high: number; gas?: boolean }
 // Tongues of flame drawn at once, as one mesh, with no light of their own to pay for.
 const FLAME_TONGUES = 170;
 const FLAME_UP = new Vector3(0, 1, 0);
+const FIRE_TINT = new Color(0xffffff), GAS_TINT = new Color(0.25, 0.5, 2.4);
 const noise = (seed: number): number => { const value = Math.sin(seed * 12.9898) * 43758.5453; return value - Math.floor(value); };
 
 // Visual effects of combat on the world: impacts, bullet holes, breaking objects,
@@ -222,6 +224,7 @@ export class WorldEffects {
     this.fireball.visible = false;
     scene.add(this.fireball);
     this.flames = new InstancedMesh(new PlaneGeometry(1, 1).translate(0, 0.5, 0), new MeshBasicMaterial({ map: this.jetMap, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }), FLAME_TONGUES);
+    this.flames.setColorAt(0, FIRE_TINT);
     hideAll(this.flames);
     this.flames.frustumCulled = false;
     scene.add(this.flames);
@@ -355,6 +358,28 @@ export class WorldEffects {
 
   setFlames(spots: FlameSpot[]): void { this.flameSpots = spots; }
 
+  // Takes something off the wall or puts it back, with no debris.
+  setHidden(id: string, hidden: boolean): void {
+    if (!hidden) { const saved = this.hidden.get(id); for (const { ref, matrix } of saved ?? []) { ref.mesh.setMatrixAt(ref.index, matrix); ref.mesh.instanceMatrix.needsUpdate = true; } this.hidden.delete(id); return; }
+    const saved: { ref: InstanceRef; matrix: Matrix4 }[] = [];
+    for (const ref of this.refs.get(id) ?? []) {
+      const matrix = new Matrix4();
+      ref.mesh.getMatrixAt(ref.index, matrix);
+      saved.push({ ref, matrix });
+      ref.mesh.setMatrixAt(ref.index, new Matrix4().makeScale(0, 0, 0));
+      ref.mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.hidden.set(id, saved);
+  }
+
+  // Powder from an extinguisher, widening as it goes.
+  spray(at: Vec3, direction: Vec3): void {
+    for (let i = 0; i < 5; i += 1) {
+      const far = 0.5 + Math.random() * 3.6, loose = far * 0.35;
+      this.puff({ x: at.x + direction.x * far + (Math.random() - 0.5) * loose, y: at.y + direction.y * far + (Math.random() - 0.5) * loose, z: at.z + direction.z * far + (Math.random() - 0.5) * loose }, 0.35 + far * 0.35, 0.8, 0.15, 0x8f8b83, 0.32);
+    }
+  }
+
   // Flames face the viewer, each flickering in its own time. The fire nearest the viewer lights
   // its surroundings with the blast light, so burning costs no extra light, and is the one heard.
   private drawFlames(seconds: number): void {
@@ -363,7 +388,7 @@ export class WorldEffects {
     for (let s = 0; s < this.flameSpots.length; s += 1) {
       const spot = this.flameSpots[s];
       const distance = Math.hypot(spot.x - camera.x, spot.z - camera.z);
-      if (distance < closest) { closest = distance; nearest = spot; }
+      if (distance < closest && !spot.gas) { closest = distance; nearest = spot; }
       this.quaternion.setFromAxisAngle(FLAME_UP, Math.atan2(camera.x - spot.x, camera.z - spot.z));
       const tongues = distance > 28 ? 3 : Math.max(3, Math.min(8, Math.ceil(4 * (spot.wide + spot.deep) + 2)));
       for (let k = 0; k < tongues && drawn < FLAME_TONGUES; k += 1, drawn += 1) {
@@ -372,12 +397,14 @@ export class WorldEffects {
         const high = spot.high * (0.55 + 0.45 * noise(seed)) * flicker;
         this.flameAt.set(spot.x + (noise(seed + 1) - 0.5) * 2 * spot.wide, spot.y, spot.z + (noise(seed + 2) - 0.5) * 2 * spot.deep);
         this.flames.setMatrixAt(drawn, this.matrix.compose(this.flameAt, this.quaternion, this.flameSize.set(high * 0.62, high, 1)));
+        this.flames.setColorAt(drawn, spot.gas ? GAS_TINT : FIRE_TINT);
       }
+      if (spot.gas) continue;
       const top = { x: spot.x, y: spot.y + spot.high, z: spot.z };
       if (Math.random() < seconds * 3) this.glow.spawn(top, { x: 0, y: 1, z: 0 }, 1, "embers", this.floor(top), 0.6);
       if (Math.random() < seconds * 1.1 * Math.min(1, 5 / this.flameSpots.length)) this.puff(top, 1.4 + spot.wide, 2.8, 1.1, 0x38342f, 0.4);
     }
-    if (drawn) { this.flames.count = drawn; this.flames.instanceMatrix.needsUpdate = true; this.flames.userData.live = true; }
+    if (drawn) { this.flames.count = drawn; this.flames.instanceMatrix.needsUpdate = true; if (this.flames.instanceColor) this.flames.instanceColor.needsUpdate = true; this.flames.userData.live = true; }
     else if (this.flames.userData.live) { hideAll(this.flames); this.flames.userData.live = false; }
     if (!nearest || closest > 34) return;
     if (this.flash.intensity < 7) {

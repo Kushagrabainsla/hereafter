@@ -224,6 +224,7 @@ const propSpots: [string, number, number, number, number][] = [
   ["plastic_crate", -13.9, -5.6, 0, 0.2], ["cardboard_box", -14.0, 13.6, 0, 0.4],
   // Red fuel drums: shot open, they vent fire and burst.
   ["fuel_drum", -7.6, 13.0, 0, 0], ["fuel_drum", 16.3, -3.0, 0, 0.6],
+  ["fuel_drum", -7.8, -5.2, 0, 0.3], ["fuel_drum", 0.0, 4.6, 0, 1.1], ["fuel_drum", 9.0, 21.8, 0, 0.4], ["fuel_drum", 16.4, 11.6, 0, 2.0],
 ];
 // Furniture is loose too: [model, x, z, yaw, tint for the plastic stools].
 const furnitureSpots: [string, number, number, number, number?][] = [];
@@ -254,6 +255,18 @@ for (const [x, z] of [[2.2, -22.6], [4.3, -22.6], [3.2, -18.25]]) {
 // Fire extinguishers on walls: shot, they burst into a cloud of powder. [wall, surface, along, height]
 const EXTINGUISHERS: [Face, number, number, number][] = [
   ["px", -15, 13.6, 1.05], ["pz", -2, 18.5, 0.9], ["nx", 8.19, -12.1, 0.9], ["px", 8.5, 21.3, 0.9], ["nx", 17, -11.8, 0.9], ["nx", 0.5, 5.2, 0.9],
+];
+// Each can also be lifted off its wall and used.
+const EXTINGUISHER_PICKUPS = EXTINGUISHERS.map(([face, at, along], index) => {
+  const [nx, nz] = ({ px: [1, 0], nx: [-1, 0], pz: [0, 1], nz: [0, -1] } as const)[face];
+  return { id: `extinguisher:${index}`, item: "extinguisher" as const, east: nx ? at + nx * 0.1 : along, north: nx ? along : at + nz * 0.1 };
+});
+// The gas rings a player can light: over the restaurant's range and the two shops' cooking lines.
+// long is how far they run along the line. What stands on a lit ring catches.
+export const STOVES = [
+  { id: "stove:restaurant", at: { x: -14.6, y: 1.0, z: 0.9 }, long: 1.3 },
+  { id: "stove:dumplings", at: { x: 7.8, y: 0.97, z: 22.5 }, long: 0.6 },
+  { id: "stove:pho", at: { x: 7.8, y: 0.97, z: -22.9 }, long: 0.6 },
 ];
 // The key lights used where the renderer cannot cluster many lights (WebGL 2).
 const pointLights: [number, number, number, number, number][] = [
@@ -286,9 +299,14 @@ export const NIGHT_MARKET: MapLayout = {
     { id: "mags-dumpster", weapon: "rifle", item: "magazines", east: 16.4, north: -9.25, y: 1.3 },
     { id: "mags-records", weapon: "pistol", item: "magazines", east: 6.95, north: -12.5, y: 1.0 },
     ...SHOP_FOOD,
+    ...EXTINGUISHER_PICKUPS,
   ],
   solids,
-  toggles: [...TRUCK_TOGGLES, ...DOOR_TOGGLES],
+  toggles: [
+    ...TRUCK_TOGGLES, ...DOOR_TOGGLES,
+    ...STOVES.map((stove) => ({ id: stove.id, label: "the stove", at: stove.at, open: false, verbs: ["light", "turn off"] as [string, string] })),
+    { id: "switch:breaker", label: "the alley lights", at: { x: 8.62, y: 1.55, z: -12.5 }, open: true, verbs: ["switch on", "switch off"] as [string, string], entity: "lamp:breaker" },
+  ],
 };
 
 // The low sun just above the rooftops to the west-southwest: where it lies from the market

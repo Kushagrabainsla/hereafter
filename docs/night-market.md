@@ -41,7 +41,7 @@ Pickups have a height, so the fire escape's magazines can only be taken from the
 - **The glass storefronts** of the restaurant and the bar block players until shot. One round shatters them, and players can then jump or climb through the empty frame onto the low sill.
 - **The upper-floor windows** break when shot. There are 247 on alley-facing walls.
 - **Props** are 27 crates, boxes, plastic crates, bins and drums. They break or get thrown about.
-- **Fuel drums.** Two red drums stand by the restaurant's north door and the bar's south door. Two pistol rounds open one: it vents a jet of burning fuel for 1.6 s and then bursts like a grenade, credited to whoever shot it. A blast can throw a drum before it goes off.
+- **Fuel drums.** Six red drums stand around the market. Two pistol rounds open one: it vents a jet of burning fuel for 1.6 s and then bursts like a grenade, credited to whoever shot it. A blast can throw a drum before it goes off.
 - **Fire extinguishers** hang in the restaurant kitchen, the bar, the record shop and on three alley walls. One round bursts one into a pale cloud of powder that hides the spot for about 5 s.
 - **Doors.** Rounds pass through a door and wear it down. A wooden leaf comes off its hinges after 4 pistol rounds, a steel back door after 5, and a grenade close by blows them off.
 - **The record shop's boarded window** takes 5 pistol rounds or a grenade. It then leaves a 1.9 m opening onto a 0.6 m sill that players can climb through.

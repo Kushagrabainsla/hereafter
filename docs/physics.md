@@ -104,6 +104,16 @@ Fire is worked out twice a second by the coordinator and kept in its state (`ste
 
 **What it costs.** Flames are one instanced mesh of up to 170 camera-facing cards. The burning thing nearest the player borrows the explosion's light rather than adding one, so no new light is ever paid for. At a MacBook Pro's Retina size, the same view measured 43.5 to 44.3 FPS with no fire and 43.5 to 44.5 FPS with 24 fires in view, with 6 to 12 more draw calls, on a machine varying by about a frame a second. The coordinator's update during a fire is two small changes a second.
 
+## Things to use
+
+**Fire extinguishers.** E at one on a wall, while looking at it, takes it down. It needs both hands, and holds 10 s of powder. Holding the trigger sprays a burst every quarter of a second, in a cone out to 5.5 m; a wall stops it. A burning object goes out after three bursts that reach it and a pool of fuel after six. E puts it back on its wall, and a used one comes back after 45 s. Shooting one on the wall still bursts it, as before.
+
+**Stoves.** E lights the gas rings on the restaurant's range and the dumpling and pho shops' cooking lines. A lit ring heats only what is put on it, so a cardboard box set on one caught in under half a second. Whoever lit the stove is credited with what follows.
+
+**The breaker.** E at the box on the service alley's west wall switches off that alley's wall lamps and string lights, 25 lights in all, and switches them back on. Shot to pieces, it stays off.
+
+**Fuel drums.** There are now six, not two: beside the restaurant's south door, at the corner of the middle block in the market alley, and in the service alley near the dumpling shop's and the bar's walls, as well as the original two.
+
 ## Breakable walls
 
 Six sections of the 30 cm walls can be knocked through (`src/world/breaches.ts`): the restaurant's front, the bar's front, the pho house's front and back, the dumpling shop's back and the record shop's back. Each is about 2.4 m tall and 1.3 to 2.2 m wide. The market's other walls are the sides of solid buildings, with nothing behind them to break into.

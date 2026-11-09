@@ -65,6 +65,10 @@ export class AuthoredViewModel {
   // A blade turned by something hard kicks the hand back and up, then settles.
   private recoil = 0;
   private recoilSpeed = 0;
+  // The carbine's arms stand in for hands on something else, with the carbine left out; this
+  // is what they hold when that is an extinguisher.
+  private tool: Object3D | null = null;
+  private toolShown = false;
   constructor(private camera: PerspectiveCamera) {
     for (const kind of ["knife", "pistol", "rifle"] as const) {
       void loadWeaponFile(kind).then((gltf) => {
@@ -139,6 +143,10 @@ export class AuthoredViewModel {
     return new Vector3(-at.x, -at.y - sights.height, sights.back);
   }
 
+  // The thing to show in the empty hands when holding a tool, and whether to show it.
+  setTool(tool: Object3D): void { this.tool = tool; tool.visible = false; }
+  showTool(shown: boolean): void { this.toolShown = shown; }
+
   hasModel(): boolean { return this.models.has(this.active); }
   // Muzzle position in camera-local metres for tracers, when the active model has one.
   muzzle(): Vector3 | undefined {
@@ -164,10 +172,23 @@ export class AuthoredViewModel {
     this.recoilSpeed = 14;
   }
   update(seconds: number, motion: PlayerMotion, dynamics: ViewDynamics): void {
-    if (dynamics.active !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.locomotion = ""; this.attacking = null; this.active = dynamics.active; }
+    const wanted = dynamics.hands ? "rifle" : dynamics.active;
+    if (wanted !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.locomotion = ""; this.attacking = null; this.active = wanted; }
     for (const [kind, model] of this.models) model.root.visible = kind === this.active;
     const model = this.models.get(this.active);
     if (!model) return;
+    const weapon = this.models.get("rifle")?.root.getObjectByName("weapon");
+    if (weapon) {
+      weapon.visible = !dynamics.hands;
+      if (this.tool) {
+        // In the view's own metres: the rig is scaled, so it cannot sit on the weapon's bones.
+        const root = this.models.get("rifle")!.root;
+        if (this.tool.parent !== root) root.add(this.tool);
+        this.tool.position.set(0.17, -0.74, -0.62);
+        this.tool.rotation.set(0.2, 0, -0.08);
+        this.tool.visible = dynamics.hands && this.toolShown;
+      }
+    }
     // Looking down the sights the gun is held still, without the walk's swing.
     const desired = motion.moving && !motion.airborne && !motion.sliding && !motion.mantling && !motion.climbing && motion.aim < 0.5 ? motion.running ? "run" : "walk" : "idle";
     const next = model.clips.has(desired) ? desired : "idle";
@@ -192,7 +213,7 @@ export class AuthoredViewModel {
     // Aiming steadies the sway to a quarter and brings the sights to the centre of the view.
     const aim = motion.aim, steady = 1 - 0.75 * aim, raw = dynamics.sway;
     const sway = { x: raw.x * steady, y: raw.y * steady, z: raw.z * steady, pitch: raw.pitch * steady, yaw: raw.yaw * steady, roll: raw.roll * steady };
-    model.root.position.set(sway.x + lower * 0.05 - reload * 0.06 + model.aim.x * aim, sway.y - lower * 0.55 - reload * 0.1 + jolt * 0.012 - kick * 0.01 + model.aim.y * aim, sway.z + lower * 0.06 + kick * 0.035 + model.aim.z * aim);
+    model.root.position.set(sway.x + lower * 0.05 - reload * 0.06 + model.aim.x * aim, sway.y + (dynamics.hands ? 0.05 : 0) - lower * 0.55 - reload * 0.1 + jolt * 0.012 - kick * 0.01 + model.aim.y * aim, sway.z + lower * 0.06 + kick * 0.035 + model.aim.z * aim);
     model.root.rotation.set(sway.pitch - lower * 0.6 + reload * 0.1 + jolt * 0.03 + kick * 0.12, sway.yaw + lower * 0.25 - kick * 0.05, sway.roll - lower * 0.3 + reload * 0.32 + kick * 0.08);
   }
   private release(root: Group): void {

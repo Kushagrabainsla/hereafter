@@ -28,7 +28,9 @@ export interface LayoutBox {
 // What a shop's counter holds for a player to eat or drink.
 export type FoodKind = "dumplings" | "pho" | "boba";
 
-export interface MapToggle { id: string; label: string; at: { x: number; y: number; z: number }; open: boolean }
+// verbs are what E does to it when off and when on, for things that are not opened and closed;
+// entity is what it stops working without.
+export interface MapToggle { id: string; label: string; at: { x: number; y: number; z: number }; open: boolean; verbs?: [string, string]; entity?: string }
 
 // What every client must agree on for a map: where players start, where weapons and
 // spare magazines lie and what is solid. How it looks is built from the same definition (see nightMarket.ts).
@@ -37,7 +39,7 @@ export interface MapLayout {
   name: string;
   spawns: { east: number; north: number; heading: number }[];
   // A gun, or spare magazines for one; y is the height of the surface it rests on.
-  pickups: ({ id: string; weapon: "pistol" | "rifle"; item?: "gun" | "magazines"; east: number; north: number; y?: number } | { id: string; item: "food"; food: FoodKind; east: number; north: number; y?: number })[];
+  pickups: ({ id: string; weapon: "pistol" | "rifle"; item?: "gun" | "magazines"; east: number; north: number; y?: number } | { id: string; item: "food"; food: FoodKind; east: number; north: number; y?: number } | { id: string; item: "extinguisher"; east: number; north: number; y?: number })[];
   solids: LayoutBox[];
   toggles: MapToggle[];
 }

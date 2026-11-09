@@ -22,14 +22,14 @@ import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio, type AmbientSource } from "../game/gameAudio";
 import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
-import { armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
+import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
-import { buildNightMarket, nightMarketData, MARKET_SUN } from "./nightMarket";
+import { buildNightMarket, nightMarketData, MARKET_SUN, STOVES } from "./nightMarket";
 import { duskSky } from "./duskSky";
 import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { DOOR_LEAVES } from "./doors";
-import { kitPieces, loadKits } from "./kit";
+import { kitObject, kitPieces, loadKits } from "./kit";
 import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeTarget } from "./physics";
@@ -104,7 +104,7 @@ export interface MapViewer {
   // Which doors and hatches are open, from the shared state.
   setOpen: (open: Record<string, boolean>) => void;
   // The closest thing within reach that the player can open or close.
-  nearestUse: () => { id: string; label: string; open: boolean } | null;
+  nearestUse: () => { id: string; label: string; open: boolean; verb: string } | null;
   // Props another peer owns that this player pushed since the last call, by that peer.
   takeShoves: () => Map<string, PropPush[]>;
   applyShoves: (shoves: PropPush[]) => void;
@@ -132,6 +132,9 @@ export interface MapViewer {
   setRemoteHealth: (peerId: string, health: number) => void;
   // How bad this player's own wounds are, 0 to 1, and another player's leg.
   setFires: (fires: Fire[]) => void;
+  // Whether the player holds an extinguisher, and whether another player does.
+  setTool: (held: boolean) => void;
+  setRemoteTool: (peerId: string, held: boolean) => void;
   setWounds: (leg: number, arm: number) => void;
   setRemoteLeg: (peerId: string, leg: number) => void;
   // Blood falling from another player who is bleeding.
@@ -382,6 +385,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const pickupData = makeWeaponPickups(data);
   const weaponVisuals = new WeaponVisuals(scene, data, pickupData, pieces);
   const authoredViewModel = new AuthoredViewModel(viewCamera);
+  authoredViewModel.setTool(kitObject(pieces.get("extinguisher")));
+  remotePlayers.setToolModel(kitObject(pieces.get("extinguisher")));
   // Pickups and other players use the first-person weapon models once they load.
   void loadWeaponModels().then((models) => {
     weaponVisuals.useModels(models);
@@ -428,7 +433,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let lastLandings = 0;
   // When the player started drawing back a throw, and the weight now in their hands.
   let throwStart = 0, handsHold = 0, armWound = 0;
-  let fires: Fire[] = [];
+  let fires: Fire[] = [], toolHeld = false;
+  const litStoves = (): FlameSpot[] => STOVES.filter((stove) => toggleState[stove.id]).map((stove) => ({ x: stove.at.x, y: stove.at.y, z: stove.at.z, wide: 0.2, deep: stove.long, high: 0.2, gas: true }));
+  const offWall = new Set<string>();
   // What is burning, as flames to draw: a burning object from its feet, and a loose one where it now is.
   const flameSpots = (): FlameSpot[] => fires.map((fire) => {
     const entity = fire.entity ? entities.get(fire.entity) : undefined, shape = entity?.shape;
@@ -510,7 +517,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     if (physics.steps === steps) physics.advance(delta);
     // Losing a grip happens in the physics: a wall in the way, someone else's claim, or the prop
     // being shot apart. Whatever the reason, the hands and the load follow it.
-    const inHands = physics.heldProp()?.mass ?? 0;
+    const inHands = physics.heldProp()?.mass ?? (toolHeld ? TOOL_MASS : 0);
     if (inHands !== handsHold) {
       handsHold = inHands;
       player.setCarried(inHands);
@@ -531,7 +538,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (gait.landingSpeed > 9) events.onHardLanding?.(gait.landingSpeed);
     }
     shotEffects.update(delta);
-    effects.setFlames(fires.length ? flameSpots() : []);
+    effects.setFlames([...(fires.length ? flameSpots() : []), ...litStoves()]);
     effects.update(Math.min(delta, 0.1));
     loot.update(Math.min(delta, 0.1));
     ejecta.update(delta);
@@ -552,7 +559,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch, eye, axes);
     // The sights come up only with a gun ready in hand, and drop for a reload or a switch.
     const dynamics = weaponVisuals.dynamics();
-    player.setAiming(aimWanted && dynamics.active !== "knife" && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
+    player.setAiming(aimWanted && !dynamics.hands && dynamics.active !== "knife" && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
     authoredViewModel.update(delta, player.motion(), dynamics);
     // The crosshair opens with the same spread the leader applies to this player's shots.
     const motion = player.motion(), active = weaponVisuals.dynamics().active;
@@ -645,6 +652,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setTakenPickups(taken) {
       weaponVisuals.setTaken(taken);
       loot.setTaken(taken);
+      // An extinguisher taken off its wall is gone from it until it comes back.
+      for (const { id, item } of makeWeaponPickups(data)) {
+        const gone = taken.includes(id);
+        if (item !== "extinguisher" || gone === offWall.has(id) || entities.destroyed(id)) continue;
+        if (gone) offWall.add(id); else offWall.delete(id);
+        effects.setHidden(id, gone);
+        if (gone) physics.removeEntity(id); else physics.restoreEntity(id);
+      }
     },
     busyHands(seconds) { weaponVisuals.dip(seconds); },
     startRush(seconds) { player.startRush(seconds); },
@@ -761,13 +776,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         else { const id = event.entity; effects.vent(() => physics.propPose(id)?.position ?? null, (event.fuseMs ?? 1600) / 1000); }
         gameAudio.vent(event.position, (event.fuseMs ?? 1600) / 1000);
       }
+      if (event.kind === "spray" && event.position && event.velocity) { effects.spray(event.position, event.velocity); gameAudio.spray(event.position); }
       if (event.kind === "explode" && event.entity) {
         if (event.entity.startsWith("truck:")) truck.burst(event.entity);
         else burstProp(event.entity);
       }
       if (event.kind === "use" && event.entity) {
         const toggle = data.layout.toggles.find((item) => item.id === event.entity);
-        if (toggle) gameAudio.hinge(toggle.at, event.open === true, event.entity.endsWith("hatch"));
+        if (toggle?.verbs) gameAudio.switchClick(toggle.at);
+        else if (toggle) gameAudio.hinge(toggle.at, event.open === true, event.entity.endsWith("hatch"));
         // A kicked door bangs open.
         if (toggle && event.weapon === "knife") gameAudio.kick(toggle.at);
       }
@@ -819,16 +836,18 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       toggleState = { ...toggleDefaults, ...open };
       truck.setOpen(toggleState, toggleDefaults);
       built.doors.setOpen(toggleState);
+      built.lamps.setSwitched("lamp:breaker", toggleState["switch:breaker"] ?? true);
     },
     nearestUse() {
       const eye = camera.position;
-      let best: { id: string; label: string; open: boolean; distance: number } | null = null;
+      let best: { id: string; label: string; open: boolean; verb: string; distance: number } | null = null;
       for (const toggle of data.layout.toggles) {
         // A doorway whose leaves are all blown off has nothing left to open.
         const leaves = DOOR_LEAVES.filter((leaf) => leaf.door.id === toggle.id);
         if (leaves.length && leaves.every((leaf) => entities.destroyed(leaf.id))) continue;
+        if (toggle.entity && entities.destroyed(toggle.entity)) continue;
         const distance = Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z);
-        if (distance <= 2.2 && (!best || distance < best.distance)) best = { id: toggle.id, label: toggle.label, open: toggleState[toggle.id] ?? toggle.open, distance };
+        if (distance <= 2.2 && (!best || distance < best.distance)) { const open = toggleState[toggle.id] ?? toggle.open; best = { id: toggle.id, label: toggle.label, open, verb: toggle.verbs ? toggle.verbs[open ? 1 : 0] : open ? "close" : "open", distance }; }
       }
       return best;
     },
@@ -920,6 +939,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       remotePlayers.setPose(peerId, pose, sentAt);
     },
     setFires(list) { fires = list; },
+    setTool(held) { toolHeld = held; authoredViewModel.showTool(held); },
+    setRemoteTool(peerId, held) { remotePlayers.setTool(peerId, held); },
     setWounds(leg, arm) {
       armWound = arm;
       player.setLegWound(leg);

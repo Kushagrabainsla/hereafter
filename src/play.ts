@@ -2,7 +2,7 @@ import { MARKET_ARENA } from "./world/nightMarket";
 import { createMapViewer, type MapViewer } from "./world/mapViewer";
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
-import { BANDAGE_MS, BLEED_DRIP_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
+import { BANDAGE_MS, BLEED_DRIP_MS, SPRAY_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
 import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
@@ -96,6 +96,7 @@ let lastLocalAttack = 0;
 let lastDryFire = 0;
 let pendingShot = 0;
 let triggerHeld = false;
+let sprayHeld = false;
 // The knife can start its next stroke after this moment.
 let knifeFreeAt = 0;
 // Time to bring a weapon up out of a sprint before it fires.
@@ -105,9 +106,9 @@ const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: numbe
 // Browsers only start audio from a user gesture; every gesture retries until it runs.
 for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventListener(type, () => gameAudio.unlock(), { capture: true, passive: true });
 // Letting go of every button ends firing and aiming, whichever came up last.
-window.addEventListener("pointerup", (event) => { if (event.buttons === 0) { triggerHeld = false; viewer?.setAiming(false); viewer?.releaseThrow(); } });
-window.addEventListener("blur", () => { triggerHeld = false; viewer?.setAiming(false); viewer?.cancelThrow(); });
-document.addEventListener("pointerlockchange", () => { triggerHeld = false; viewer?.cancelThrow(); });
+window.addEventListener("pointerup", (event) => { if (event.buttons === 0) { triggerHeld = false; sprayHeld = false; viewer?.setAiming(false); viewer?.releaseThrow(); } });
+window.addEventListener("blur", () => { triggerHeld = false; sprayHeld = false; viewer?.setAiming(false); viewer?.cancelThrow(); });
+document.addEventListener("pointerlockchange", () => { triggerHeld = false; sprayHeld = false; viewer?.cancelThrow(); });
 window.setInterval(() => {
   if (triggerHeld && document.pointerLockElement && match?.player(selfId)?.active === "rifle") attack();
 }, 16);
@@ -325,8 +326,11 @@ function onMatchChange(state: CombatSnapshot): void {
   healthBar.setAttribute("aria-valuenow", String(player.health));
   healthBar.classList.toggle("low", player.health <= 35);
   healthFill.style.width = `${player.health}%`;
-  weaponName.textContent = WEAPONS[player.active].label;
+  weaponName.textContent = player.powder > 0 ? "Fire extinguisher" : WEAPONS[player.active].label;
   showAmmo(player);
+  if (player.powder > 0) ammoCount.textContent = `${Math.ceil(player.powder)} S OF POWDER`;
+  viewer?.setTool(player.powder > 0);
+  if (player.powder <= 0) sprayHeld = false;
   scoreLabel.textContent = `${player.kills} KILL${player.kills === 1 ? "" : "S"} · ${player.deaths} DEATH${player.deaths === 1 ? "" : "S"}`;
   viewer?.setWeapon(player.active);
   viewer?.setTakenPickups(state.taken);
@@ -341,6 +345,7 @@ function onMatchChange(state: CombatSnapshot): void {
     viewer?.setRemoteHealth(peerId, remote.health);
     viewer?.setRemoteWeapon(peerId, remote.active);
     viewer?.setRemoteLeg(peerId, remote.leg);
+    viewer?.setRemoteTool(peerId, remote.powder > 0);
   }
   deathOverlay.hidden = player.health > 0;
   viewer?.setLocalDead(player.health <= 0);
@@ -386,6 +391,10 @@ function playEvent(event: CombatEvent): void {
   if (event.kind === "pickup" && event.actor === selfId && event.weapon) {
     const gun = event.weapon as GunKind;
     toast(event.item === "magazines" ? `${MAGAZINES_PER_PICKUP} × ${MAGAZINE_LABEL[gun]}s` : event.item === "drop" ? `Took the dropped ${WEAPONS[gun].label.toLowerCase()}` : match?.player(selfId)?.active === gun ? `${WEAPONS[gun].label} · one magazine` : `Took its ${MAGAZINE_LABEL[gun]}`);
+    gameAudio.pickup();
+  }
+  if (event.kind === "pickup" && event.actor === selfId && event.item === "extinguisher") {
+    toast("Hold click to spray at a fire");
     gameAudio.pickup();
   }
   if (event.kind === "pickup" && event.actor === selfId && event.food) {
@@ -570,6 +579,14 @@ function nearestPickup(): { id: string; label: string; full: boolean; idle?: boo
   const candidates: { id: string; east: number; north: number; y: number; label: string; full: boolean; idle?: boolean }[] = [];
   for (const pickup of match.pickups) {
     if (taken.has(pickup.id)) continue;
+    if (pickup.item === "extinguisher") {
+      // Only when looked at, so one on the wall never gets in the way of the door beside it.
+      // And never through the wall it hangs on.
+      const heading = pose.heading * Math.PI / 180, dx = pickup.east - pose.east, dz = pickup.north - pose.north, far = Math.hypot(dx, dz) || 1;
+      const inSight = viewer.clearShot({ origin: { x: pose.east, y: pose.jumpHeight + 1.5, z: pose.north }, direction: { x: dx / far, y: 0, z: dz / far }, distance: Math.max(0, far - 0.25) });
+      if (player.powder <= 0 && state.entities[pickup.id] !== 0 && (dx * Math.sin(heading) + dz * Math.cos(heading)) / far > 0.8 && inSight) candidates.push({ ...pickup, full: false, label: "the fire extinguisher" });
+      continue;
+    }
     if (pickup.item === "food") {
       const food = FOOD[pickup.food], idle = food.heal > 0 && player.health >= FULL_HEALTH;
       candidates.push({ ...pickup, full: false, idle, label: idle ? `You're at full health. ${food.verb === "eat" ? "Eat" : "Drink"} when you're hurt` : `${food.verb} ${food.name} (${food.heal ? `+${food.heal} health` : `faster for ${food.rushSeconds} s`})` });
@@ -593,8 +610,9 @@ function nearestPickup(): { id: string; label: string; full: boolean; idle?: boo
 function attack(stroke: KnifeStroke = "slash"): void {
   if (!viewer || !match || dialogOpen() || ceasefire()) return;
   const player = match.player(selfId);
-  // With both hands on something, the attack is to throw it.
+  // With both hands on something, the attack is to throw it, or to spray.
   if (viewer.holding()) { if (stroke === "slash") viewer.beginThrow(); return; }
+  if ((player?.powder ?? 0) > 0) { if (stroke === "slash" && !sprayHeld) { sprayHeld = true; sprayOnce(); } return; }
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   const weapon = player.active;
   if (weapon !== "knife" && stroke === "stab") return;
@@ -651,6 +669,7 @@ function liftTarget(): ReturnType<MapViewer["liftable"]> {
 // the player is looking at, or opens or closes the nearest door or hatch.
 function interact(): void {
   if (viewer?.holding()) { viewer.putDown(); return; }
+  if ((match?.player(selfId)?.powder ?? 0) > 0) { submit({ kind: "stow" }); return; }
   const pickup = nearestPickup();
   const usable = viewer?.nearestUse();
   const prop = liftTarget();
@@ -678,7 +697,7 @@ function bandage(): void {
 
 function reload(): void {
   const player = match?.player(selfId);
-  if (!player || player.health <= 0 || player.active === "knife" || viewer?.holding()) return;
+  if (!player || player.health <= 0 || player.active === "knife" || viewer?.holding() || player.powder > 0) return;
   if (!player.mags[player.active].length) { toast("No spare magazines. Find some on tables, counters and high ground"); return; }
   submit({ kind: "reload" });
 }
@@ -823,11 +842,21 @@ document.addEventListener("keydown", (event) => {
   else {
     // Reaching for a weapon lets go of whatever the hands hold.
     viewer?.putDown();
+    if ((match?.player(selfId)?.powder ?? 0) > 0) submit({ kind: "stow" });
     const weapon: WeaponKind = key === "1" ? "knife" : key === "2" ? "pistol" : "rifle";
     submit({ kind: "select", weapon });
   }
 });
-document.addEventListener("keyup", (event) => { if (event.key.toLowerCase() === "f") viewer?.releaseThrow(); });
+document.addEventListener("keyup", (event) => { if (event.key.toLowerCase() === "f") { viewer?.releaseThrow(); sprayHeld = false; } });
+
+// While the trigger is held, the extinguisher in hand keeps spraying.
+function sprayOnce(): void {
+  const player = match?.player(selfId);
+  if (!viewer || !player || player.powder <= 0 || player.health <= 0 || dialogOpen()) { sprayHeld = false; return; }
+  const { heading, pitch } = viewer.playerPose();
+  submit({ kind: "spray", aim: { heading, pitch } });
+}
+window.setInterval(() => { if (sprayHeld) sprayOnce(); }, SPRAY_MS);
 
 // Each loose prop is simulated by the peer that first touched it, which shares it 15 times a
 // second while it moves and once more where it comes to rest. Every two seconds the coordinating
@@ -900,14 +929,15 @@ window.setInterval(() => {
   if (!viewer || !match) return;
   if (peerRoom) peerRoom.tickCombat();
   else match.tick();
-  const pickup = nearestPickup(), held = viewer.holding();
-  const prop = held ? null : liftTarget(), lift = prop && !prop.heavy ? prop : null;
+  const pickup = nearestPickup(), held = viewer.holding(), tool = (match.player(selfId)?.powder ?? 0) > 0;
+  const prop = held || tool ? null : liftTarget(), lift = prop && !prop.heavy ? prop : null;
   const usable = lift || (pickup && !pickup.idle) ? null : viewer.nearestUse();
-  pickupHint.hidden = (!held && !pickup && !lift && !usable) || (match.player(selfId)?.health ?? 0) <= 0;
+  pickupHint.hidden = (!held && !tool && !pickup && !lift && !usable) || (match.player(selfId)?.health ?? 0) <= 0;
   if (held) pickupHint.textContent = "Click to throw, hold to throw harder · E to put it down";
+  else if (tool) pickupHint.textContent = "Hold click to spray · E to put it back";
   else if (lift && (!pickup || pickup.idle || pickup.full)) pickupHint.textContent = `Press E to lift ${lift.label} (${lift.mass} kg)`;
   else if (pickup && !(pickup.idle && usable)) pickupHint.textContent = pickup.idle ? pickup.label : pickup.full ? `Your magazine pouches are full` : `Press E to ${pickup.id.startsWith("food-") ? "" : "take "}${pickup.label}`;
-  else if (usable) pickupHint.textContent = `Press E to ${usable.open ? "close" : "open"} ${usable.label}`;
+  else if (usable) pickupHint.textContent = `Press E to ${usable.verb} ${usable.label}`;
   const player = match.player(selfId);
   if (player && (held?.mass ?? 0) !== shownHeld) { shownHeld = held?.mass ?? 0; showAmmo(player); }
   // Others can see a bleeding player leaving blood behind.
@@ -1022,7 +1052,7 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
         else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
       };
       const release = (event: PointerEvent): void => {
-        if (event.button === 0) { triggerHeld = false; viewer?.releaseThrow(); }
+        if (event.button === 0) { triggerHeld = false; sprayHeld = false; viewer?.releaseThrow(); }
         else if (event.button === 2) viewer?.setAiming(false);
       };
       canvas.addEventListener("pointerdown", press);

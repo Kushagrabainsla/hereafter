@@ -68,6 +68,8 @@ export class RemotePlayers {
   private dead = new Set<string>();
   private equipped = new Map<string, WeaponKind>();
   private legWounds = new Map<string, number>();
+  private toolModel: Object3D | null = null;
+  private tools = new Map<string, Object3D>();
   private weaponModels: Map<WeaponKind, Object3D> | null = null;
 
   constructor(private scene: Scene, private data: ArenaData, private models: PlayerModelLibrary, private physics?: PhysicsWorld) {}
@@ -142,6 +144,21 @@ export class RemotePlayers {
     const seen: Record<string, number> = {};
     for (const [peerId, avatar] of this.avatars) if (!this.dead.has(peerId) && avatar.samples.length) seen[peerId] = Math.round(avatar.displayTime);
     return seen;
+  }
+
+  setToolModel(model: Object3D): void { this.toolModel = model; }
+
+  // Whether a player holds an extinguisher, in front of their chest.
+  setTool(peerId: string, held: boolean): void {
+    const avatar = this.avatars.get(peerId);
+    let tool = this.tools.get(peerId);
+    if (held && !tool && avatar && this.toolModel) {
+      tool = this.toolModel.clone(true);
+      tool.position.set(0, 0.85, 0.36);
+      avatar.root.add(tool);
+      this.tools.set(peerId, tool);
+    }
+    if (tool) tool.visible = held;
   }
 
   // How bad a player's leg wound is, 0 to 1, shown in how they walk.
@@ -265,6 +282,7 @@ export class RemotePlayers {
     this.dead.delete(peerId);
     this.equipped.delete(peerId);
     this.legWounds.delete(peerId);
+    this.tools.delete(peerId);
   }
 
   clear(): void {

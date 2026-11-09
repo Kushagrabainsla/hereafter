@@ -148,6 +148,14 @@ export const catchesAt = (material: Material): number | undefined => BURNS[mater
 // How long something takes to burn away; a stall or door has no mass of its own and takes longest.
 export const burnSeconds = (material: Material, mass = 25): number => Math.max(8, Math.min(60, (10 + 2 * mass) * (BURNS[material]?.pace ?? 1)));
 
+// A fire extinguisher off the wall: both hands, ten seconds of powder that puts out what it
+// reaches, a few metres off in a widening cone. It goes back on the wall in time.
+export const POWDER_SECONDS = 10;
+export const TOOL_MASS = 4.5;
+export const SPRAY_MS = 250;
+export const SPRAY_REACH = 5.5;
+export const EXTINGUISHER_RETURN_MS = 45_000;
+
 // Hip-fire spread, as the half-angle of the cone in degrees. Moving, jumping and sliding
 // widen it, crouching steadies it, and sustained fire blooms it until the trigger rests.
 // Aiming down the sights halves it.
@@ -191,7 +199,7 @@ export function deviateAim(aim: { heading: number; pitch: number }, spread: numb
 // height of the surface the item rests on, for the ones on tables, counters, the fire escape
 // and the bar's upper floor.
 interface PickupSpot { id: string; east: number; north: number; y: number }
-export type WeaponPickup = PickupSpot & ({ item: "gun" | "magazines"; weapon: GunKind } | { item: "food"; food: FoodKind });
+export type WeaponPickup = PickupSpot & ({ item: "gun" | "magazines"; weapon: GunKind } | { item: "food"; food: FoodKind } | { item: "extinguisher" });
 
 export function makeWeaponPickups(data: ArenaData): WeaponPickup[] {
   return data.layout.pickups.map((pickup) => ({ item: "gun", y: 0, ...pickup }) as WeaponPickup);
