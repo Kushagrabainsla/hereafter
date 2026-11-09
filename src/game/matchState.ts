@@ -1,6 +1,6 @@
 import { type ArenaData, terrainHeight } from "../world/arena";
 import {
-  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime, burnSeconds, catchesAt, EXTINGUISHER_RETURN_MS, POWDER_SECONDS, SPRAY_MS, SPRAY_REACH,
+  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime, burnSeconds, catchesAt, EXTINGUISHER_RETURN_MS, POWDER_SECONDS, SPRAY_MS, SPRAY_REACH, BURN_DAMAGE, BURN_MS,
   DOUSE_RADIUS, EXPLOSIVE_CATCHES, FIRE_DAMAGE, FIRE_HEAT, FIRE_REACH, FIRE_STEP_MS, FRAG_HEAT, FRAG_LIGHTS, FUEL_HEAT, MAX_FIRES, POOL_MS, POOL_RADIUS, SCRAPS_MS, SCRAPS_RADIUS,
   ARM_WOUND_DAMAGE, BANDAGE_MS, BANDAGES_PER_LIFE, BLEED_DRIP_MS, BLEED_LONGEST_MS, BLEED_MIN_DAMAGE, BLEED_PER_WOUND_MS, LEG_WOUND_DAMAGE,
   EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, KNIFE, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
@@ -44,6 +44,9 @@ export interface CombatPlayer {
   bandages: number;
   // Seconds of powder in the fire extinguisher in their hands, 0 if they hold none.
   powder: number;
+  // Until when on the coordinator's clock they are on fire, 0 if not, and from whose fire.
+  burnUntil: number;
+  burnBy: string;
 }
 
 // A room plays rounds once two players are in the game: a countdown, then a round of five
@@ -154,7 +157,7 @@ export interface LiveGrenade { id: number; actor: string; explodeAt: number; pos
 export interface Fire { entity?: string; position: Vec3; radius: number; until: number; by: string }
 
 export interface CombatSnapshot {
-  version: 12;
+  version: 13;
   revision: number;
   eventSeq: number;
   players: Record<string, CombatPlayer>;
@@ -281,7 +284,7 @@ function validDrop(drop: Drop): boolean {
 
 // Every life starts with only the knife and grenades: guns and ammunition are found.
 function freshPlayer(): CombatPlayer {
-  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "", leg: 0, arm: 0, bleedUntil: 0, bleedBy: "", bandages: BANDAGES_PER_LIFE, powder: 0 };
+  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "", leg: 0, arm: 0, bleedUntil: 0, bleedBy: "", bandages: BANDAGES_PER_LIFE, powder: 0, burnUntil: 0, burnBy: "" };
 }
 
 function validPlayer(player: CombatPlayer): boolean {
@@ -302,7 +305,8 @@ function validPlayer(player: CombatPlayer): boolean {
     && finite(player.leg, player.arm, player.bleedUntil) && player.leg >= 0 && player.leg <= 1 && player.arm >= 0 && player.arm <= 1 && player.bleedUntil >= 0
     && typeof player.bleedBy === "string" && player.bleedBy.length <= 64
     && Number.isInteger(player.bandages) && player.bandages >= 0 && player.bandages <= BANDAGES_PER_LIFE
-    && finite(player.powder) && player.powder >= 0 && player.powder <= POWDER_SECONDS;
+    && finite(player.powder, player.burnUntil) && player.powder >= 0 && player.powder <= POWDER_SECONDS && player.burnUntil >= 0
+    && typeof player.burnBy === "string" && player.burnBy.length <= 64;
 }
 
 const PLAYER_FIELDS = Object.keys(freshPlayer());
@@ -310,7 +314,7 @@ const PLAYER_FIELDS = Object.keys(freshPlayer());
 const checkEvents = (events: CombatEvent[]): CombatEvent[] => events.filter(validEvent).slice(-EVENTS_KEPT).map((event) => structuredClone(event));
 
 function emptySnapshot(): CombatSnapshot {
-  return { version: 12, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, fires: [], round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
+  return { version: 13, revision: 0, eventSeq: 0, players: {}, taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, fires: [], round: { number: 0, phase: "warmup", until: 0, winner: "" }, events: [] };
 }
 
 // The fields of value whose text differs from `before`, which is brought up to date; null if none.
@@ -450,7 +454,7 @@ export class MatchState {
   // Takes a coordinator's whole state. With force it replaces this one whatever their
   // revisions, as when a new coordinator takes over.
   adopt(incoming: CombatSnapshot, force = false): boolean {
-    if (!incoming || incoming.version !== 12 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
+    if (!incoming || incoming.version !== 13 || !Number.isSafeInteger(incoming.revision) || incoming.revision < 0 || !Number.isSafeInteger(incoming.eventSeq)
       || !incoming.players || typeof incoming.players !== "object" || !incoming.entities || SHARED_PARTS.some((key) => !incoming[key]) || !Array.isArray(incoming.events)) return false;
     const morePlayers = Object.keys(incoming.players).length > Object.keys(this.snapshot.players).length;
     if (!force && (incoming.revision < this.snapshot.revision || (incoming.revision === this.snapshot.revision && !morePlayers))) return false;
@@ -769,6 +773,13 @@ export class MatchState {
     this.lastSpray.set(actor, now);
     player.powder = Math.max(0, Math.round((player.powder - SPRAY_MS / 1000) * 100) / 100);
     const ray = shotRay(this.data, { ...pose, ...aim }, "pistol"), eye = ray.origin, d = ray.direction;
+    // Powder puts out a person as readily as a crate.
+    for (const [id, other] of Object.entries(this.snapshot.players)) {
+      const at = this.poses.get(id);
+      if (!other.burnUntil || !at || id === actor) continue;
+      const x = at.east - eye.x, y = terrainHeight(this.data, at.east, at.north) + at.jumpHeight + 1 - eye.y, z = at.north - eye.z, along = x * d.x + y * d.y + z * d.z;
+      if (along > 0 && along < SPRAY_REACH && Math.sqrt(Math.max(0, x * x + y * y + z * z - along * along)) < 0.6 + along * 0.35) { other.burnUntil = 0; other.burnBy = ""; }
+    }
     for (const fire of [...this.snapshot.fires]) {
       const x = fire.position.x - eye.x, y = fire.position.y - eye.y, z = fire.position.z - eye.z, along = x * d.x + y * d.y + z * d.z;
       if (along <= 0 || along > SPRAY_REACH + fire.radius || Math.sqrt(Math.max(0, x * x + y * y + z * z - along * along)) > fire.radius + 0.3 + along * 0.35 || this.world?.walled(eye, fire.position)) continue;
@@ -1000,6 +1011,8 @@ export class MatchState {
       victim.bleedUntil = 0;
       victim.bleedBy = "";
       victim.powder = 0;
+      victim.burnUntil = 0;
+      victim.burnBy = "";
       this.drips.delete(targetId);
       this.dropLoot(targetId, victim, event.cause === "fall" ? undefined : event.from);
       const killer = this.snapshot.players[event.actor];
@@ -1150,7 +1163,8 @@ export class MatchState {
     const seconds = FIRE_STEP_MS / 1000;
     const venting = this.snapshot.grenades.filter((grenade) => grenade.entity && !grenade.smoke);
     const stoves = this.data.layout.toggles.filter((toggle) => toggle.id.startsWith("stove:") && (this.snapshot.open[toggle.id] ?? toggle.open));
-    if (!this.snapshot.fires.length && !venting.length && !this.heat.size && !stoves.length) return false;
+    const aflame = Object.entries(this.snapshot.players).filter(([, player]) => player.burnUntil > 0);
+    if (!this.snapshot.fires.length && !venting.length && !this.heat.size && !stoves.length && !aflame.length) return false;
     const before = this.snapshot.fires.length;
     for (const [id, heat] of this.heat) { if (heat <= 4) this.heat.delete(id); else this.heat.set(id, heat - 4); }
     // A drum or tank venting flame heats what stands around it until it bursts.
@@ -1171,10 +1185,23 @@ export class MatchState {
         const feet = terrainHeight(this.data, pose.east, pose.north) + pose.jumpHeight;
         if (Math.hypot(pose.east - fire.position.x, pose.north - fire.position.z) > fire.radius + 0.3 || feet > fire.position.y + 1.5 || feet + 1.8 < fire.position.y - 1) continue;
         burned.add(id);
-        this.hurt(id, FIRE_DAMAGE, { kind: "hit", actor: this.snapshot.players[fire.by] ? fire.by : id, target: id, cause: "fire", from: fire.position });
+        const player = this.snapshot.players[id];
+        player.burnUntil = now + BURN_MS;
+        player.burnBy = this.snapshot.players[fire.by] ? fire.by : id;
+        this.hurt(id, FIRE_DAMAGE, { kind: "hit", actor: player.burnBy, target: id, cause: "fire", from: fire.position });
       }
     }
-    return before > 0 || this.snapshot.fires.length > 0 || venting.length > 0;
+    // Out of the flames, a burning player goes on burning for a while, and sets light to what
+    // they brush against. Getting down low smothers it twice as fast.
+    for (const [id, player] of aflame) {
+      if (burned.has(id) || player.health <= 0) continue;
+      const pose = this.poses.get(id);
+      if (pose?.crouching) player.burnUntil -= FIRE_STEP_MS;
+      if (now >= player.burnUntil) { player.burnUntil = 0; player.burnBy = ""; continue; }
+      if (pose) this.radiate({ x: pose.east, y: terrainHeight(this.data, pose.east, pose.north) + pose.jumpHeight + 0.9, z: pose.north }, -0.7, undefined, player.burnBy, seconds);
+      this.hurt(id, BURN_DAMAGE, { kind: "hit", actor: player.burnBy, target: id, cause: "fire" });
+    }
+    return before > 0 || this.snapshot.fires.length > 0 || venting.length > 0 || aflame.length > 0;
   }
 
   tick(now = Date.now()): boolean {

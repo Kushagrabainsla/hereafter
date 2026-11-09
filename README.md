@@ -123,6 +123,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - Pick up anything up to 25 kg and throw it. A stool flies and a crate barely leaves your hands, a thrown chair hits like a bullet, and what hits a wall hard enough breaks.
 - Use what's there. Take an extinguisher off the wall and spray a fire out, light a stove, or throw the breaker and put a whole alley in the dark.
 - Make your own door. Two frags knock through the thin walls of the shops, the restaurant and the bar.
+- People are in the world too: sliding crates bounce off bodies and shove them, and anyone caught in flames keeps burning until they get low or someone sprays them.
 - Fire spreads. Burst a fuel drum and the flames work through wood, cardboard and plastic, setting off the next drum, until they burn out or someone shoots an extinguisher.
 - Wounds last. A shot leg limps, a shot arm shakes and reloads slowly, and cuts and bullets bleed until you stop to tie a bandage.
 

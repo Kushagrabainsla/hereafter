@@ -104,6 +104,14 @@ Fire is worked out twice a second by the coordinator and kept in its state (`ste
 
 **What it costs.** Flames are one instanced mesh of up to 170 camera-facing cards. The burning thing nearest the player borrows the explosion's light rather than adding one, so no new light is ever paid for. At a MacBook Pro's Retina size, the same view measured 43.5 to 44.3 FPS with no fire and 43.5 to 44.5 FPS with 24 fires in view, with 6 to 12 more draw calls, on a machine varying by about a frame a second. The coordinator's update during a fire is two small changes a second.
 
+## Bodies
+
+**Bumps.** Loose props moving at 0.4 m/s or more now meet players' bodies instead of passing through them. The peer simulating a prop bounces it off the capsule of every player where that peer sees them, by the two masses, and each player's own peer shoves their body by its share of the momentum. A crate pushed into a player at about 3 m/s stopped there and moved them a few centimetres. Below 3.5 m/s nobody is hurt.
+
+**Catching fire.** Anyone caught in flames goes on burning for 3 s after they get out, losing 3 health every half second, and sets light to what they brush against. Crouching smothers it twice as fast, and another player's extinguisher puts it out at once. Other players see flames on the burning character; the player sees "On fire" in the HUD and the usual damage flash.
+
+**Hands.** While a player holds something in both hands, the first-person view shows empty arms in place of the weapon, using the carbine's arm pose, with the extinguisher in them when that is what they hold.
+
 ## Things to use
 
 **Fire extinguishers.** E at one on a wall, while looking at it, takes it down. It needs both hands, and holds 10 s of powder. Holding the trigger sprays a burst every quarter of a second, in a cone out to 5.5 m; a wall stops it. A burning object goes out after three bursts that reach it and a pool of fuel after six. E puts it back on its wall, and a used one comes back after 45 s. Shooting one on the wall still bursts it, as before.

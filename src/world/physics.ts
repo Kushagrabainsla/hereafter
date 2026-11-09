@@ -58,6 +58,8 @@ const AIM_FLIGHT_SECONDS = 0.6;
 const STRUCK_BODY_MASS = 80;
 const STRUCK_BOUNCE = 0.25;
 const STRUCK_GAP_MS = 600;
+// Slower than this, a loose prop does not noticeably push on a body or bounce off it.
+const BUMP_SPEED = 0.4;
 // Hit zones by height above the feet, as for a bullet (combatRules.ts).
 const HEAD_HEIGHT = 1.45;
 const TORSO_HEIGHT = 0.73;
@@ -148,6 +150,8 @@ export class PhysicsWorld {
   private knocked = new Map<string, number>();
   private speeds = new Map<string, [number, number, number]>();
   private lastPlace = new Map<string, number[]>();
+  // What loose props have done to the player's body since it last looked.
+  private bump = { x: 0, z: 0 };
   private standing = new RAPIER.Capsule(STANDING_HALF_HEIGHT, RADIUS);
   private crouchingBody = new RAPIER.Capsule(CROUCHED_HALF_HEIGHT, RADIUS);
   // Players walk through what they carry, and bullets do not.
@@ -386,6 +390,47 @@ export class PhysicsWorld {
     this.world.step();
     this.noteKnocks();
     this.strikeBodies();
+    this.feelFollowed();
+  }
+
+  // How fast a prop another peer moves is going, from where it was last told to go.
+  private followedVelocity(follow: Followed): Vec3 {
+    if (follow.progress >= 1) return { x: 0, y: 0, z: 0 };
+    const rate = 1 / FOLLOW_SECONDS;
+    return { x: (follow.to[0] - follow.from[0]) * rate, y: (follow.to[1] - follow.from[1]) * rate, z: (follow.to[2] - follow.from[2]) * rate };
+  }
+
+  // Props another peer simulates push this player's body too; the peer simulating one takes
+  // care of its rebound.
+  private feelFollowed(): void {
+    if (!this.followed.size) return;
+    const self = this.body.translation();
+    for (const [id, follow] of this.followed) {
+      const collider = this.entityColliders.get(id), mass = this.entities.get(id)?.mass;
+      if (!collider || !mass) continue;
+      const v = this.followedVelocity(follow);
+      if (Math.hypot(v.x, v.y, v.z) < BUMP_SPEED || Math.hypot(self.x - follow.to[0], self.z - follow.to[2]) > 2) continue;
+      const contact = collider.contactShape(this.crouched ? this.crouchingBody : this.standing, self, IDENTITY, 0.03);
+      if (!contact || contact.distance > 0.03) continue;
+      const at = collider.translation(), nx = self.x - at.x, nz = self.z - at.z, length = Math.hypot(nx, nz) || 1;
+      this.pushBody(nx / length, nz / length, (v.x * nx + v.z * nz) / length, mass);
+    }
+  }
+
+  // A prop running into the player's body shoves it by its share of the momentum, a little more
+  // than that because a body is pushed off its feet more easily than it is moved along.
+  private pushBody(nx: number, nz: number, along: number, mass: number): void {
+    if (along < BUMP_SPEED) return;
+    const speed = 4 * (1 + STRUCK_BOUNCE) * mass / (mass + STRUCK_BODY_MASS) * along;
+    this.bump.x += nx * speed;
+    this.bump.z += nz * speed;
+  }
+
+  takeBump(): { x: number; z: number } | null {
+    if (!this.bump.x && !this.bump.z) return null;
+    const bump = this.bump;
+    this.bump = { x: 0, z: 0 };
+    return bump;
   }
 
   private forget(id: string): void {
@@ -535,7 +580,7 @@ export class PhysicsWorld {
       const body = this.props.get(id), collider = this.entityColliders.get(id), mass = this.entities.get(id)?.mass;
       if (!body || !collider || !mass) continue;
       const v = body.linvel();
-      if (Math.hypot(v.x, v.y, v.z) < STRIKE_SPEED) continue;
+      if (Math.hypot(v.x, v.y, v.z) < BUMP_SPEED) continue;
       if (!everyone) {
         const self = this.body.translation();
         everyone = [...this.targets, { id: "", east: self.x, feet: self.y - this.halfHeight - RADIUS, north: self.z, crouching: this.crouched }];
@@ -551,12 +596,16 @@ export class PhysicsWorld {
         const nearest = Math.max(middle - half, Math.min(middle + half, at.y));
         const nx = target.east - at.x, ny = nearest - at.y, nz = target.north - at.z, length = Math.hypot(nx, ny, nz) || 1;
         const along = (v.x * nx + v.y * ny + v.z * nz) / length;
-        const key = `${id}|${target.id}`;
-        if (along < STRIKE_SPEED || now - (this.struck.get(key) ?? -Infinity) < STRUCK_GAP_MS) continue;
-        this.struck.set(key, now);
+        if (along < BUMP_SPEED) continue;
+        // Whatever its speed, a prop that reaches a body bounces off it by the two masses, and
+        // pushes it; only one going fast enough hurts.
         const loss = along * (1 + STRUCK_BOUNCE) * STRUCK_BODY_MASS / (mass + STRUCK_BODY_MASS) / length;
         body.setLinvel({ x: v.x - nx * loss, y: v.y - ny * loss, z: v.z - nz * loss }, true);
         this.speeds.delete(id);
+        if (target.id === "") { const flat = Math.hypot(nx, nz) || 1; this.pushBody(nx / flat, nz / flat, along, mass); }
+        const key = `${id}|${target.id}`;
+        if (along < STRIKE_SPEED || now - (this.struck.get(key) ?? -Infinity) < STRUCK_GAP_MS) continue;
+        this.struck.set(key, now);
         const height = (Math.min(top, Math.max(target.feet, at.y)) - target.feet) / (target.crouching ? 0.72 : 1);
         this.strikes.push({ prop: id, target: target.id, speed: Math.round(along * 10) / 10, zone: height >= HEAD_HEIGHT ? "head" : height >= TORSO_HEIGHT ? "torso" : "legs", thrown: this.thrown.has(id) });
         break;

@@ -451,6 +451,8 @@ export class PlayerController {
     const falling = -this.verticalSpeed;
     // Shoves ride on top of walking and fade as the feet catch the body.
     const shoveFade = Math.exp(-delta * (this.grounded ? SHOVE_DECAY : 1.5));
+    const bump = this.physics.takeBump();
+    if (bump) this.shove(bump.x, bump.z);
     const position = this.physics.move((this.velocityEast + this.shoveEast) * delta, (this.velocityNorth + this.shoveNorth) * delta, this.verticalSpeed * delta);
     this.shoveEast *= shoveFade;
     this.shoveNorth *= shoveFade;

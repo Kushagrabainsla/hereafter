@@ -136,6 +136,10 @@ export const FUEL_HEAT = 170;
 // Burning fuel spreads this far from a burst drum or tank and burns for this long.
 export const POOL_RADIUS = 2.2;
 export const POOL_MS = 14_000;
+// Someone caught in flames goes on burning for this long after they get out, at this much a
+// step, and twice as fast out if they get down low.
+export const BURN_MS = 3000;
+export const BURN_DAMAGE = 3;
 // What a blast tears apart while it is burning leaves scraps alight where it stood, for a while.
 export const SCRAPS_RADIUS = 0.7;
 export const SCRAPS_MS = 9000;

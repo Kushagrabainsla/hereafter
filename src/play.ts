@@ -287,7 +287,7 @@ function showAmmo(player: CombatPlayer): void {
 // What the player is carrying in the way of wounds, and what they have to treat them with.
 function showWounds(player: CombatPlayer): void {
   const chip = (text: string, kind = ""): HTMLElement => Object.assign(document.createElement("span"), { textContent: text, className: kind });
-  const wounds = [...(player.bleedUntil ? [chip("Bleeding", "bleeding")] : []), ...(player.leg ? [chip(player.leg >= NO_SPRINT_LEG ? "Bad leg" : "Leg wound")] : []), ...(player.arm ? [chip(player.arm >= 0.6 ? "Bad arm" : "Arm wound")] : [])];
+  const wounds = [...(player.burnUntil ? [chip("On fire: get low", "bleeding")] : []), ...(player.bleedUntil ? [chip("Bleeding", "bleeding")] : []), ...(player.leg ? [chip(player.leg >= NO_SPRINT_LEG ? "Bad leg" : "Leg wound")] : []), ...(player.arm ? [chip(player.arm >= 0.6 ? "Bad arm" : "Arm wound")] : [])];
   const text = wounds.map((wound) => wound.textContent).join();
   if (woundRow.dataset.shown !== text) { woundRow.dataset.shown = text; woundRow.replaceChildren(...wounds); }
   woundRow.hidden = !wounds.length || player.health <= 0;
@@ -336,6 +336,7 @@ function onMatchChange(state: CombatSnapshot): void {
   viewer?.setTakenPickups(state.taken);
   viewer?.setOpen(state.open);
   viewer?.setFires(state.fires);
+  viewer?.setBurning(Object.entries(state.players).filter(([id, other]) => id !== selfId && other.burnUntil > 0 && other.health > 0).map(([id]) => id));
   // Nobody keeps hold of something that has caught fire.
   const held = viewer?.holding();
   if (held && state.fires.some((fire) => fire.entity === held.id)) { viewer?.putDown(); toast("It caught fire"); }

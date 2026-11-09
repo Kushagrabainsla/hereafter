@@ -132,6 +132,7 @@ export interface MapViewer {
   setRemoteHealth: (peerId: string, health: number) => void;
   // How bad this player's own wounds are, 0 to 1, and another player's leg.
   setFires: (fires: Fire[]) => void;
+  setBurning: (peers: string[]) => void;
   // Whether the player holds an extinguisher, and whether another player does.
   setTool: (held: boolean) => void;
   setRemoteTool: (peerId: string, held: boolean) => void;
@@ -433,7 +434,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let lastLandings = 0;
   // When the player started drawing back a throw, and the weight now in their hands.
   let throwStart = 0, handsHold = 0, armWound = 0;
-  let fires: Fire[] = [], toolHeld = false;
+  let fires: Fire[] = [], toolHeld = false, burning: string[] = [];
+  const burningPeople = (): FlameSpot[] => burning.flatMap((id) => { const at = remotePlayers.position(id); return at ? [{ x: at.x, y: at.y + 0.1, z: at.z, wide: 0.22, deep: 0.22, high: 1.7 }] : []; });
   const litStoves = (): FlameSpot[] => STOVES.filter((stove) => toggleState[stove.id]).map((stove) => ({ x: stove.at.x, y: stove.at.y, z: stove.at.z, wide: 0.2, deep: stove.long, high: 0.2, gas: true }));
   const offWall = new Set<string>();
   // What is burning, as flames to draw: a burning object from its feet, and a loose one where it now is.
@@ -538,7 +540,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (gait.landingSpeed > 9) events.onHardLanding?.(gait.landingSpeed);
     }
     shotEffects.update(delta);
-    effects.setFlames([...(fires.length ? flameSpots() : []), ...litStoves()]);
+    effects.setFlames([...(fires.length ? flameSpots() : []), ...burningPeople(), ...litStoves()]);
     effects.update(Math.min(delta, 0.1));
     loot.update(Math.min(delta, 0.1));
     ejecta.update(delta);
@@ -939,6 +941,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       remotePlayers.setPose(peerId, pose, sentAt);
     },
     setFires(list) { fires = list; },
+    setBurning(peers) { burning = peers; },
     setTool(held) { toolHeld = held; authoredViewModel.showTool(held); },
     setRemoteTool(peerId, held) { remotePlayers.setTool(peerId, held); },
     setWounds(leg, arm) {
