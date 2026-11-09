@@ -266,7 +266,7 @@ export class WorldEffects {
     pool.spawn(point, normal, style === "sparks" ? 9 : 7, style, this.floor(point), 0.7);
     if (style === "dust") this.solid.spawn(point, normal, 3, "dust", this.floor(point), 1.2);
     if (material === "flesh" || material === "glass") return;
-    const size = { wood: 0.05, timber: 0.06, "metal-thin": 0.035, "metal-solid": 0.03, plastic: 0.04, cardboard: 0.045, concrete: 0.07, brick: 0.065, ground: 0.09, rubber: 0.03 }[material as Exclude<Material, "flesh" | "glass" | "boundary">] ?? 0.05;
+    const size = { wood: 0.05, timber: 0.06, "metal-thin": 0.035, "metal-solid": 0.03, plastic: 0.04, cardboard: 0.045, concrete: 0.07, brick: 0.065, ground: 0.09, rubber: 0.03, masonry: 0.07 }[material as Exclude<Material, "flesh" | "glass" | "boundary">] ?? 0.05;
     this.decal(point, normal, exit ? size * 1.3 : size, material.startsWith("metal") ? 0x9aa0a0 : material === "wood" || material === "timber" ? 0xc8a070 : 0xffffff);
   }
 
@@ -315,6 +315,12 @@ export class WorldEffects {
         this.solid.spawn(at, up, 12, "chunks", floor, 1.0);
         gameAudio.impact(entity.material, at);
       }
+    } else if (entity.kind === "wall") {
+      // A section of wall coming down: brick flying both ways, then a cloud of dust that hangs.
+      this.solid.spawn(at, up, 60, "chunks", floor, 1.5);
+      this.solid.spawn(at, up, 50, "dust", floor, 1.6);
+      for (let i = 0; i < 5; i += 1) this.puff({ x: at.x, y: 0.4 + i * 0.45, z: at.z + (Math.random() - 0.5) * 1.6 }, 2.2 + Math.random(), 2.6 + Math.random() * 1.4, 0.3, 0x9a9184, 0.7);
+      gameAudio.crumble(at);
     } else if (entity.kind === "extinguisher") {
       this.glow.spawn(at, up, 6, "sparks", floor, 0.8);
     } else if (entity.kind === "pipe") {

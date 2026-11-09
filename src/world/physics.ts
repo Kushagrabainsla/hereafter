@@ -931,7 +931,7 @@ export class PhysicsWorld {
     if (distance < 0.01) return false;
     return this.world.castRay(new RAPIER.Ray(a, { x: dx / distance, y: dy / distance, z: dz / distance }), distance, true, undefined, undefined, this.collider, undefined, (collider) => {
       const tag = this.tags.get(collider.handle);
-      return !!tag && !tag.entity && tag.material !== "ground" && tag.material !== "boundary";
+      return !!tag && (!tag.entity || tag.material === "masonry") && tag.material !== "ground" && tag.material !== "boundary";
     }) !== null;
   }
 

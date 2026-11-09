@@ -1,5 +1,6 @@
 """Effects: the debris that flies off what is shot or blown up, bullet holes and the markers
-over pickups. Built into public/models/effects.glb by scripts/assets/build.py.
+over pickups, and what is left of a wall a blast knocked through. Built into
+public/models/effects.glb by scripts/assets/build.py.
 
 The debris pieces fit a 1 m box centred on the origin, and the game scales each copy to the
 particle's size (stretching splinters and sparks along their length), colouring it per copy:
@@ -11,7 +12,9 @@ particle's size (stretching splinters and sparks along their length), colouring 
 bullet_hole faces -Y and is 1 m across; the game scales it to the hole and tints its rim. Its
 crater runs 6 cm toward +Y, into the surface it is set on. marker_ring lies flat, 1 m in
 radius; marker_beam rises 1.7 m from z = 0. Their glow_* faces take the game's own glowing
-materials.
+materials. breach_rim is the broken brick round a hole 2 m wide along X and 2.4 m tall, in a wall
+30 cm thick along Y, standing on z = 0, and breach_rubble what fell out of it; the game stretches
+both to each hole.
 """
 
 import math
@@ -20,7 +23,7 @@ import random
 import bmesh
 from mathutils import Matrix, Vector
 
-from lib import Piece, hull, join, material, mesh_object, prism, ring
+from lib import Piece, box, hull, join, material, mesh_object, prism, ring, turned_box
 
 
 def materials():
@@ -31,6 +34,9 @@ def materials():
     material("fx_hole_rim", 0x6c665e, 0.0, 1.0)
     material("glow_marker", 0x59d3d0, 0.35, 0.34)
     material("glow_beam", 0x5bd8d6, 0.0, 0.5)
+    material("fx_brick", 0x8a4f3a, 0.0, 0.95)
+    material("fx_brick_dark", 0x62392c, 0.0, 0.95)
+    material("fx_mortar", 0x9b9488, 0.0, 1.0)
 
 
 def debris_chip():
@@ -144,6 +150,45 @@ def marker_beam():
     return mesh_object("marker_beam", bm, "glow_beam")
 
 
+def breach_rim():
+    """Broken brick round a hole: courses of bricks standing out by different amounts up both
+    sides and across the top, each reaching back over the wall so the cut edge never shows."""
+    rng = random.Random(21)
+    half_w, height, half_d, course = 1.0, 2.4, 0.17, 0.2
+    parts = []
+
+    def brick(x0, x1, z0, z1):
+        mat = rng.choice(("fx_brick", "fx_brick", "fx_brick_dark", "fx_mortar"))
+        parts.append(box("brick", x0, x1, -half_d * rng.uniform(0.6, 1.0), half_d * rng.uniform(0.6, 1.0), z0, z1, mat))
+
+    z = 0.0
+    while z < height:
+        for side in (-1, 1):
+            brick(*sorted((side * (half_w + 0.1), side * (half_w - rng.uniform(0.08, 0.32)))), z, z + course)
+            if rng.random() < 0.5:
+                brick(*sorted((side * (half_w - 0.05), side * (half_w - rng.uniform(0.3, 0.46)))), z + 0.02, z + course - 0.02)
+        z += course
+    x = -half_w
+    while x < half_w:
+        length = rng.uniform(0.18, 0.34)
+        brick(x, min(half_w, x + length), height - rng.uniform(0.08, 0.3), height + 0.1)
+        x += length
+    return join(parts, "breach_rim")
+
+
+def breach_rubble():
+    """What fell out of the wall: broken bricks heaped along the hole, deepest in the middle."""
+    rng = random.Random(22)
+    parts = []
+    for _ in range(46):
+        x, y = rng.uniform(-1.1, 1.1), max(-0.8, min(0.8, rng.gauss(0, 0.36)))
+        lift = max(0.0, 0.3 - abs(y) * 0.55) * rng.uniform(0.3, 1.0)
+        size = (rng.uniform(0.1, 0.26), rng.uniform(0.07, 0.14), rng.uniform(0.05, 0.1))
+        turn = (rng.uniform(-0.7, 0.7), rng.uniform(-0.7, 0.7), rng.uniform(0, 3.1))
+        parts.append(turned_box("chunk", size, (x, y, lift + size[2] / 2), turn, rng.choice(("fx_brick", "fx_brick_dark", "fx_mortar"))))
+    return join(parts, "breach_rubble")
+
+
 PIECES = [
     Piece("debris_chip", debris_chip, 40, None, None, "Chips of stone, plaster, soil and flesh."),
     Piece("debris_splinter", debris_splinter, 40, None, None, "Wood splinters, stretched along Y."),
@@ -153,4 +198,6 @@ PIECES = [
     Piece("bullet_hole", bullet_hole, 60, None, None, "Every bullet hole and blast scorch, scaled and tinted."),
     Piece("marker_ring", marker_ring, 400, (2.08, 2.08, 0.08), "center", "Round loose magazines and dropped guns."),
     Piece("marker_beam", marker_beam, 64, (0.76, 0.76, 1.7), "base", "Over gun pickups.", 60),
+    Piece("breach_rim", breach_rim, 900, None, None, "Broken brick round a wall a blast knocked through."),
+    Piece("breach_rubble", breach_rubble, 600, None, None, "The heap of brick under it."),
 ]

@@ -3,7 +3,7 @@
 
 export type Material =
   | "glass" | "wood" | "timber" | "metal-thin" | "metal-solid" | "plastic" | "cardboard"
-  | "concrete" | "brick" | "ground" | "flesh" | "boundary" | "rubber";
+  | "concrete" | "brick" | "ground" | "flesh" | "boundary" | "rubber" | "masonry";
 
 export interface MaterialRule {
   // Penetration power a bullet loses per metre of this material. A pistol round starts
@@ -32,6 +32,8 @@ export const MATERIALS: Record<Material, MaterialRule> = {
   boundary: { resistance: 0, bullet: 0, blast: 0, impact: "dust" },
   // Tyres: thick rubber over steel belts, enough to stop a pistol round.
   rubber: { resistance: 4, bullet: 1, blast: 0.7, impact: "puff" },
+  // The thin walls that can be knocked through: rounds stop in them and only chip at them.
+  masonry: { resistance: 12, bullet: 0.12, blast: 1, impact: "dust" },
 };
 
 // Starting penetration power per weapon; the knife never passes through anything.

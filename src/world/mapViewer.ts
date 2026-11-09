@@ -36,6 +36,7 @@ import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeT
 import { EntityRegistry } from "./entities";
 import { WorldEffects, type FlameSpot } from "./worldEffects";
 import { FUEL_DRUM, FURNITURE, loadPropModels, PROP_LABEL, PropViews } from "./props";
+import { aroundBreach, BreachViews } from "./breaches";
 import { type PropPush, type PropState } from "../network/peerRoom";
 
 export type MapState = "loading" | "ready" | "error";
@@ -289,7 +290,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   if (renderer.domElement.parentElement !== container) container.appendChild(renderer.domElement);
   await step("physics");
   const physics = new PhysicsWorld(data, arena);
-  for (const solid of data.layout.solids) physics.addBox(solid.half, solid.center, solid.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, solid.material);
+  for (const solid of data.layout.solids) for (const piece of aroundBreach(solid)) physics.addBox(piece.half, piece.center, piece.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, piece.material);
   for (const entity of entities.all()) physics.addEntity(entity);
   for (const [id, swings] of Object.entries(TRUCK_SWINGS)) for (const swing of swings) physics.addMover(`${id}:${swing.node}`, swing.half, "metal-thin");
   // Door leaves swing with their colliders, which carry their entity so rounds wear them down.
@@ -408,6 +409,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     ejecta.ejectCase(gun, port, right, forward, eyeVelocity);
   };
   const effects = new WorldEffects(scene, data, refs, () => camera.position, groups, pieces);
+  const breaches = new BreachViews(scene, built.surfaces, pieces);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
   const combatWorld: CombatWorld = {
     clearShot: (ray) => physics.clearShot(ray),
@@ -664,6 +666,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           const stallLamp = entity.kind === "stall" ? `lamp:${entity.id}` : "";
           if (stallLamp && (health[stallLamp] ?? 1) > 0) { built.lamps.setBroken(stallLamp, false); physics.restoreEntity(stallLamp); }
           if (entity.kind === "prop") propViews.setVisible(entity.id, true);
+          if (entity.kind === "wall") breaches.setOpen(entity.id, false);
         }
       }
       if (!Object.keys(health).length) entities.resetHealth();
@@ -679,6 +682,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         physics.removeEntity(entity.id);
         effects.destroy(at ? { ...entity, center: at } : entity);
         if (entity.kind === "prop") propViews.setVisible(entity.id, false);
+        if (entity.kind === "wall") breaches.setOpen(entity.id, true);
         if (entity.kind === "tyre") truck.setFlat(entity.id, true);
         if (entity.kind === "lamp") built.lamps.setBroken(entity.id, true);
         if (entity.kind === "door") physics.setMoverEnabled(entity.id, false);

@@ -106,8 +106,38 @@
     "glow_beam"
    ],
    "notes": "Over gun pickups."
+  },
+  "breach_rim": {
+   "triangles": 528,
+   "budget": 900,
+   "size": [
+    2.2,
+    0.335,
+    2.5
+   ],
+   "materials": [
+    "fx_brick",
+    "fx_brick_dark",
+    "fx_mortar"
+   ],
+   "notes": "Broken brick round a wall a blast knocked through."
+  },
+  "breach_rubble": {
+   "triangles": 552,
+   "budget": 600,
+   "size": [
+    2.333,
+    1.412,
+    0.434
+   ],
+   "materials": [
+    "fx_brick",
+    "fx_brick_dark",
+    "fx_mortar"
+   ],
+   "notes": "The heap of brick under it."
   }
  },
- "triangles": 578,
- "bytes": 26640
+ "triangles": 1658,
+ "bytes": 89192
 }

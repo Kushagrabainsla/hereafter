@@ -30,7 +30,7 @@ const BANK = {
 
 const IMPACT_SOUND: Record<Material, SoundName | null> = {
   glass: "impact-glass", wood: "impact-wood", timber: "impact-wood", "metal-thin": "impact-metal", "metal-solid": "impact-metal",
-  plastic: "impact-soft", cardboard: "impact-soft", concrete: "bullet-impact", brick: "bullet-impact", ground: "bullet-impact", flesh: null, boundary: null, rubber: "impact-soft",
+  plastic: "impact-soft", cardboard: "impact-soft", concrete: "bullet-impact", brick: "bullet-impact", ground: "bullet-impact", flesh: null, boundary: null, rubber: "impact-soft", masonry: "bullet-impact",
 };
 type SoundName = keyof typeof BANK;
 

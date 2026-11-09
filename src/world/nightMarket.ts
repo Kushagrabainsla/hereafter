@@ -11,6 +11,7 @@ import { type Material } from "./materials";
 import { type InstanceRef, type WorldEntity } from "./entities";
 import { type SurfaceTextures } from "./surfaceTextures";
 import { FUEL_DRUM, FURNITURE, propEntity, type PropModel } from "./props";
+import { BREACH_ENTITIES } from "./breaches";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
 import { Lamps, type LampPart } from "./lamps";
@@ -252,7 +253,7 @@ for (const [x, z] of [[2.2, -22.6], [4.3, -22.6], [3.2, -18.25]]) {
 }
 // Fire extinguishers on walls: shot, they burst into a cloud of powder. [wall, surface, along, height]
 const EXTINGUISHERS: [Face, number, number, number][] = [
-  ["px", -15, 13.6, 1.05], ["pz", -2, 18.5, 0.9], ["nx", 8.19, -13.95, 0.9], ["px", 8.5, 19.3, 0.9], ["nx", 17, -11.8, 0.9], ["nx", 0.5, 5.2, 0.9],
+  ["px", -15, 13.6, 1.05], ["pz", -2, 18.5, 0.9], ["nx", 8.19, -12.1, 0.9], ["px", 8.5, 21.3, 0.9], ["nx", 17, -11.8, 0.9], ["nx", 0.5, 5.2, 0.9],
 ];
 // The key lights used where the renderer cannot cluster many lights (WebGL 2).
 const pointLights: [number, number, number, number, number][] = [
@@ -1063,7 +1064,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   let last = 0;
   return {
-    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes, stalls: stallViews, wrecks,
+    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES, ...BREACH_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes, stalls: stallViews, wrecks,
     light(manyLights) {
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
       const points = list.map(([x, y, z, color, intensity, distance]) => {
