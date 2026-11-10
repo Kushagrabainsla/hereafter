@@ -1,8 +1,7 @@
 import {
-  AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, MeshSSSNodeMaterial, MeshStandardMaterial, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3,
+  AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3,
   type AnimationAction,
 } from "three/webgpu";
-import { clamp, dot, float, materialColor, materialRoughness, mix, smoothstep, vec3 } from "three/tsl";
 import { loadWeaponFile } from "./weaponModels";
 import { type KnifeStroke, type WeaponKind } from "./combatRules";
 import { type PlayerMotion } from "./playerController";
@@ -27,45 +26,12 @@ const SIGHTS: Record<WeaponKind, { height: number; back: number }> = { knife: { 
 interface Framing { x: number; y: number; z: number; fov: number; aimFov: number }
 const FRAMING: Record<WeaponKind, Framing> = {
   rifle: { x: 0.015, y: 0.035, z: 0.08, fov: 44, aimFov: 52 },
-  pistol: { x: -0.04, y: 0.05, z: 0.04, fov: 45, aimFov: 52 },
+  pistol: { x: 0.02, y: 0.035, z: -0.02, fov: 47, aimFov: 52 },
   knife: { x: -0.05, y: 0.06, z: 0, fov: 50, aimFov: 50 },
 };
 // Empty hands on something carried, or an extinguisher, want more of the view.
 const HANDS_FRAMING: Framing = { x: 0.02, y: 0.02, z: 0.07, fov: 46, aimFov: 46 };
 const BASE_FOV = 75;
-
-// Skin and cloth from the one arm texture. Skin is told apart by colour: it is redder than
-// it is green, where the gloves, sleeves and watch strap are grey or grey-green. Cloth gets
-// a soft sheen at grazing angles and stays rough; skin is smoother with a faint sheen of
-// fine hair, and light passing through thin skin comes out red, so fingers and the edge of
-// the forearm glow when a lamp is behind them.
-function realisticArms(source: MeshStandardMaterial): MeshSSSNodeMaterial {
-  const material = new MeshSSSNodeMaterial();
-  material.name = source.name;
-  material.map = source.map;
-  material.normalMap = source.normalMap;
-  material.normalScale.copy(source.normalScale).multiplyScalar(1.35);
-  material.roughnessMap = source.roughnessMap;
-  material.roughness = source.roughness;
-  material.metalness = 0;
-  const color = materialColor;
-  const skin = smoothstep(0.045, 0.11, color.r.sub(color.g)).mul(smoothstep(0.04, 0.1, color.r));
-  // The painted skin is far more saturated than real skin, which reads as orange plastic
-  // under the market's warm lamps: pull it part way toward its own brightness.
-  const luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  material.colorNode = mix(color, mix(vec3(luma), color, 0.8).mul(0.88), skin);
-  material.roughnessNode = mix(clamp(materialRoughness.mul(1.1), 0.62, 1), float(0.6), skin);
-  material.sheenNode = mix(vec3(0.3, 0.31, 0.28), vec3(0.05, 0.035, 0.03), skin);
-  material.sheenRoughnessNode = mix(float(0.8), float(0.5), skin);
-  material.specularIntensityNode = mix(float(0.22), float(0.35), skin);
-  material.thicknessColorNode = vec3(1, 0.3, 0.18).mul(skin);
-  material.thicknessDistortionNode = float(0.18);
-  material.thicknessAmbientNode = float(0);
-  material.thicknessAttenuationNode = float(0.55);
-  material.thicknessPowerNode = float(3);
-  material.thicknessScaleNode = float(5);
-  return material;
-}
 
 // Each GLB contains arms + weapon authored together in camera-local coordinates with
 // idle, walk, run and fire clips, and slash and stab for the knife (see
@@ -100,11 +66,6 @@ export class AuthoredViewModel {
             // Fingers and the weapon shade each other under the key light.
             object.castShadow = true;
             object.receiveShadow = true;
-            if (object.name === "arms" || object.parent?.name === "arms") {
-              const materials = Array.isArray(object.material) ? object.material : [object.material];
-              const upgraded = materials.map((material) => material.name === "arms" && material instanceof MeshStandardMaterial ? realisticArms(material) : material);
-              object.material = Array.isArray(object.material) ? upgraded : upgraded[0];
-            }
             for (const material of Array.isArray(object.material) ? object.material : [object.material]) { material.depthTest = true; material.depthWrite = true; }
           }
         });

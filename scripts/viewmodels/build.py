@@ -26,24 +26,21 @@ import bpy
 import numpy as np
 from mathutils import Euler, Matrix, Quaternion, Vector
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gloves import PALETTES, build_gloves, select_only  # noqa: E402
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 SRC = os.path.join(ROOT, "assets-src", "viewmodels")
 FPS = 24
 ATTACK_SLOW = 2.5
 # Catmull-Clark levels applied to the arms: the source avatar's hands are low-poly.
 SUBDIVISIONS = 1
-# Side of the packed arm texture: each arm gets half its width at the atlas's own detail.
-ARM_TEXTURE = 1200
 ARM_BONE_KEYS = (" UpperArm", " Forearm", " Hand", " Finger")
 KEEP_BONES = {"Bip01 Pelvis", "Bip01 Spine", "Bip01 Spine1", "Bip01 Spine2", "Bip01 Neck", "Bip01 L Clavicle", "Bip01 R Clavicle"}
 FINGERS = {"thumb": 0, "index": 1, "middle": 2, "ring": 3, "pinky": 4}
 # The bone that carries the hand's turn up the forearm, and how far along the forearm it starts.
 TWIST = "Bip01 {} Forearm Twist"
 TWIST_FROM = 0.25
-
-# Sleeve insignia in the 2048 px body atlas (x, y from top, width, height, source dx):
-# the rectangle is replaced by the fabric dx pixels to its side.
-ERASE_PATCHES = [(275, 1020, 158, 190, -158), (1590, 1053, 152, 158, 152)]
 
 RAD = math.radians
 
@@ -126,53 +123,6 @@ WEAPONS = {
 
 def log(*args):
     print("[viewmodel]", *args, flush=True)
-
-
-def select_only(objs, active=None):
-    bpy.ops.object.select_all(action="DESELECT")
-    for o in objs:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = active or objs[0]
-
-
-def image_to_np(img):
-    w, h = img.size
-    a = np.empty(w * h * 4, dtype=np.float32)
-    img.pixels.foreach_get(a)
-    return a.reshape(h, w, 4)
-
-
-def np_to_image(name, a, srgb=True):
-    h, w = a.shape[:2]
-    img = bpy.data.images.new(name, w, h, alpha=False)
-    img.colorspace_settings.name = "sRGB" if srgb else "Non-Color"
-    img.pixels.foreach_set(np.ascontiguousarray(a, dtype=np.float32).ravel())
-    img.pack()
-    return img
-
-
-def resample(a, w, h):
-    """Resize a float RGBA array with Blender's image scaler."""
-    tmp = np_to_image("tmp_resample", a, srgb=False)
-    tmp.scale(w, h)
-    out = image_to_np(tmp)
-    bpy.data.images.remove(tmp)
-    return out
-
-
-def load_tga(path):
-    img = bpy.data.images.load(path)
-    a = image_to_np(img)
-    bpy.data.images.remove(img)
-    return a
-
-
-def erase_patches(a):
-    H = a.shape[0]
-    for x, y, w, h, dx in ERASE_PATCHES:
-        r0, r1 = H - (y + h), H - y
-        a[r0:r1, x:x + w] = a[r0:r1, x + dx:x + dx + w]
-    return a
 
 
 def frame_from_axes(y_axis, z_axis):
@@ -395,123 +345,6 @@ def add_twist_bones(arm, mesh):
             twist_group.add([v.index], weight * share, "REPLACE")
     for pb in arm.pose.bones:
         pb.rotation_mode = "QUATERNION"
-
-
-def build_arm_textures(mesh):
-    """Pack both arms' atlas islands into one 1024 px texture and the watch into its own."""
-    me = mesh.data
-    left = left_weights(mesh)
-    uv = me.uv_layers.active.data
-    body_index = next(i for i, m in enumerate(me.materials) if m and m.name == "sm004_body")
-    equip_index = next(i for i, m in enumerate(me.materials) if m and m.name == "sm004_equipment")
-    boxes = {"L": [[1, 1], [0, 0]], "R": [[1, 1], [0, 0]]}
-    watch = [[1, 1], [0, 0]]
-    for p in me.polygons:
-        if p.material_index == body_index:
-            side = "L" if np.mean([left[i] for i in p.vertices]) > 0.5 else "R"
-            box = boxes[side]
-        elif p.material_index == equip_index:
-            box = watch
-        else:
-            continue
-        for li in p.loop_indices:
-            u, v = uv[li].uv
-            box[0][0], box[0][1] = min(box[0][0], u), min(box[0][1], v)
-            box[1][0], box[1][1] = max(box[1][0], u), max(box[1][1], v)
-    log("uv boxes", {k: [[round(x, 3) for x in b] for b in v] for k, v in boxes.items()}, "watch", watch)
-    rb = os.path.join(SRC, "rocketbox")
-    color = erase_patches(load_tga(os.path.join(rb, "sm004_body_color_acu.tga")))
-    normal = erase_patches(load_tga(os.path.join(rb, "sm004_body_normal.tga")))
-    spec = erase_patches(load_tga(os.path.join(rb, "sm004_body_specular.tga")))
-    H, W = color.shape[:2]
-    margin = 3.0 / W
-    v0 = max(0.0, min(boxes["L"][0][1], boxes["R"][0][1]) - margin)
-    v1 = min(1.0, max(boxes["L"][1][1], boxes["R"][1][1]) + margin)
-    cols = {}
-    for side in ("R", "L"):
-        u0 = max(0.0, boxes[side][0][0] - margin)
-        u1 = min(1.0, boxes[side][1][0] + margin)
-        cols[side] = (u0, u1)
-    size = ARM_TEXTURE
-    log("arm crops in source pixels", {side: (round((cols[side][1] - cols[side][0]) * W), round((v1 - v0) * H)) for side in cols})
-    packed = {}
-    for name, src in (("color", color), ("normal", normal), ("spec", spec)):
-        out = np.zeros((size, size, 4), np.float32)
-        for k, side in enumerate(("R", "L")):
-            u0, u1 = cols[side]
-            crop = src[int(v0 * H):int(v1 * H), int(u0 * W):int(u1 * W)]
-            out[:, k * size // 2:(k + 1) * size // 2] = resample(crop, size // 2, size)
-        packed[name] = out
-    rough = packed["spec"].copy()
-    rough[..., :3] = np.clip(0.92 - 0.55 * packed["spec"][..., :1], 0.35, 0.95)
-    rough[..., 3] = 1
-    images = {
-        "color": np_to_image("arms_color", packed["color"], True),
-        "normal": np_to_image("arms_normal", packed["normal"], False),
-        "rough": np_to_image("arms_rough", resample(rough, size // 2, size // 2), False),
-    }
-    # watch crop from the equipment atlas at source resolution
-    eq_color = load_tga(os.path.join(rb, "sm004_equipment_color_acu.tga"))
-    eq_normal = load_tga(os.path.join(rb, "sm004_equipment_normal.tga"))
-    eh, ew = eq_color.shape[:2]
-    wm = 2.0 / ew
-    wu0, wv0 = max(0.0, watch[0][0] - wm), max(0.0, watch[0][1] - wm)
-    wu1, wv1 = min(1.0, watch[1][0] + wm), min(1.0, watch[1][1] + wm)
-    wsl = (slice(int(wv0 * eh), int(wv1 * eh)), slice(int(wu0 * ew), int(wu1 * ew)))
-    wimages = {
-        "color": np_to_image("watch_color", np.ascontiguousarray(eq_color[wsl]), True),
-        "normal": np_to_image("watch_normal", np.ascontiguousarray(eq_normal[wsl]), False),
-    }
-    # remap UVs
-    for p in me.polygons:
-        if p.material_index == body_index:
-            side = "L" if np.mean([left[i] for i in p.vertices]) > 0.5 else "R"
-            u0, u1 = cols[side]
-            base = 0.0 if side == "R" else 0.5
-            for li in p.loop_indices:
-                u, v = uv[li].uv
-                uv[li].uv = (base + (u - u0) / (u1 - u0) * 0.5, (v - v0) / (v1 - v0))
-        elif p.material_index == equip_index:
-            for li in p.loop_indices:
-                u, v = uv[li].uv
-                uv[li].uv = ((u - wu0) / (wu1 - wu0), (v - wv0) / (wv1 - wv0))
-    # materials
-    def make_material(name, imgs, roughness=0.5):
-        mat = bpy.data.materials.new(name)
-        mat.use_nodes = True
-        nt = mat.node_tree
-        bsdf = nt.nodes["Principled BSDF"]
-        bsdf.inputs["Metallic"].default_value = 0.0
-        bsdf.inputs["Roughness"].default_value = roughness
-        tex = nt.nodes.new("ShaderNodeTexImage")
-        tex.image = imgs["color"]
-        nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-        ntex = nt.nodes.new("ShaderNodeTexImage")
-        ntex.image = imgs["normal"]
-        nmap = nt.nodes.new("ShaderNodeNormalMap")
-        nt.links.new(ntex.outputs["Color"], nmap.inputs["Color"])
-        nt.links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
-        if "rough" in imgs:
-            rtex = nt.nodes.new("ShaderNodeTexImage")
-            rtex.image = imgs["rough"]
-            nt.links.new(rtex.outputs["Color"], bsdf.inputs["Roughness"])
-        return mat
-    arms_mat = make_material("arms", images)
-    watch_mat = make_material("watch", wimages, 0.45)
-    new_index = {}
-    for p in me.polygons:
-        new_index[p.index] = 0 if p.material_index == body_index else 1
-    me.materials.clear()
-    me.materials.append(arms_mat)
-    me.materials.append(watch_mat)
-    for p in me.polygons:
-        p.material_index = new_index[p.index]
-    for m in list(bpy.data.materials):
-        if m.name.startswith("sm004"):
-            bpy.data.materials.remove(m)
-    for img in list(bpy.data.images):
-        if img.name.startswith(("Map #", "Bitmaptexture")):
-            bpy.data.images.remove(img)
 
 
 # ---------------------------------------------------------------------------
@@ -945,6 +778,8 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--preview")
     ap.add_argument("--blend", help="also save the authored scene for inspection")
+    ap.add_argument("--palette", default="olive", choices=sorted(PALETTES), help="colour of the gloves and sleeves")
+    ap.add_argument("--rebake", action="store_true", help="bake the gloves again instead of using the saved result")
     args = ap.parse_args(argv)
     cfg = WEAPONS[args.weapon]
 
@@ -962,7 +797,7 @@ def main():
         log(side, "wrist", tuple(round(v, 3) for v in info[side]["wrist"]), "palm normal", tuple(round(v, 2) for v in info[side]["n"]), "d_palm", round(info[side]["d_palm"], 3))
     rebuild_bones(arm, info)
     add_twist_bones(arm, mesh)
-    build_arm_textures(mesh)
+    build_gloves(arm, mesh, info, palette=args.palette, rebake=args.rebake)
     arm.rotation_euler = Euler((0, 0, cfg.get("torso_yaw", 0.0)))
     arm.scale = (cfg.get("arm_scale", 1.0),) * 3
     arm.location = Vector(cfg.get("shoulder_shift", (0, 0, 0)))
