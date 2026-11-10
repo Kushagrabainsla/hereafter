@@ -28,10 +28,7 @@ class FixedGridLightsNode extends ClusteredLightsNode {
   private tilesPerPixel = uniform(new Vector2(1, 1));
 
   updateProgram(renderer: Renderer): void {
-    // The tiles span whatever is being drawn into: the canvas, or a pass drawn smaller than it.
-    const target = renderer.getRenderTarget();
-    if (target) drawing.set(target.width, target.height);
-    else renderer.getDrawingBufferSize(drawing);
+    renderer.getDrawingBufferSize(drawing);
     this.tilesPerPixel.value.set(TILES_X / drawing.x, TILES_Y / drawing.y);
     const node = this as unknown as Internals;
     if (node._bufferSize !== null) return;

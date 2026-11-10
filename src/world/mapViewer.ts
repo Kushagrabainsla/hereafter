@@ -373,29 +373,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // but the passes it reads would then render inside SMAA's own pass and clear to black.)
   const shaded = smaa(vec4(world.rgb.mul(occlusion).mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE);
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
-  const cloudPass = pass(cloudScene, camera);
-  const clouds = cloudPass.getTextureNode("output");
+  const clouds = pass(cloudScene, camera).getTextureNode("output");
   const lit = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
-  const heldPass = pass(viewScene, viewCamera, { samples: 4 });
-  const held = heldPass.getTextureNode("output");
+  const held = pass(viewScene, viewCamera, { samples: 4 }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
-  const glowPass = bloom(vec4(picture, 1), 0.75, 0.55, 0.9);
-  const glow = picture.add(glowPass.rgb);
-  // A screen with more pixels than the budget, such as an ultra-wide, already draws at its own
-  // resolution, the least the canvas may go (see ratioFor). While its frame rate falls, the world
-  // alone is drawn smaller inside the canvas and stretched to fill it, which changes no shader;
-  // the hands, the steam and the edges stay at full size, and it comes back up once frames
-  // have been quick for a while. It never draws fewer than LEAST_PIXELS, so a 1080p screen gives
-  // up less sharpness than a bigger one; measured on an ultra-wide (3440 x 1440), half size took
-  // the busiest views from 25 FPS to about 55.
-  const LEAST_PIXELS = 1.25e6;
-  const LEAST_WORLD_SCALE = 0.5;
-  let worldScale = 1, slowWorld = 0, quickWorld = 0;
-  const setWorldScale = (scale: number): void => {
-    worldScale = scale;
-    worldPass.setResolutionScale(scale);
-    occlusionPass.resolutionScale = 0.5 * scale;
-  };
+  const glow = picture.add(bloom(vec4(picture, 1), 0.75, 0.55, 0.9).rgb);
   const brightness = luminance(glow);
   const grade = mix(vec3(0.94, 1.0, 1.07), vec3(1.06, 1.0, 0.93), smoothstep(0.02, 0.5, brightness));
   const graded = mix(vec3(brightness), glow, 1.08).mul(grade).max(0);
@@ -667,22 +649,12 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         slowSamples = 0;
         applySize();
       }
-      // A second under 55 FPS steps the world down a tenth, or more when far too slow; ten seconds
-      // at full speed steps it back up a twentieth.
-      const drawn = container.clientWidth * container.clientHeight * pixelRatio ** 2;
-      const leastScale = Math.min(1, Math.max(LEAST_WORLD_SCALE, Math.sqrt(LEAST_PIXELS / Math.max(1, drawn))));
-      if (pixelRatio <= floorRatio && leastScale < 1 && readyAt && time - readyAt > 6000 && !document.hidden) {
-        slowWorld = fps < 55 ? slowWorld + 1 : 0;
-        quickWorld = fps >= 59 ? quickWorld + 1 : 0;
-        if (slowWorld >= 2 && worldScale > leastScale) { setWorldScale(Math.max(leastScale, worldScale - (fps < 35 ? 0.15 : 0.1))); slowWorld = 0; quickWorld = 0; }
-        else if (quickWorld >= 20 && worldScale < 1) { setWorldScale(Math.min(1, worldScale + 0.05)); quickWorld = 0; }
-      } else if (worldScale !== 1 && leastScale >= 1) setWorldScale(1);
       events.onMetrics({
         fps,
         renderer: rendererName,
         drawCalls: renderer.info.render.drawCalls,
         triangles: renderer.info.render.triangles,
-        pixelRatio: pixelRatio * worldScale,
+        pixelRatio,
       });
       frames = 0;
       lastMetrics = time;
