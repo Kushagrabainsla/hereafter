@@ -509,7 +509,7 @@ export class PhysicsWorld {
 
   private describeHeld(id: string): HeldThing | null {
     const entity = this.entities.get(id), pose = this.propPose(id);
-    return entity?.shape && entity.prop && pose ? { prop: entity.prop, shape: entity.shape, position: pose.position, rotation: pose.rotation } : null;
+    return entity?.shape && entity.prop && pose ? { id, prop: entity.prop, shape: entity.shape, position: pose.position, rotation: pose.rotation } : null;
   }
 
   // How far a throw has been drawn back, 0 to 1.

@@ -6,22 +6,33 @@ import { FIST, HOOK, type Curl, type HandTarget } from "./handPose";
 // and everybody else's, so the hands are on the thing itself in both.
 
 export interface Hold { right: HandTarget; left: HandTarget; curl: Curl }
-export interface HeldThing { prop: string; shape: NonNullable<WorldEntity["shape"]>; position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number; w: number } }
+export interface HeldThing { id: string; prop: string; shape: NonNullable<WorldEntity["shape"]>; position: { x: number; y: number; z: number }; rotation: { x: number; y: number; z: number; w: number } }
 
 // Held in front of you, these fill the view and your hands are round the far side of them or out
 // past the edge of what you can see, so the holder sees just the thing.
 const NO_HANDS_IN_VIEW = new Set(["crate_wood_large", "trash_can", "oil_drum", "fuel_drum", "aircon_unit", "dining_table", "cafe_table"]);
 export const handsOutOfView = (prop: string): boolean => NO_HANDS_IN_VIEW.has(prop);
 
-// How high the hands take hold, as a share of the half height above the middle: most things by
-// their lower edge, light boxes high up their sides, furniture by its seat or its top.
-const HOLD_HEIGHT: Record<string, number> = { plastic_crate: 0.95, cardboard_box: 0.3, dining_chair: 0.05, plastic_stool: 0.72, bar_stool: 0.82, dining_table: 0.86, cafe_table: 0.86 };
-const LOWER_EDGE = -0.55;
-// Open crates are taken by the rim, the hand over it with the fingers inside.
-const BY_THE_RIM = new Set(["plastic_crate"]);
-// Hands sit just off the surface, and just in from the corner nearest the player.
+// People carry a box, a crate or a piece of furniture from underneath: hands under the bottom
+// corners nearest them, or under a seat or a table top, palms up and fingers curled in under it,
+// so from their own eyes the fingers are out of sight below it. Where under it the hands go: how
+// high, as a share of the half height above the middle (-1 the bottom), and how far in from the
+// outer side and from the near side.
+interface Under { share: number; inset: number; near: number }
+// The seats are round and narrower than the legs splayed under them, so hands go well in from
+// the corners of the space the chair or stool takes up.
+const UNDER: Record<string, Under> = {
+  dining_chair: { share: 0.02, inset: 0.03, near: 0.14 },
+  plastic_stool: { share: 0.8, inset: 0.07, near: 0.17 },
+  bar_stool: { share: 0.79, inset: 0.03, near: 0.14 },
+  dining_table: { share: 0.91, inset: 0.05, near: 0.1 },
+  cafe_table: { share: 0.84, inset: 0.05, near: 0.1 },
+};
+const UNDER_A_BOX: Under = { share: -1, inset: 0.05, near: 0.1 };
+// Hands sit just off the surface.
 const OFF_SURFACE = 0.012;
-const IN_FROM_CORNER = 0.07;
+// A round thing is held round its sides, low down, to the near side of its widest point.
+const LOWER_EDGE = -0.55;
 // Round things are held to the near side of their widest point.
 const ROUND_ACROSS = 0.82;
 const ROUND_NEAR = 0.57;
@@ -31,11 +42,10 @@ export function propHold(held: HeldThing, right: Vector3, forward: Vector3): Hol
   const at = new Vector3(held.position.x, held.position.y, held.position.z);
   const turn = new Quaternion(held.rotation.x, held.rotation.y, held.rotation.z, held.rotation.w);
   const up = new Vector3(0, 1, 0).applyQuaternion(turn);
-  const share = HOLD_HEIGHT[prop] ?? LOWER_EDGE;
   const hand = (side: 1 | -1): HandTarget => {
     if (shape.type !== "box") {
       const radial = right.clone().multiplyScalar(side * ROUND_ACROSS).addScaledVector(forward, -ROUND_NEAR).normalize();
-      const grip = at.clone().addScaledVector(radial, shape.radius + OFF_SURFACE).addScaledVector(up, shape.halfHeight * share);
+      const grip = at.clone().addScaledVector(radial, shape.radius + OFF_SURFACE).addScaledVector(up, shape.halfHeight * LOWER_EDGE);
       return { grip, fingers: forward.clone().multiplyScalar(0.7).addScaledVector(up, -0.6), palm: radial.clone().negate() };
     }
     const x = new Vector3(1, 0, 0).applyQuaternion(turn), z = new Vector3(0, 0, 1).applyQuaternion(turn);
@@ -44,9 +54,9 @@ export function propHold(held: HeldThing, right: Vector3, forward: Vector3): Hol
     const halfAcross = sideways ? shape.half[0] : shape.half[2], halfAlong = sideways ? shape.half[2] : shape.half[0];
     const outward = across.clone().multiplyScalar(Math.sign(across.dot(right)) * side);
     const near = along.clone().multiplyScalar(-Math.sign(along.dot(forward)));
-    const grip = at.clone().addScaledVector(outward, halfAcross + OFF_SURFACE).addScaledVector(near, Math.max(0, halfAlong - IN_FROM_CORNER)).addScaledVector(up, shape.half[1] * share);
-    if (BY_THE_RIM.has(prop)) return { grip: grip.addScaledVector(outward, -OFF_SURFACE * 2), fingers: outward.clone().multiplyScalar(-0.7).addScaledVector(near, -0.45).addScaledVector(up, -0.5), palm: up.clone().multiplyScalar(-0.8).addScaledVector(outward, -0.5) };
-    return { grip, fingers: near.clone().multiplyScalar(-0.75).addScaledVector(up, -0.55), palm: outward.clone().negate() };
+    const under = UNDER[prop] ?? UNDER_A_BOX;
+    const grip = at.clone().addScaledVector(outward, Math.max(0, halfAcross - under.inset)).addScaledVector(near, Math.max(0, halfAlong - under.near)).addScaledVector(up, shape.half[1] * under.share - OFF_SURFACE);
+    return { grip, fingers: outward.clone().multiplyScalar(-0.75).addScaledVector(near, -0.55), palm: up.clone().multiplyScalar(0.85).addScaledVector(outward, -0.5) };
   };
   return { right: hand(1), left: hand(-1), curl: HOOK };
 }

@@ -1,5 +1,5 @@
 import {
-  ACESFilmicToneMapping, DirectionalLight, FogExp2, HemisphereLight, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
+  ACESFilmicToneMapping, DirectionalLight, FogExp2, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
 import { float, luminance, mix, pass, renderOutput, screenUV, smoothstep, vec3, vec4 } from "three/tsl";
@@ -30,7 +30,7 @@ import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { DOOR_LEAVES } from "./doors";
 import { kitObject, kitPieces, loadKits } from "./kit";
-import { handsOutOfView, inCameraFrame, propHold } from "../game/holding";
+import { handsOutOfView, inCameraFrame, propHold, type HeldThing } from "../game/holding";
 import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeTarget } from "./physics";
@@ -387,6 +387,36 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const pickupData = makeWeaponPickups(data);
   const weaponVisuals = new WeaponVisuals(scene, data, pickupData, pieces);
   const authoredViewModel = new AuthoredViewModel(viewCamera);
+  // The hands are drawn over the world, so what they hold is copied into their layer, writing only
+  // depth: the parts of a hand under or behind it are hidden as they would be, and the thing
+  // itself still shows from the world beneath.
+  const handCover = new Group();
+  handCover.matrixAutoUpdate = false;
+  handCover.visible = false;
+  viewScene.add(handCover);
+  const depthOnly = new MeshBasicMaterial({ colorWrite: false });
+  let coverOf = "", coverDrop = 0;
+  const coverHands = (thing: HeldThing | null): void => {
+    handCover.visible = thing !== null;
+    if (!thing) return;
+    if (coverOf !== thing.id) {
+      handCover.clear();
+      const model = propViews.partsOf(thing.id);
+      coverOf = thing.id;
+      coverDrop = model?.drop ?? 0;
+      for (const part of model?.parts ?? []) {
+        const mesh = new Mesh(part.geometry, depthOnly);
+        mesh.matrixAutoUpdate = false;
+        mesh.matrix.copy(part.matrix);
+        mesh.renderOrder = 40;
+        mesh.frustumCulled = false;
+        handCover.add(mesh);
+      }
+    }
+    const body = new Matrix4().compose(new Vector3(thing.position.x, thing.position.y, thing.position.z), new Quaternion(thing.rotation.x, thing.rotation.y, thing.rotation.z, thing.rotation.w), new Vector3(1, 1, 1)).multiply(new Matrix4().makeTranslation(0, -coverDrop, 0));
+    handCover.matrix.multiplyMatrices(viewCamera.matrixWorld, camera.matrixWorldInverse).multiply(body);
+    handCover.matrixWorldNeedsUpdate = true;
+  };
   authoredViewModel.setTool(kitObject(pieces.get("extinguisher_held")));
   remotePlayers.setToolModel(kitObject(pieces.get("extinguisher_held")));
   // Pickups and other players use the first-person weapon models once they load.
@@ -572,6 +602,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       camera.updateMatrixWorld();
       authoredViewModel.setHold(inCameraFrame(propHold(inGrip, axes.right.clone().setY(0).normalize(), axes.forward.clone().setY(0).normalize()), camera));
     } else authoredViewModel.setHold(null);
+    coverHands(inGrip && !handsOutOfView(inGrip.prop) ? inGrip : null);
     authoredViewModel.update(delta, player.motion(), dynamics);
     // The crosshair opens with the same spread the leader applies to this player's shots.
     const motion = player.motion(), active = weaponVisuals.dynamics().active;

@@ -116,6 +116,12 @@ export class PropViews {
     }
   }
 
+  // A prop's model and how far it sits below its body's middle, for drawing another copy of it.
+  partsOf(id: string): { parts: { geometry: BufferGeometry; matrix: Matrix4 }[]; drop: number } | null {
+    const slot = this.slots.get(id), parts = slot && this.parts.get(slot.model);
+    return slot && parts ? { parts, drop: slot.drop } : null;
+  }
+
   place(id: string, position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number; w: number }): void {
     const slot = this.slots.get(id);
     if (!slot || slot.hidden) return;
