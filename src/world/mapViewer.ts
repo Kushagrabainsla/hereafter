@@ -298,9 +298,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   for (const solid of data.layout.solids) for (const piece of aroundBreach(solid)) physics.addBox(piece.half, piece.center, piece.rotation ?? { x: 0, y: 0, z: 0, w: 1 }, piece.material);
   for (const entity of entities.all()) physics.addEntity(entity);
   for (const [id, swings] of Object.entries(TRUCK_SWINGS)) for (const swing of swings) physics.addMover(`${id}:${swing.node}`, swing.half, "metal-thin");
-  // Door leaves swing with their colliders, which carry their entity so rounds wear them down.
-  for (const leaf of DOOR_LEAVES) physics.addMover(leaf.id, leaf.half, leaf.model.material, leaf.id);
-  built.doors.setSwing((leaf, pose) => physics.setMover(leaf.id, pose.center, pose.rotation));
   // A broken stall leaves a low pile, solid only once the stall is down.
   for (const wreck of built.wrecks) {
     physics.addMover(wreck.id, wreck.half, "wood");
@@ -309,7 +306,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   }
   physicsReady = physics;
   truck.setOpen(toggleState, toggleDefaults, true);
-  built.doors.setOpen(toggleState, true);
   // A pipe that burst before this peer's first health table only leaks.
   let healthSeen = false;
   // A fuel drum gone up: its body and collider go; the blast draws the rest.
@@ -461,6 +457,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     walled: (a, b) => physics.walled(a, b),
     grenadeRest: (origin, velocity, seconds) => physics.grenadePath(origin, velocity, seconds).points.at(-1)!,
     push: (id, point, impulse) => physics.push(id, point, impulse),
+    // A hand on a doorway's handles: a door more than half open is swung shut, otherwise open.
+    swingDoor: (doorway) => {
+      const leaves = DOOR_LEAVES.filter((leaf) => leaf.door.id === doorway && !entities.destroyed(leaf.id));
+      if (!leaves.length) return null;
+      const open = leaves.reduce((sum, leaf) => sum + physics.doorOpenness(leaf.id), 0) / leaves.length < 0.5;
+      for (const leaf of leaves) physics.swingDoor(leaf.id, open);
+      return open;
+    },
   };
   let lastLandings = 0;
   // When the player started drawing back a throw, and the weight now in their hands.
@@ -582,6 +586,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     for (const prop of props) {
       const pose = physics.propPose(prop.id);
       if (pose) propViews.place(prop.id, pose.position, pose.rotation);
+    }
+    for (const leaf of DOOR_LEAVES) {
+      const pose = physics.propPose(leaf.id);
+      if (pose) built.doors.place(leaf.id, pose.position, pose.rotation);
     }
     // Nearby blasts shake the view; the controller resets the camera every frame.
     if (effects.shake > 0.01) {
@@ -717,7 +725,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           effects.restore(entity);
           truck.restore(entity.id);
           if (entity.kind === "lamp") built.lamps.setBroken(entity.id, false);
-          if (entity.kind === "door") physics.setMoverEnabled(entity.id, true);
           if (entity.kind === "pipe" || entity.kind === "extinguisher") built.pipes.restore(entity.id);
           if (entity.kind === "stall") physics.setMoverEnabled(`${entity.id}:wreck`, false);
           // A stall back in place brings its lamp back, unless the lamp itself was shot.
@@ -743,7 +750,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         if (entity.kind === "wall") breaches.setOpen(entity.id, true);
         if (entity.kind === "tyre") truck.setFlat(entity.id, true);
         if (entity.kind === "lamp") built.lamps.setBroken(entity.id, true);
-        if (entity.kind === "door") physics.setMoverEnabled(entity.id, false);
         if (entity.kind === "pipe") {
           built.pipes.burst(entity.id, healthSeen);
           if (healthSeen) gameAudio.steamBurst(entity.center);
@@ -890,7 +896,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setOpen(open) {
       toggleState = { ...toggleDefaults, ...open };
       truck.setOpen(toggleState, toggleDefaults);
-      built.doors.setOpen(toggleState);
       built.lamps.setSwitched("lamp:breaker", toggleState["switch:breaker"] ?? true);
     },
     nearestUse() {
@@ -899,10 +904,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       for (const toggle of data.layout.toggles) {
         // A doorway whose leaves are all blown off has nothing left to open.
         const leaves = DOOR_LEAVES.filter((leaf) => leaf.door.id === toggle.id);
-        if (leaves.length && leaves.every((leaf) => entities.destroyed(leaf.id))) continue;
+        const standing = leaves.filter((leaf) => !entities.destroyed(leaf.id));
+        if (leaves.length && !standing.length) continue;
         if (toggle.entity && entities.destroyed(toggle.entity)) continue;
         const distance = Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z);
-        if (distance <= 2.2 && (!best || distance < best.distance)) { const open = toggleState[toggle.id] ?? toggle.open; best = { id: toggle.id, label: toggle.label, open, verb: toggle.verbs ? toggle.verbs[open ? 1 : 0] : open ? "close" : "open", distance }; }
+        // A door is as open as its leaves are, wherever they were pushed.
+        const open = standing.length ? standing.reduce((sum, leaf) => sum + physics.doorOpenness(leaf.id), 0) / standing.length >= 0.5 : toggleState[toggle.id] ?? toggle.open;
+        if (distance <= 2.2 && (!best || distance < best.distance)) { best = { id: toggle.id, label: toggle.label, open, verb: toggle.verbs ? toggle.verbs[open ? 1 : 0] : open ? "close" : "open", distance }; }
       }
       return best;
     },

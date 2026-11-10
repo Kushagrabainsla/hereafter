@@ -6,9 +6,11 @@ import { kitObject, type KitPiece } from "./kit";
 import { SHOP_ROOMS } from "./shops";
 
 // The market's doors: the restaurant's and the bar's double doors, the French doors onto the
-// bar's balcony, and the front and back doors of the record shop and the shops beside it. Each opens inward, all its
-// leaves together, when a player presses E at it or kicks it with the knife. Rounds pass
-// through a leaf and wear it down; enough of them, or a grenade, blows it off its hinges.
+// bar's balcony, and the front and back doors of the record shop and the shops beside it. Each
+// leaf is a real body on a hinge (physics.ts) that opens inward: a shut door is latched, E swings
+// it, a kick or a blast bursts it open, and an open one can be pushed and is stopped by whatever
+// stands in its way, so furniture piled behind a door holds it. Rounds pass through a leaf and
+// wear it down; enough of them, or a grenade, blows it off its hinges.
 //
 // Everything here is plain data shared by every client, except the view at the bottom.
 
@@ -17,12 +19,14 @@ const FACE_YAW: Record<Face, number> = { px: Math.PI / 2, nx: -Math.PI / 2, pz: 
 // How far an open leaf turns, in radians.
 const OPEN = 1.62;
 
-interface LeafModel { piece: string; width: number; height: number; material: Material; health: number }
+// Masses are real ones: an aluminium shop door with its glass, a solid panelled door, a glazed
+// French door and a steel back door. All are too heavy to lift off their hinges.
+interface LeafModel { piece: string; width: number; height: number; material: Material; health: number; mass: number }
 const MODELS: Record<string, LeafModel> = {
-  glass: { piece: "door_glass", width: 0.79, height: 2.58, material: "wood", health: 100 },
-  panel: { piece: "door_panel", width: 0.79, height: 2.58, material: "wood", health: 100 },
-  french: { piece: "door_french", width: 0.79, height: 2.38, material: "wood", health: 100 },
-  steel: { piece: "door_steel", width: 0.98, height: 2.12, material: "metal-thin", health: 60 },
+  glass: { piece: "door_glass", width: 0.79, height: 2.58, material: "wood", health: 100, mass: 40 },
+  panel: { piece: "door_panel", width: 0.79, height: 2.58, material: "wood", health: 100, mass: 32 },
+  french: { piece: "door_french", width: 0.79, height: 2.38, material: "wood", health: 100, mass: 27 },
+  steel: { piece: "door_steel", width: 0.98, height: 2.12, material: "metal-thin", health: 60, mass: 45 },
 };
 
 // A doorway: the bottom centre of its opening in the middle of the wall, the way the wall
@@ -67,11 +71,16 @@ export function leafPose(leaf: DoorLeaf, open: number): { center: Vec3; rotation
   return { center: { x: leaf.hinge.x + offset.x, y: leaf.hinge.y + offset.y, z: leaf.hinge.z + offset.z }, rotation };
 }
 
-// Each leaf is an entity without a fixed collider: its collider is the moving one the
-// physics world keeps for it (see mapViewer.ts).
-export const DOOR_ENTITIES: WorldEntity[] = DOOR_LEAVES.map((leaf) => ({
-  id: leaf.id, kind: "door", material: leaf.model.material, maxHealth: leaf.model.health, yaw: leaf.yaw, center: leafPose(leaf, 0).center,
-}));
+// Each leaf is an entity with a body of its own, hung on its hinge, starting shut or open as its
+// doorway does.
+export const DOOR_ENTITIES: WorldEntity[] = DOOR_LEAVES.map((leaf) => {
+  const open = leaf.door.open ? 1 : 0;
+  return {
+    id: leaf.id, kind: "door", material: leaf.model.material, maxHealth: leaf.model.health, mass: leaf.model.mass,
+    yaw: leaf.yaw + leaf.turn * OPEN * open, center: leafPose(leaf, open).center, shape: { type: "box", half: leaf.half },
+    hinge: { at: leaf.hinge, shutYaw: leaf.yaw, swing: leaf.turn * OPEN, offset: [leaf.model.width / 2, leaf.half[1], 0] },
+  };
+});
 
 // The doorway a leaf belongs to.
 export function doorOf(entity: string): string | null {
@@ -80,55 +89,31 @@ export function doorOf(entity: string): string | null {
 
 // ---------- the view ----------
 
-// Leaves swing toward their doorway's state over about half a second, easing in and out.
+// Each leaf is drawn where its body is.
 export class Doors {
   readonly groups = new Map<string, Object3D[]>();
-  private leaves: { leaf: DoorLeaf; pivot: Object3D }[] = [];
-  private share = new Map<string, number>();
-  private target = new Map<string, number>();
+  private leaves = new Map<string, { leaf: DoorLeaf; pivot: Object3D }>();
+  private offset = new Vector3();
 
-  constructor(parent: Object3D, pieces: Map<string, KitPiece>, private onSwing: (leaf: DoorLeaf, pose: { center: Vec3; rotation: Quaternion }) => void = () => undefined) {
+  constructor(parent: Object3D, pieces: Map<string, KitPiece>) {
     for (const leaf of DOOR_LEAVES) {
       const pivot = new Object3D();
       pivot.position.set(leaf.hinge.x, leaf.hinge.y, leaf.hinge.z);
-      pivot.rotation.y = leaf.yaw;
+      pivot.rotation.y = leaf.yaw + (leaf.door.open ? leaf.turn * OPEN : 0);
       pivot.add(kitObject(pieces.get(leaf.model.piece), leaf.door.tint));
       parent.add(pivot);
-      this.leaves.push({ leaf, pivot });
+      this.leaves.set(leaf.id, { leaf, pivot });
       this.groups.set(leaf.id, [pivot]);
     }
-    for (const door of DOORWAYS) { this.share.set(door.id, door.open ? 1 : 0); this.target.set(door.id, door.open ? 1 : 0); }
-    this.pose();
   }
 
-  setSwing(onSwing: (leaf: DoorLeaf, pose: { center: Vec3; rotation: Quaternion }) => void): void { this.onSwing = onSwing; this.pose(); }
-
-  setOpen(open: Record<string, boolean>, instant = false): void {
-    for (const door of DOORWAYS) {
-      const target = (open[door.id] ?? door.open) ? 1 : 0;
-      this.target.set(door.id, target);
-      if (instant) this.share.set(door.id, target);
-    }
-    if (instant) this.pose();
-  }
-
-  update(seconds: number): void {
-    let moved = false;
-    for (const door of DOORWAYS) {
-      const now = this.share.get(door.id)!, target = this.target.get(door.id)!;
-      if (now === target) continue;
-      const step = seconds * 2.2;
-      this.share.set(door.id, Math.abs(target - now) <= step ? target : now + Math.sign(target - now) * step);
-      moved = true;
-    }
-    if (moved) this.pose();
-  }
-
-  private pose(): void {
-    for (const { leaf, pivot } of this.leaves) {
-      const t = this.share.get(leaf.door.id)!, eased = t * t * (3 - 2 * t);
-      pivot.rotation.y = leaf.yaw + leaf.turn * OPEN * eased;
-      this.onSwing(leaf, leafPose(leaf, eased));
-    }
+  // The leaf's body has its centre here, turned so; the model hangs from the hinge edge.
+  place(id: string, center: Vec3, rotation: { x: number; y: number; z: number; w: number }): void {
+    const entry = this.leaves.get(id);
+    if (!entry) return;
+    const { leaf, pivot } = entry;
+    pivot.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    this.offset.set(leaf.model.width / 2, leaf.half[1], 0).applyQuaternion(pivot.quaternion);
+    pivot.position.set(center.x - this.offset.x, center.y - this.offset.y, center.z - this.offset.z);
   }
 }

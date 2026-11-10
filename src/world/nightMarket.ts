@@ -1101,7 +1101,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
       lamps.update(dt);
       swing(seconds);
       steam(dt);
-      doors.update(dt);
       pipes.update(dt);
       // The OPEN sign's tube is failing: it stutters off now and then, until it is shot out.
       const tick = Math.floor(seconds * 14), roll = Math.abs(Math.sin(tick * 12.9898) * 43758.5453) % 1;

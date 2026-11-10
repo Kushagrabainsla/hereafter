@@ -207,6 +207,9 @@ export interface CombatWorld {
   entitiesNear(center: Vec3, radius: number): { id: string; distance: number; point: Vec3 }[];
   grenadeRest(origin: Vec3, velocity: Vec3, seconds: number): Vec3;
   push(entity: string, point: Vec3, impulse: Vec3): void;
+  // Swings a doorway's leaves open, or shut if they are mostly open; which it was, or null if
+  // nothing is left on its hinges.
+  swingDoor?(doorway: string): boolean | null;
 }
 
 const EVENTS_KEPT = 32;
@@ -229,6 +232,8 @@ const REWIND_LIMIT_MS = 350;
 const FALL_SAFE_SPEED = 9;
 const FALL_DAMAGE_PER_MS = 9;
 const BULLET_IMPULSE = { pistol: 2.5, rifle: 4.5 } as const;
+// A front kick: about a 12 kg leg arriving at 6 m/s.
+const KICK_IMPULSE = 70;
 const MATERIAL_NAMES = Object.keys(MATERIALS);
 const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent", "smoke", "round", "bandage", "spray"];
 // A shot gas cylinder vents burning gas for this long, then bursts like a grenade.
@@ -704,6 +709,16 @@ export class MatchState {
       if (!toggle || !pose || !fresh || now - (this.lastUse.get(toggle.id) ?? 0) < 500) return false;
       const eye = shotRay(this.data, pose, "knife").origin;
       if (Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z) > USE_REACH) return false;
+      // A door is swung by hand and goes as far as nothing stops it; its leaves' bodies carry
+      // where it is, not the shared state.
+      if (toggle.id.startsWith("door:") && this.world?.swingDoor) {
+        const swung = this.world.swingDoor(toggle.id);
+        if (swung === null) return false;
+        this.lastUse.set(toggle.id, now);
+        this.emit({ kind: "use", actor, entity: toggle.id, open: swung });
+        this.changed();
+        return true;
+      }
       const open = !(this.snapshot.open[toggle.id] ?? toggle.open);
       this.snapshot.open[toggle.id] = open;
       this.lastUse.set(toggle.id, now);
@@ -881,7 +896,7 @@ export class MatchState {
     let center = shotRay(this.data, pose, "knife", rules.reach);
     // Straight into a shut door, the blow kicks it open, even if the swing would clip the frame.
     const ahead = (this.world?.traceBullet(center) ?? []).find((hit) => hit.material !== "boundary");
-    if (ahead?.entity && this.kick(actor, ahead.entity)) {
+    if (ahead?.entity && this.kick(actor, ahead.entity, center, ahead.point)) {
       this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...center, distance: ahead.distance }, impact: false });
       return;
     }
@@ -906,7 +921,7 @@ export class MatchState {
       }
       if (surface) {
         // A blade driven into a shut door kicks it open instead of cutting it.
-        if (surface.entity && this.kick(actor, surface.entity)) {
+        if (surface.entity && this.kick(actor, surface.entity, ray, surface.point)) {
           this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: surface.distance }, impact: false });
           return;
         }
@@ -922,11 +937,19 @@ export class MatchState {
     this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: center, impact: false });
   }
 
-  // Opens the shut door a leaf belongs to; false if the entity is no door leaf or it is open.
-  private kick(actor: string, leaf: string): boolean {
-    const toggle = this.data.layout.toggles.find((item) => leaf.startsWith(`${item.id}:`));
-    if (!toggle || (this.snapshot.open[toggle.id] ?? toggle.open)) return false;
-    this.snapshot.open[toggle.id] = true;
+  // A blade driven into a door is a kick instead: a boot's momentum at the spot struck, enough to
+  // burst the latch. Whatever is piled behind the door takes the blow through it, so a heavy
+  // barricade holds and a light one gives. False if the entity is no door leaf.
+  private kick(actor: string, leaf: string, ray: ShotRay, point: Vec3): boolean {
+    const toggle = this.data.layout.toggles.find((item) => item.id.startsWith("door:") && leaf.startsWith(`${item.id}:`));
+    if (!toggle) return false;
+    if (this.world?.swingDoor) {
+      const d = ray.direction, flat = Math.hypot(d.x, d.z) || 1;
+      this.world.push(leaf, point, { x: d.x / flat * KICK_IMPULSE, y: 0, z: d.z / flat * KICK_IMPULSE });
+    } else {
+      if (this.snapshot.open[toggle.id] ?? toggle.open) return false;
+      this.snapshot.open[toggle.id] = true;
+    }
     this.lastUse.set(toggle.id, this.now);
     this.emit({ kind: "use", actor, entity: toggle.id, open: true, weapon: "knife" });
     return true;

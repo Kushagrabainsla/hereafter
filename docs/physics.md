@@ -38,7 +38,7 @@ So a carbine round passes through a window, a crate, a bin, a stall seen from th
 | Propane cylinder | 16 | vents burning gas for 1.6 s, then bursts with a grenade's blast |
 | Lamp, string-light run, lantern, sign | 1 | glass shards and sparks; it goes dark and the light it fed dims |
 | Breaker box | 30 | sparks; every lamp on the service alley's circuit goes out |
-| Wooden door leaf | 100 | splinters; the leaf and its collider are gone |
+| Wooden door leaf | 100 | splinters; the leaf and its body are gone |
 | Steel back door | 60 | sparks |
 | Boarded window | 120 | splinters and planks; the window opens |
 | Steam pipe | 10 | a burst of steam that hides the area around it for about 15 s |
@@ -149,6 +149,36 @@ The client sends the stroke when the blade reaches its target, 0.13 s into a sla
 Each shot throws a case from the ejection port to the right, up and a little back, on top of the shooter's own velocity: 9 × 19 mm brass for the pistol, lacquered steel 7.62 × 39 mm for the carbine, at real size. A reload that empties a magazine drops it from under the gun. Cases and magazines are modelled in `public/models/items.glb` (the [asset pipeline](asset-pipeline.md)), each calibre's cases drawn as one instanced mesh holding only the cases about. These pieces are small rigid bodies integrated at 120 Hz against the physics world (`src/game/ejecta.ts`): they bounce off what they strike, keeping 36 to 42% of their speed along the surface normal for cases and 18% for a magazine, skid, tumble, ring or clatter as they land and come to rest on their side. They last about 40 s and are drawn only on the peer that sees them.
 
 A fallen player's guns and magazines fall from their hands, pushed away from the killing blow: a gun with the rounds left in it, and the spare magazines for it. The coordinator traces their fall through the physics world to where they come to rest and shares the drop in its snapshot; every peer draws the same path tumbling into place. Taking a drop gives the gun if it is not already carried, or its magazine as a spare, plus the spares. Drops last a minute.
+
+## Doors and barricades
+
+Each leaf of the market's 21 door leaves is a real body hung on a hinge (`hang` in `src/world/physics.ts`, data in `src/world/doors.ts`). It turns about its hinge line and nothing else, from shut to fully open inward (1.62 rad), with real masses: 40 kg for an aluminium shop door with its glass, 32 kg for a panelled door, 27 kg for a French door and 45 kg for a steel back door, too heavy to lift. The hinge has some friction. A leaf meets loose props but not the walls or floor around it or the other leaf of its pair, so it swings freely in its frame. Leaves are loose props in every other way: one peer at a time simulates a moving leaf and shares it, and a resting one is held still everywhere.
+
+- **The latch.** A shut leaf nobody is moving is latched. Walking into it stops the player, and rounds and other small pushes do nothing to it. A leaf that comes to rest within 3° of shut clicks shut onto its latch.
+- **A hand on the handle.** E at a doorway swings its leaves, as the coordinating peer sees them: open if they are less than half open, otherwise shut. The swing is a push that sets each leaf turning at 2.6 rad/s, worked out from its mass and width, which carries a free door to its stop in about 0.6 s. It goes only as far as nothing stops it.
+- **A kick.** A knife stroke that meets a leaf first is a kick: 70 N·s at the spot struck, along the stroke, about a 12 kg leg arriving at 6 m/s. That bursts the latch. With nothing behind it, the leaf flies open to its stop; with something behind it, the leaf hits it, and the blow moves it by the two masses.
+- **Pushing.** An unlatched leaf is pushed by a body walking into it, by blasts and by props that hit it, like any loose prop.
+- **Barricades.** Since doors open inward, whatever stands inside in a leaf's arc stops it. Loose props piled there hold a door by their own weight and friction.
+- **Hard stops.** A body leaning into a door pushes harder than the joint's own limits hold against, so after every step a leaf that went past a stop or was pulled off its hinge line is put back, turning no further that way.
+
+Rounds still pass through a leaf and wear it down, and a leaf shot or blown off its hinges loses its body until the round ends, when it is hung again. The prompt at a doorway says open or close by where its leaves are now.
+
+In scripted runs at the restaurant's south door and the record shop's front door:
+
+| Check | Result |
+|---|---|
+| Walking into the shut door from the alley | stopped at the leaves; still shut and latched |
+| A carbine round's push on the latched door | no movement |
+| E | both leaves half open after 0.3 s, against their stops by 0.6 s |
+| E again | shut and latched within 1 s |
+| E with an 18 kg dining table inside, against the door | stopped 44% open; the table slid 10 cm |
+| Walking on into that door for 1.5 s | the leaves pushed to their stops and the table shoved aside; a light table does not hold against a body |
+| E with a 95 kg fuel drum inside | stopped 11% open; the drum moved 2 cm |
+| Four kicks at that door | one leaf at 23%, the drum moved 18 cm in all |
+| One kick at the latched door with nothing behind it | the leaf kicked burst open to its stop |
+| Two tabs, the player who is not the coordinator opens and shuts the bar door with E | both screens open, then both shut and latched |
+| Two tabs, that player kicks the drum-barricaded door three times | both screens agree on each leaf and on the drum to the centimetre |
+| Two tabs, that player kicks the latched restaurant door | the same leaf burst open on both screens |
 
 ## Doors and hatches
 

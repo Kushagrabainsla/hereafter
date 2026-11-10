@@ -1,7 +1,7 @@
 import { type HeldThing } from "../game/holding";
 import RAPIER from "@dimforge/rapier3d";
 import { terrainHeight, type Arena, type ArenaData } from "./arena";
-import { type WorldEntity } from "./entities";
+import { type Hinge, type WorldEntity } from "./entities";
 import { type Material } from "./materials";
 import { STRIKE_SPEED, type HitZone } from "../game/combatRules";
 
@@ -18,6 +18,18 @@ const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 // the mass of the player's body, not the unstoppable force of a moving kinematic body.
 const PLAYER_GROUPS = 0x0002 << 16;
 const RAGDOLL_GROUPS = (0x0004 << 16) | 0x0001;
+// The map's fixed parts are group 1. Door leaves are group 8 and meet neither those nor each
+// other, so a leaf turns in its frame against its hinge's stops alone, while it still meets
+// loose props, which meet everything as before.
+const STATIC_GROUPS = (0x0001 << 16) | 0xffff;
+const DOOR_GROUPS = (0x0008 << 16) | (0xffff & ~0x0001 & ~0x0008);
+// A hinge has some friction. A shut leaf is latched: held still against anything short of a kick,
+// a blast or a hand on the handle. A hand swings a leaf at this speed, in radians a second, which
+// carries it to its stop.
+const DOOR_DAMPING = 0.9;
+const LATCH_ANGLE = 0.05;
+const LATCH_BREAK = 25;
+const DOOR_SWING = 2.6;
 // The most force a player's body puts into a prop it walks into, in newtons: enough to
 // shove a crate or a bin along, not a full drum.
 const PUSH_FORCE = 800;
@@ -136,8 +148,10 @@ export class PhysicsWorld {
   private followed = new Map<string, Followed>();
   // How long each prop this peer owns has been all but still.
   private quiet = new Map<string, number>();
-  // Doors and hatches: fixed colliders moved whenever they open or close.
+  // The food truck's doors and hatch, and the stalls' wreckage: fixed colliders moved or switched.
   private movers = new Map<string, RAPIER.Collider>();
+  // Door leaves: loose bodies hung on a hinge, a fixed body each at the hinge line.
+  private hinges = new Map<string, { anchor: RAPIER.RigidBody; hinge: Hinge }>();
   // Shoves the player gave props another peer owns, waiting to be sent to that peer.
   private shoves = new Map<string, { owner: string; push: Vec3; speed: number }>();
   // The prop in the player's hands, and where the player is looking.
@@ -208,7 +222,7 @@ export class PhysicsWorld {
         offset += 6;
       }
     }
-    this.terrainCollider = this.world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices));
+    this.terrainCollider = this.world.createCollider(RAPIER.ColliderDesc.trimesh(vertices, indices).setCollisionGroups(STATIC_GROUPS));
     this.tags.set(this.terrainCollider.handle, { material: "ground" });
   }
 
@@ -222,13 +236,16 @@ export class PhysicsWorld {
     let collider: RAPIER.Collider;
     if (entity.mass) {
       const volume = shape.type === "box" ? 8 * shape.half[0] * shape.half[1] * shape.half[2] : Math.PI * shape.radius ** 2 * 2 * shape.halfHeight;
+      const damping = entity.hinge ? DOOR_DAMPING : 0.1;
       const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased()
-        .setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation).setLinearDamping(0.1).setAngularDamping(0.5).setCcdEnabled(true));
+        .setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation).setLinearDamping(damping).setAngularDamping(entity.hinge ? DOOR_DAMPING : 0.5).setCcdEnabled(true));
+      if (entity.hinge) desc.setCollisionGroups(DOOR_GROUPS);
       collider = this.world.createCollider(desc.setDensity(entity.mass / volume).setFriction(0.7).setRestitution(0.15), body);
       this.props.set(entity.id, body);
       this.propHandles.add(collider.handle);
+      if (entity.hinge) this.hang(entity.id, body, entity.hinge);
     } else {
-      collider = this.world.createCollider(desc.setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation));
+      collider = this.world.createCollider(desc.setTranslation(entity.center.x, entity.center.y, entity.center.z).setRotation(rotation).setCollisionGroups(STATIC_GROUPS));
     }
     this.tags.set(collider.handle, { material: entity.material, entity: entity.id });
     this.entityColliders.set(entity.id, collider);
@@ -261,6 +278,84 @@ export class PhysicsWorld {
 
   propIds(): string[] { return [...this.props.keys()]; }
 
+  // Hangs a door leaf on its hinge: free to turn about the hinge line between shut and fully open,
+  // and nothing else. A leaf shot off and put back for a new round is hung on the same hinge.
+  private hang(id: string, body: RAPIER.RigidBody, hinge: Hinge): void {
+    let entry = this.hinges.get(id);
+    if (!entry) {
+      const half = hinge.shutYaw / 2;
+      const anchor = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(hinge.at.x, hinge.at.y, hinge.at.z).setRotation({ x: 0, y: Math.sin(half), z: 0, w: Math.cos(half) }));
+      entry = { anchor, hinge };
+      this.hinges.set(id, entry);
+    }
+    const [ox, oy, oz] = hinge.offset;
+    const data = RAPIER.JointData.revolute({ x: 0, y: 0, z: 0 }, { x: -ox, y: -oy, z: -oz }, { x: 0, y: 1, z: 0 });
+    data.limitsEnabled = true;
+    data.limits = [Math.min(0, hinge.swing), Math.max(0, hinge.swing)];
+    this.world.createImpulseJoint(data, entry.anchor, body, true);
+  }
+
+  // Where a door leaf's body is when turned this far from shut.
+  private hingePose(hinge: Hinge, angle: number): { center: Vec3; rotation: Quat } {
+    const yaw = hinge.shutYaw + angle, c = Math.cos(yaw), s = Math.sin(yaw), [ox, oy, oz] = hinge.offset;
+    return { center: { x: hinge.at.x + ox * c + oz * s, y: hinge.at.y + oy, z: hinge.at.z - ox * s + oz * c }, rotation: { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) } };
+  }
+
+  // After each step: the hinge's stops and pin are hard. A body leaning into a door pushes harder
+  // than the joint's own limits hold against, so a leaf that went past a stop, or pulled off its
+  // hinge line, is put back, and stops turning that way.
+  private holdHinges(): void {
+    for (const id of this.owned) {
+      const entry = this.hinges.get(id), body = this.props.get(id);
+      if (!entry || !body) continue;
+      const { hinge } = entry, angle = this.doorAngle(id), lo = Math.min(0, hinge.swing), hi = Math.max(0, hinge.swing);
+      const clamped = Math.max(lo, Math.min(hi, angle)), pose = this.hingePose(hinge, clamped), t = body.translation();
+      const r = body.rotation();
+      if (clamped === angle && Math.hypot(t.x - pose.center.x, t.y - pose.center.y, t.z - pose.center.z) < 0.01 && Math.abs(r.x) + Math.abs(r.z) < 0.01) continue;
+      body.setTranslation(pose.center, true);
+      body.setRotation(pose.rotation, true);
+      // What is left is turning about the hinge line, and none of it past a stop.
+      let spin = body.angvel().y;
+      if ((angle > hi && spin > 0) || (angle < lo && spin < 0)) spin = 0;
+      const cx = pose.center.x - hinge.at.x, cz = pose.center.z - hinge.at.z;
+      body.setAngvel({ x: 0, y: spin, z: 0 }, true);
+      body.setLinvel({ x: spin * cz, y: 0, z: -spin * cx }, true);
+    }
+  }
+
+  // How far a door leaf has turned from shut, signed the way it opens.
+  private doorAngle(id: string): number {
+    const entry = this.hinges.get(id), body = this.props.get(id);
+    if (!entry || !body) return 0;
+    const r = body.rotation(), turned = Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x)) - entry.hinge.shutYaw;
+    return Math.atan2(Math.sin(turned), Math.cos(turned));
+  }
+
+  // How far open a door leaf is, 0 shut to 1 against its stop.
+  doorOpenness(id: string): number {
+    const swing = this.hinges.get(id)?.hinge.swing;
+    return swing ? Math.max(0, Math.min(1, this.doorAngle(id) / swing)) : 0;
+  }
+
+  // A shut leaf nobody is moving is held by its latch.
+  private latched(id: string): boolean {
+    return this.hinges.has(id) && !this.owned.has(id) && !this.followed.has(id) && Math.abs(this.doorAngle(id)) < LATCH_ANGLE;
+  }
+
+  // A hand on the handle swings a leaf open or shut: the push that sets it turning at a hand's
+  // speed toward its stop, given at its middle. Whatever stands in the way stops it there.
+  swingDoor(id: string, open: boolean): void {
+    const entry = this.hinges.get(id), body = this.props.get(id), shape = this.entities.get(id)?.shape, mass = this.entities.get(id)?.mass;
+    if (!entry || !body || shape?.type !== "box" || !mass) return;
+    const want = (open ? Math.sign(entry.hinge.swing) : -Math.sign(this.doorAngle(id))) * DOOR_SWING;
+    if (!want) return;
+    const turning = this.owned.has(id) ? body.angvel().y : 0;
+    const at = body.translation(), cx = at.x - entry.hinge.at.x, cz = at.z - entry.hinge.at.z, r = Math.hypot(cx, cz) || shape.half[0];
+    // A slab turning about one edge.
+    const inertia = mass * (2 * shape.half[0]) ** 2 / 3, impulse = inertia * (want - turning) / r;
+    this.push(id, at, { x: cz / r * impulse, y: 0, z: -cx / r * impulse }, true);
+  }
+
   // The state of a prop to send to other peers: [id, x, y, z, qx, qy, qz, qw].
   private propState(id: string, body: RAPIER.RigidBody): PropTransform {
     const t = body.translation(), r = body.rotation();
@@ -284,8 +379,15 @@ export class PhysicsWorld {
     for (const id of this.owned) {
       const body = this.props.get(id);
       if (!body) continue;
+      if ((this.quiet.get(id) ?? 0) < QUIET_SECONDS) { moving.push(this.propState(id, body)); continue; }
+      // A door leaf that comes to rest all but shut clicks shut, onto its latch.
+      const hinge = this.hinges.get(id)?.hinge;
+      if (hinge && Math.abs(this.doorAngle(id)) < LATCH_ANGLE) {
+        const shut = this.hingePose(hinge, 0);
+        body.setTranslation(shut.center, false);
+        body.setRotation(shut.rotation, false);
+      }
       const state = this.propState(id, body);
-      if ((this.quiet.get(id) ?? 0) < QUIET_SECONDS) { moving.push(state); continue; }
       settled.push(state);
       this.owned.delete(id);
       this.quiet.delete(id);
@@ -381,7 +483,7 @@ export class PhysicsWorld {
       this.world.collidersWithAabbIntersectingAabb(body.translation(), { x: reach, y: reach, z: reach }, (collider) => {
         if (!this.propHandles.has(collider.handle)) return true;
         const other = this.tags.get(collider.handle)?.entity;
-        if (other && !this.owned.has(other) && !this.followed.has(other)) reached.push(other);
+        if (other && !this.owned.has(other) && !this.followed.has(other) && !this.latched(other)) reached.push(other);
         return true;
       });
     }
@@ -393,6 +495,7 @@ export class PhysicsWorld {
     this.followProps();
     this.steerHeld();
     this.world.step();
+    if (this.hinges.size) this.holdHinges();
     this.noteKnocks();
     this.strikeBodies();
     this.feelFollowed();
@@ -467,13 +570,13 @@ export class PhysicsWorld {
     const hit = this.world.castRay(new RAPIER.Ray(this.eye(), this.forward()), reach, true, undefined, undefined, this.collider, undefined, this.solid);
     if (!hit || !this.propHandles.has(hit.collider.handle)) return null;
     const id = this.tags.get(hit.collider.handle)?.entity;
-    return id && !this.followed.has(id) ? id : null;
+    return id && !this.followed.has(id) && !this.hinges.has(id) ? id : null;
   }
 
   // Takes a prop into the player's hands, held clear of their body and low enough to see over.
   lift(id: string): boolean {
     const body = this.props.get(id), entity = this.entities.get(id), collider = this.entityColliders.get(id);
-    if (this.held || !body || !collider || !entity?.shape || !entity.mass || this.followed.has(id)) return false;
+    if (this.held || !body || !collider || !entity?.shape || !entity.mass || entity.hinge || this.followed.has(id)) return false;
     this.claim(id, body);
     body.setGravityScale(0, true);
     const shape = entity.shape;
@@ -498,7 +601,7 @@ export class PhysicsWorld {
   carriedBy(owner: string, at: { x: number; y: number; z: number }): HeldThing | null {
     let best: string | null = null, nearest = CARRY_SEARCH;
     for (const [id, followed] of this.followed) {
-      if (followed.owner !== owner || followed.resting) continue;
+      if (followed.owner !== owner || followed.resting || this.hinges.has(id)) continue;
       const t = this.props.get(id)?.translation();
       if (!t || t.y < at.y + 0.1) continue;
       const distance = Math.hypot(t.x - at.x, t.z - at.z);
@@ -649,9 +752,11 @@ export class PhysicsWorld {
 
   // A bullet or blast pushing a loose prop: this peer starts simulating a prop nobody owns,
   // and passes the push to the owner of one that somebody does.
-  push(id: string, point: Vec3, impulse: Vec3): void {
+  // A latched door takes no notice of a round; a kick, a blast or a hand on the handle (unlatch)
+  // opens it.
+  push(id: string, point: Vec3, impulse: Vec3, unlatch = false): void {
     const body = this.props.get(id);
-    if (!body) return;
+    if (!body || (!unlatch && this.latched(id) && Math.hypot(impulse.x, impulse.y, impulse.z) < LATCH_BREAK)) return;
     const follow = this.followed.get(id);
     if (follow) { this.addShove(id, follow.owner, impulse, 0); return; }
     this.claim(id, body);
@@ -666,10 +771,10 @@ export class PhysicsWorld {
     else this.shoves.set(id, { owner, push: { ...push }, speed });
   }
 
-  // A door or hatch: a thin box of a material, placed and turned with setMover. A door leaf
-  // that can be shot off its hinges names its entity, so rounds that strike it wear it down.
+  // The food truck's doors and hatch and a stall's wreckage: a fixed box of a material, placed
+  // and turned with setMover. One that names its entity is worn down by rounds that strike it.
   addMover(id: string, half: [number, number, number], material: Material, entity?: string): void {
-    const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half));
+    const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half).setCollisionGroups(STATIC_GROUPS));
     this.tags.set(collider.handle, entity ? { material, entity } : { material });
     this.movers.set(id, collider);
   }
@@ -733,7 +838,7 @@ export class PhysicsWorld {
       this.boundary.push(this.world.createCollider(RAPIER.ColliderDesc.cuboid(0.2, 10, half + 0.5)
         .setTranslation(eastEdge, terrainHeight(this.data, eastEdge, north) + 10, north)));
     }
-    for (const collider of this.boundary) this.tags.set(collider.handle, { material: "boundary" });
+    for (const collider of this.boundary) { collider.setCollisionGroups(STATIC_GROUPS); this.tags.set(collider.handle, { material: "boundary" }); }
   }
 
   reset(east: number, north: number): CharacterStep {
@@ -787,7 +892,7 @@ export class PhysicsWorld {
       if (!hit || handle === undefined || !this.propHandles.has(handle)) continue;
       const id = this.tags.get(handle)?.entity;
       const n = hit.normal1, flat = Math.hypot(n.x, n.z);
-      if (!id || flat < 0.3) continue;
+      if (!id || flat < 0.3 || this.latched(id)) continue;
       const into = -(east * n.x + north * n.z) / flat / STEP_SECONDS;
       if (into <= 0.05) continue;
       const follow = this.followed.get(id);
@@ -819,7 +924,7 @@ export class PhysicsWorld {
     for (const [id, x, y, z, speed] of shoves) {
       const body = this.props.get(id);
       // It may have settled while the shove was on its way; then it is this peer's to move again.
-      if (!body || this.followed.has(id)) continue;
+      if (!body || this.followed.has(id) || (this.latched(id) && Math.hypot(x, y, z) < LATCH_BREAK)) continue;
       this.claim(id, body);
       const at = body.translation();
       body.applyImpulseAtPoint({ x, y, z }, { x: at.x, y: at.y + 0.1, z: at.z }, true);
@@ -930,7 +1035,7 @@ export class PhysicsWorld {
   // The map's fixed solids: walls, floors, counters and stair ramps. Railings use the boundary
   // material, so they stop players but let rounds through.
   addBox(half: [number, number, number], position: Vec3, rotation: Quat, material: Material): void {
-    const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half).setTranslation(position.x, position.y, position.z).setRotation(rotation));
+    const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half).setTranslation(position.x, position.y, position.z).setRotation(rotation).setCollisionGroups(STATIC_GROUPS));
     this.tags.set(collider.handle, { material });
   }
 

@@ -35,6 +35,7 @@ const TIPS = [
   "Climb into the food truck by its back doors. Its propane tanks explode when shot.",
   "Shoot out lamps and signs to darken a lane. The breaker box blacks out the service alley.",
   "Slash a shut door to kick it open. Enough rounds, or a grenade, blow it off its hinges.",
+  "Doors open inward. Drag furniture or push a drum behind one and it will only open as far as what is in the way.",
   "Shoot a steam pipe to fill the alley around it with cover.",
   "The record shop runs through the middle block. Its boarded back window can be blown out.",
   "Shoot a red fuel drum and get clear: it vents fire, then explodes.",

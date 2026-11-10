@@ -77,7 +77,7 @@ The walls are dressed from a kit of pieces modelled in Blender by `scripts/kit/b
 
 All of it is drawn as instanced meshes, and none of it has colliders: it is flat against a wall or, like the fire escapes, starts 4.25 m up, beyond reach.
 
-- **Doors** (`src/world/doors.ts`). The restaurant's two doorways have pairs of glass doors, the bar's have panelled doors with portholes, the balcony has French doors, and the record shop has glass doors at the front and a steel door at the back. Each opens inward. Press E at it, or attack a shut door with the knife to kick it open. Some start open and some shut. Each leaf's collider swings with it and carries its entity, so rounds that strike it wear it down.
+- **Doors** (`src/world/doors.ts`). The restaurant's two doorways have pairs of glass doors, the bar's have panelled doors with portholes, the balcony has French doors, and the record shop has glass doors at the front and a steel door at the back. Each leaf is a real body on a hinge and opens inward. A shut door is latched. Press E at it to swing it, or attack it with the knife to kick it open. Some start open and some shut. An open door can be pushed, and furniture or a drum dragged inside, in its way, stops it: a light table gives to a shove, a full drum holds against kicks ([physics notes](physics.md#doors-and-barricades)). Rounds that strike a leaf wear it down.
 - **Steam pipes** (`src/world/steamPipes.ts`). Lagged pipes with a valve and gauge run along the service alley, the laundry wall, the cut-through and the market alley's east wall. A round anywhere along one bursts it. A thick cloud then fills the space around it for about 11 s, hiding anyone inside, and thins over 4 s to a wisp that leaks until the next round or the room resets. The cloud blocks sight only. A player who joins after a pipe burst sees only the wisp.
 - **Stalls** (`src/world/stalls.ts`) come from the same kit: a plank counter, posts, a back rack with two shelves, a chalk price board, a striped awning in the stall's colour and the goods of its trade. Each also has a torn awning and a collapsed pile, shown as it takes damage.
 - **The record shop** cuts a new route through the middle block. Inside are record bins down the middle, shelves along both side walls and a counter with a turntable and a pair of spare pistol magazines. Two pendant lamps light it. The bins are waist-high cover, and the shop window, the doors and the boarded window all break.
@@ -133,7 +133,7 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 
 - The steel back doors other than those of the record shop, the dumpling shop and the pho house are part of the wall and stay shut. The noodle bar, the tea house and the laundry are still pictures behind solid walls.
 - The fire escapes other than the one on the market alley's west side cannot be reached and have no colliders, so rounds and grenades pass through them.
-- A door swung shut onto a player can trap them against its frame.
+- A barricade holds a door by weight and friction alone; nothing wedges under a handle.
 - Upper floors other than the bar's upper room cannot be entered, and their windows only break.
 - Bullets do not pass through interior walls, which are brick like the outer ones.
 - A broken lamp's direct light goes, but the bounce light baked from it stays in the lightmap, so a darkened corner keeps a faint warm fill.

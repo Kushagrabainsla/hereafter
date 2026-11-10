@@ -24,7 +24,12 @@ export interface WorldEntity {
   tint?: number;
   // Bursts some time after it is destroyed, like a grenade, for gas cylinders.
   explosive?: boolean;
+  // A door leaf turns on a hinge: where the hinge is, the way the leaf faces when shut, how far
+  // it can turn (signed, the way it opens) and where its centre sits from the hinge in its own frame.
+  hinge?: Hinge;
 }
+
+export interface Hinge { at: Vec3; shutYaw: number; swing: number; offset: [number, number, number] }
 
 // One instance of an instanced mesh, which draws part of an entity.
 export interface InstanceRef { mesh: InstancedMesh; index: number }
