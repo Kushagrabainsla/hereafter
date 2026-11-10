@@ -1,3 +1,4 @@
+import { type HeldThing } from "../game/holding";
 import RAPIER from "@dimforge/rapier3d";
 import { terrainHeight, type Arena, type ArenaData } from "./arena";
 import { type WorldEntity } from "./entities";
@@ -36,6 +37,10 @@ const HOLD_SPEED = 12;
 const HOLD_FORCE = 500;
 const HOLD_TURN = 9;
 const HOLD_TURN_GAIN = 10;
+// Between the holder's body and the near side of what they hold.
+const HOLD_CLEARANCE = 0.08;
+// How far from a player to look for what they are carrying.
+const CARRY_SEARCH = 2.2;
 // Held this far from where the hands want it for this long, something has got in the way, and
 // the player loses their grip.
 const HOLD_SLACK = 0.5;
@@ -475,12 +480,37 @@ export class PhysicsWorld {
     const [wide, high, deep] = shape.type === "box" ? shape.half : [shape.radius, shape.halfHeight, shape.radius];
     const r = body.rotation();
     const yaw = Math.atan2(2 * (r.w * r.y + r.x * r.z), 1 - 2 * (r.y * r.y + r.x * r.x));
-    this.held = { id, body, handle: collider.handle, mass: entity.mass, out: RADIUS + Math.hypot(wide, deep) + 0.12, low: 0.22 + high, high, turn: yaw - this.view.heading, draw: 0, strain: 0, rise: HOLD_RISE_SECONDS };
+    // Anyone picking something up squares it to themselves and brings it in against the body,
+    // which is where the arms can reach its sides.
+    const quarters = Math.round((yaw - this.view.heading) / (Math.PI / 2));
+    const depth = quarters % 2 === 0 ? deep : wide;
+    this.held = { id, body, handle: collider.handle, mass: entity.mass, out: RADIUS + depth + HOLD_CLEARANCE, low: 0.22 + high, high, turn: quarters * Math.PI / 2, draw: 0, strain: 0, rise: HOLD_RISE_SECONDS };
     this.speeds.delete(id);
     return true;
   }
 
   heldProp(): { id: string; mass: number } | null { return this.held ? { id: this.held.id, mass: this.held.mass } : null; }
+
+  // What the player holds, and where it is now, for putting hands on it.
+  heldThing(): HeldThing | null { return this.held ? this.describeHeld(this.held.id) : null; }
+
+  // What another player is carrying: the nearest thing off the ground that they are moving.
+  carriedBy(owner: string, at: { x: number; y: number; z: number }): HeldThing | null {
+    let best: string | null = null, nearest = CARRY_SEARCH;
+    for (const [id, followed] of this.followed) {
+      if (followed.owner !== owner || followed.resting) continue;
+      const t = this.props.get(id)?.translation();
+      if (!t || t.y < at.y + 0.1) continue;
+      const distance = Math.hypot(t.x - at.x, t.z - at.z);
+      if (distance < nearest) { nearest = distance; best = id; }
+    }
+    return best ? this.describeHeld(best) : null;
+  }
+
+  private describeHeld(id: string): HeldThing | null {
+    const entity = this.entities.get(id), pose = this.propPose(id);
+    return entity?.shape && entity.prop && pose ? { prop: entity.prop, shape: entity.shape, position: pose.position, rotation: pose.rotation } : null;
+  }
 
   // How far a throw has been drawn back, 0 to 1.
   setDraw(draw: number): void { if (this.held) this.held.draw = draw; }

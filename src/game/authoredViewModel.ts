@@ -4,10 +4,12 @@ import {
 } from "three/webgpu";
 import { loadWeaponFile } from "./weaponModels";
 import { type KnifeStroke, type WeaponKind } from "./combatRules";
+import { HandRig } from "./handPose";
+import { toolHold, type Hold } from "./holding";
 import { type PlayerMotion } from "./playerController";
 import { type ViewDynamics } from "./weaponVisuals";
 
-interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null; aim: Vector3 }
+interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null; aim: Vector3; hands: HandRig }
 
 // The knife's slash and stab clips are authored at 1/ATTACK_RATE speed so the fast arcs get
 // more keyframes, and play back at ATTACK_RATE (see scripts/viewmodels/build.py).
@@ -29,8 +31,12 @@ const FRAMING: Record<WeaponKind, Framing> = {
   pistol: { x: 0.02, y: 0.035, z: -0.02, fov: 47, aimFov: 52 },
   knife: { x: -0.05, y: 0.06, z: 0, fov: 50, aimFov: 50 },
 };
-// Empty hands on something carried, or an extinguisher, want more of the view.
-const HANDS_FRAMING: Framing = { x: 0.02, y: 0.02, z: 0.07, fov: 46, aimFov: 46 };
+// Hands on something real in the world have to be drawn through the world's own lens, at their
+// real size, or they would not line up with what they hold.
+const HANDS_FRAMING: Framing = { x: 0, y: 0, z: 0, fov: 75, aimFov: 75 };
+// Where the extinguisher's handle is held: low and to the right, with the can hanging below the
+// bottom of the view.
+const TOOL_AT = { x: 0.2, y: -0.27, z: -0.42 };
 const BASE_FOV = 75;
 
 // Each GLB contains arms + weapon authored together in camera-local coordinates with
@@ -47,9 +53,11 @@ export class AuthoredViewModel {
   // A blade turned by something hard kicks the hand back and up, then settles.
   private recoil = 0;
   private recoilSpeed = 0;
-  // The carbine's arms stand in for hands on something else, with the carbine left out; this
-  // is what they hold when that is an extinguisher.
+  // The knife's arms stand in for hands on something else, with the knife left out; this is
+  // what they hold when that is an extinguisher.
   private tool: Object3D | null = null;
+  // What the hands are on, in the camera's frame; or that they are out of sight round it.
+  private hold: Hold | "hidden" | null = null;
   private toolShown = false;
   private framing: Framing = FRAMING.knife;
   private aimed = 0;
@@ -59,6 +67,7 @@ export class AuthoredViewModel {
         if (!gltf) return;
         const root = gltf.scene;
         if (this.disposed) { this.release(root); return; }
+        const hands = new HandRig(root);
         root.traverse((object) => {
           if (object instanceof Mesh) {
             object.renderOrder = 50;
@@ -91,7 +100,7 @@ export class AuthoredViewModel {
         camera.add(rig);
         const muzzle = root.getObjectByName("muzzle") ?? null;
         const aim = kind !== "knife" ? this.straighten(root, rig, mixer, clips, muzzle, SIGHTS[kind]) : new Vector3();
-        this.models.set(kind, { root, rig, mixer, clips, muzzle, aim });
+        this.models.set(kind, { root, rig, mixer, clips, muzzle, aim, hands });
         this.locomotion = "";
       }).catch((error: unknown) => console.warn(`Could not load the ${kind} view model; it will not be drawn.`, error));
     }
@@ -125,6 +134,7 @@ export class AuthoredViewModel {
   // The thing to show in the empty hands when holding a tool, and whether to show it.
   setTool(tool: Object3D): void { this.tool = tool; tool.visible = false; }
   showTool(shown: boolean): void { this.toolShown = shown; }
+  setHold(hold: Hold | "hidden" | null): void { this.hold = hold; }
 
   hasModel(): boolean { return this.models.has(this.active); }
   // Muzzle position in camera-local metres for tracers, when the active model has one.
@@ -165,20 +175,18 @@ export class AuthoredViewModel {
     this.recoilSpeed = 14;
   }
   update(seconds: number, motion: PlayerMotion, dynamics: ViewDynamics): void {
-    const wanted = dynamics.hands ? "rifle" : dynamics.active;
+    const wanted = dynamics.hands ? "knife" : dynamics.active;
     if (wanted !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.locomotion = ""; this.attacking = null; this.active = wanted; }
-    for (const [kind, model] of this.models) model.root.visible = kind === this.active;
+    for (const [kind, model] of this.models) model.root.visible = kind === this.active && !(dynamics.hands && !this.toolShown && this.hold === "hidden");
     const model = this.models.get(this.active);
     if (!model) return;
-    const weapon = this.models.get("rifle")?.root.getObjectByName("weapon");
-    if (weapon) {
+    const stand = this.models.get("knife");
+    const weapon = stand?.root.getObjectByName("weapon");
+    if (stand && weapon) {
       weapon.visible = !dynamics.hands;
       if (this.tool) {
-        // In the view's own metres: the rig is scaled, so it cannot sit on the weapon's bones.
-        const root = this.models.get("rifle")!.root;
-        if (this.tool.parent !== root) root.add(this.tool);
-        this.tool.position.set(0.2, -0.64, -1.2);
-        this.tool.rotation.set(0.2, 0, -0.08);
+        if (this.tool.parent !== stand.root) stand.root.add(this.tool);
+        this.tool.position.set(TOOL_AT.x, TOOL_AT.y, TOOL_AT.z);
         this.tool.visible = dynamics.hands && this.toolShown;
       }
     }
@@ -213,6 +221,26 @@ export class AuthoredViewModel {
     model.root.position.y += this.framing.y * (1 - aim);
     model.root.position.z += this.framing.z * (1 - aim);
     model.root.rotation.set(sway.pitch - lower * 0.6 + reload * 0.1 + jolt * 0.03 + kick * 0.12, sway.yaw + lower * 0.25 - kick * 0.05, sway.roll - lower * 0.3 + reload * 0.32 + kick * 0.08);
+    if (dynamics.hands) this.handsOn(model, lower);
+  }
+  // Puts the hands on what they hold, once the arms have been posed. They arrive as the arms come
+  // up, from wherever the animation had them.
+  private handsOn(model: Model, lower: number): void {
+    if (this.hold === "hidden" && !this.toolShown) return;
+    model.root.updateWorldMatrix(true, true);
+    const fromCamera = this.camera.matrixWorld;
+    let hold: Hold | null = null;
+    if (this.toolShown && this.tool) hold = toolHold(this.tool.matrixWorld);
+    else if (this.hold && this.hold !== "hidden") {
+      const place = (hand: Hold["right"]): Hold["right"] => ({ grip: hand.grip.clone().applyMatrix4(fromCamera), fingers: hand.fingers.clone().transformDirection(fromCamera), palm: hand.palm.clone().transformDirection(fromCamera) });
+      hold = { right: place(this.hold.right), left: place(this.hold.left), curl: this.hold.curl };
+    }
+    if (!hold) return;
+    const weight = Math.max(0, 1 - lower * 2);
+    model.hands.reach("R", hold.right, new Vector3(0.8, -1, 0.15).transformDirection(fromCamera), weight);
+    model.hands.reach("L", hold.left, new Vector3(-0.8, -1, 0.15).transformDirection(fromCamera), weight);
+    model.hands.curl("R", hold.curl, weight);
+    model.hands.curl("L", hold.curl, weight);
   }
   private release(root: Group): void {
     root.traverse((object) => {

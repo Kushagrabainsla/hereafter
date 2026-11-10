@@ -812,6 +812,24 @@ def extinguisher():
     return join(parts, "extinguisher")
 
 
+def extinguisher_held():
+    """An extinguisher off its bracket, for holding: origin in the carrying handle, the can hanging
+    below it, and the hose brought round to the left hand with its horn pointing forward."""
+    y = 0.08
+    parts = [cylinder("body", 0.075, 0.44, (0, y, -0.3), "Z", "extinguisher_red", verts=20, bev=0.0)]
+    parts.append(sphere("dome", 0.075, (0, y, -0.08), "extinguisher_red", segments=16, rings=8))
+    parts.append(cylinder("label", 0.077, 0.14, (0, y, -0.32), "Z", "chalk", verts=20))
+    parts.append(cylinder("neck", 0.025, 0.05, (0, y, 0.0), "Z", "dark_steel", verts=10))
+    parts.append(box("head", -0.03, 0.03, 0.02, 0.13, -0.008, 0.05, "dark_steel", bev=0.006))
+    parts.append(box("handle", -0.012, 0.012, -0.06, 0.04, -0.016, 0.0, "steel"))
+    parts.append(turned_box("lever", (0.024, 0.12, 0.012), (0, 0.0, 0.032), (RAD(8), 0, 0), "steel"))
+    parts.append(cylinder("gauge", 0.018, 0.01, (0.035, 0.08, 0.03), "X", "gauge_face", verts=10))
+    parts.append(tube("hose", [(-0.02, 0.11, 0.02), (-0.09, 0.14, -0.02), (-0.19, 0.17, -0.1), (-0.26, 0.2, -0.14), (-0.26, 0.26, -0.14)], 0.011, "black", verts=6))
+    parts.append(cylinder("nozzle", 0.014, 0.05, (-0.26, 0.285, -0.14), "Y", "black", verts=6))
+    parts.append(cylinder("horn", 0.04, 0.13, (-0.26, 0.37, -0.14), "Y", "black", verts=10, radius2=0.016))
+    return join(parts, "extinguisher_held")
+
+
 def fuel_drum():
     r, h = 0.3, 0.9
     parts = [cylinder("drum", r, h, (0, 0, h / 2), "Z", "fuel_red", verts=28)]
@@ -837,7 +855,7 @@ def fuel_drum():
 PIECES = [door_glass, door_panel, door_french, door_steel, frame_steel, boards, ac_window, condenser, pipe_seg, pipe_shoe, pipe_head,
           meter_box, vent, steam_run, steam_valve, lambda: steam_end("steam_end_l", 1), lambda: steam_end("steam_end_r", -1),
           escape_platform, escape_stair, escape_ladder, record_bin, record_shelf, turntable,
-          stall_body, stall_awning, stall_awning_torn, stall_wreck, goods_noodles, goods_fruit, goods_grill, goods_tea, goods_trinkets, extinguisher, fuel_drum]
+          stall_body, stall_awning, stall_awning_torn, stall_wreck, goods_noodles, goods_fruit, goods_grill, goods_tea, goods_trinkets, extinguisher, extinguisher_held, fuel_drum]
 
 
 def preview(outdir, built, only=None):

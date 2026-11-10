@@ -30,6 +30,7 @@ import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { DOOR_LEAVES } from "./doors";
 import { kitObject, kitPieces, loadKits } from "./kit";
+import { handsOutOfView, inCameraFrame, propHold } from "../game/holding";
 import { SMOKE } from "./steamPipes";
 import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeTarget } from "./physics";
@@ -386,8 +387,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const pickupData = makeWeaponPickups(data);
   const weaponVisuals = new WeaponVisuals(scene, data, pickupData, pieces);
   const authoredViewModel = new AuthoredViewModel(viewCamera);
-  authoredViewModel.setTool(kitObject(pieces.get("extinguisher")));
-  remotePlayers.setToolModel(kitObject(pieces.get("extinguisher")));
+  authoredViewModel.setTool(kitObject(pieces.get("extinguisher_held")));
+  remotePlayers.setToolModel(kitObject(pieces.get("extinguisher_held")));
   // Pickups and other players use the first-person weapon models once they load.
   void loadWeaponModels().then((models) => {
     weaponVisuals.useModels(models);
@@ -565,6 +566,12 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     // The sights come up only with a gun ready in hand, and drop for a reload or a switch.
     const dynamics = weaponVisuals.dynamics();
     player.setAiming(aimWanted && !dynamics.hands && dynamics.active !== "knife" && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
+    const inGrip = physics.heldThing();
+    if (inGrip && handsOutOfView(inGrip.prop)) authoredViewModel.setHold("hidden");
+    else if (inGrip) {
+      camera.updateMatrixWorld();
+      authoredViewModel.setHold(inCameraFrame(propHold(inGrip, axes.right.clone().setY(0).normalize(), axes.forward.clone().setY(0).normalize()), camera));
+    } else authoredViewModel.setHold(null);
     authoredViewModel.update(delta, player.motion(), dynamics);
     // The crosshair opens with the same spread the leader applies to this player's shots.
     const motion = player.motion(), active = weaponVisuals.dynamics().active;

@@ -3,6 +3,7 @@ import { terrainHeight, type ArenaData } from "../world/arena";
 import { type PlayerPose } from "./playerController";
 import { type WeaponKind } from "./combatRules";
 import { PlayerModelLibrary, type PlayerModelInstance } from "./playerModel";
+import { propHold, toolHold, type Hold } from "./holding";
 import { CharacterRagdoll } from "./ragdoll";
 import { type PhysicsWorld, type Vec3 } from "../world/physics";
 
@@ -154,7 +155,6 @@ export class RemotePlayers {
     let tool = this.tools.get(peerId);
     if (held && !tool && avatar && this.toolModel) {
       tool = this.toolModel.clone(true);
-      tool.position.set(0, 0.85, 0.36);
       avatar.root.add(tool);
       this.tools.set(peerId, tool);
     }
@@ -209,6 +209,24 @@ export class RemotePlayers {
     for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && out;
     avatar.model?.holdGun(weapon !== "knife" && out ? avatar.weapons.get(weapon) ?? null : null);
     avatar.model?.setCarrying(avatar.carrying && !this.dead.has(peerId));
+    avatar.model?.setKnife(weapon === "knife" && out);
+  }
+
+  // Where this player's hands belong on what they carry: their extinguisher, hung from the right
+  // hand at the hip and aimed a little as they look up or down, or the thing they are moving.
+  private holdFor(peerId: string, avatar: RemoteAvatar, pose: PlayerPose): Hold | null {
+    if (!avatar.carrying || this.dead.has(peerId)) return null;
+    const tool = this.tools.get(peerId);
+    if (tool?.visible) {
+      tool.position.set(-0.2, pose.crouching ? 0.66 : 1.02, 0.3);
+      tool.rotation.set(-pose.pitch * Math.PI / 180 * 0.35, Math.PI, 0);
+      avatar.root.updateMatrixWorld(true);
+      return toolHold(tool.matrixWorld);
+    }
+    const held = this.physics?.carriedBy(peerId, avatar.root.position);
+    if (!held) return null;
+    const yaw = avatar.heading * Math.PI / 180;
+    return propHold(held, new Vector3(-Math.cos(yaw), 0, Math.sin(yaw)), new Vector3(Math.sin(yaw), 0, Math.cos(yaw)));
   }
 
   // Another player's knife stroke or shot, on their character's arm.
@@ -359,6 +377,7 @@ export class RemotePlayers {
         avatar.model.setStance(pose.crouching ? "crouch" : pose.moving ? pose.running ? "run" : "walk" : "idle");
         avatar.model.setPitch(pose.pitch);
         avatar.model.setLean(lean);
+        avatar.model.setHold(this.holdFor(peerId, avatar, pose));
         avatar.model.update(avatar.pendingAnimation);
         avatar.pendingAnimation = 0;
         continue;

@@ -788,7 +788,7 @@ export class MatchState {
       this.snapshot.fires = this.snapshot.fires.filter((other) => other !== fire);
       for (const near of this.world?.entitiesNear(fire.position, fire.radius + 1.5) ?? []) this.heat.delete(near.id);
     }
-    this.emit({ kind: "spray", actor, position: { x: eye.x + d.x * 0.5, y: eye.y - 0.25 + d.y * 0.5, z: eye.z + d.z * 0.5 }, velocity: { ...d } });
+    this.emit({ kind: "spray", actor, position: { x: eye.x + d.x * 0.72, y: eye.y - 0.4 + d.y * 0.72, z: eye.z + d.z * 0.72 }, velocity: { ...d } });
     this.changed();
     return true;
   }

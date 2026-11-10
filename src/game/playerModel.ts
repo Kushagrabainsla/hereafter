@@ -1,5 +1,7 @@
 import { AnimationMixer, Color, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3, type AnimationAction, type AnimationClip } from "three/webgpu";
 import { type HeldGrip } from "./weaponModels";
+import { FIST, HandRig, SUPPORT, TRIGGER } from "./handPose";
+import { type Hold } from "./holding";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 
@@ -90,6 +92,10 @@ export class PlayerModelInstance {
   // Both hands out in front on something carried, and how far they have come up.
   private carrying = false;
   private carried = 0;
+  // Hands on what is carried, the knife in the fist, and the finger joints behind them.
+  private hold: Hold | null = null;
+  private knife = false;
+  private hands: HandRig | null = null;
   private ready = 0;
   private recoil = 0;
   private flashFor = 0;
@@ -138,6 +144,7 @@ export class PlayerModelInstance {
     };
     const right = chain("R"), left = chain("L");
     if (right && left) this.arms = { right, left };
+    this.hands = new HandRig(this.root);
     this.play("idle");
   }
 
@@ -149,6 +156,9 @@ export class PlayerModelInstance {
   }
 
   setCarrying(carrying: boolean): void { this.carrying = carrying; }
+  // Where the hands go on what is carried, when that is known.
+  setHold(hold: Hold | null): void { this.hold = hold; }
+  setKnife(out: boolean): void { this.knife = out; }
 
   // The gun to hold to the shoulder (it must be a child of root), or null for the knife or
   // empty hands, which the animation carries on the hand socket.
@@ -227,6 +237,7 @@ export class PlayerModelInstance {
     this.strike(seconds);
     this.aimGun(seconds);
     this.carryOut(seconds);
+    if (this.knife && !this.gun && this.carried < 0.02) this.hands?.curl("R", FIST);
   }
 
   // Something carried in both hands: the hands come forward from the chest, to either side of
@@ -237,6 +248,13 @@ export class PlayerModelInstance {
     const { a, b, c, q, m, n } = this.temp;
     this.root.updateWorldMatrix(true, true);
     this.root.getWorldQuaternion(q);
+    if (this.hold && this.hands) {
+      this.hands.reach("R", this.hold.right, new Vector3(-0.6, -1, -0.25).applyQuaternion(q), this.carried);
+      this.hands.reach("L", this.hold.left, new Vector3(0.6, -1, -0.25).applyQuaternion(q), this.carried);
+      this.hands.curl("R", this.hold.curl, this.carried);
+      this.hands.curl("L", this.hold.curl, this.carried);
+      return;
+    }
     n.identity();
     for (const [arm, side] of [[this.arms.right, -1], [this.arms.left, 1]] as const) {
       const shoulder = arm.upper.getWorldPosition(a);
@@ -277,11 +295,22 @@ export class PlayerModelInstance {
     // Each hand to its place on the gun, its elbow toward the ground and out from the body.
     this.reach(arms.right, gun.object.matrixWorld, gun.grip.right, -1);
     this.reach(arms.left, gun.object.matrixWorld, gun.grip.left, 1);
+    this.gripHand("R", gun.object.matrixWorld, gun.grip.right);
+    this.gripHand("L", gun.object.matrixWorld, gun.grip.left);
     if (gun.flash) {
       this.flashFor -= seconds;
       gun.flash.visible = this.flashFor > 0;
       if (gun.flash.visible) { gun.flash.scale.setScalar(0.85 + Math.random() * 0.3); gun.flash.rotation.z = Math.random() * Math.PI * 2; }
     }
+  }
+
+  // The first-person arms' hand bones run along the fingers with their third axis out of the
+  // palm, so each hold on the gun says which way this hand must face, whichever skeleton it is.
+  private gripHand(side: "R" | "L", gunWorld: Matrix4, hold: Matrix4): void {
+    if (!this.hands) return;
+    const m = new Matrix4().multiplyMatrices(gunWorld, hold);
+    this.hands.turnHand(side, new Vector3().setFromMatrixColumn(m, 1), new Vector3().setFromMatrixColumn(m, 2));
+    this.hands.curl(side, side === "R" ? TRIGGER : SUPPORT);
   }
 
   // Two-bone inverse kinematics: turns the upper arm and forearm so the wrist reaches where
