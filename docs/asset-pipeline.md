@@ -50,10 +50,11 @@ Model in metres with Z up. The exporter turns that into the game's Y up: Blender
 
 - **One piece, one top-level object**, built at the origin and named after the piece. Names are unique across every family and the wall kit, since the game merges them all into one table.
 - **Origins** are where the game places a piece: on the floor (`base`), hanging from its top (`top`), at its middle (`center`), or backing onto a wall at y = 0 and built toward -Y (`wall`). Wall pieces are placed with `wallMatrix(face, at, along, y)` in `src/world/facades.ts`.
-- **Materials are flat colours**, no textures, with metalness and roughness. Three prefixes mean something:
+- **Materials are flat colours**, no textures, with metalness and roughness. The game layers wear over them by kind (see Layered surfaces), so name a material for what it is made of (`wood`, `steel`, `paint`, `stone`, `rust`, `fabric` and so on). Four prefixes mean something:
   - `glow_*`: lamp glass, neon tubes and lit faces. The game draws them with its own lit material and dims or darkens them when the lamp is shot out.
   - `paint_*`: pale, and tinted per copy by the game, like door colours and awning stripes.
   - `card_*`: a flat face that keeps texture coordinates from 0 to 1, for the game to draw its own picture or glass on: the rooms behind windows, the storefront photographs and shop glass. Only meshes with a card material carry texture coordinates in the file, and the game flips them to its own pictures' orientation (glTF counts rows from the top).
+  - `sign_*`: sign backers and frames, kept clean.
   - Everything else is plain. The game merges all of a piece's plain parts into one mesh whose vertices carry each part's colour, roughness and metalness, so a piece draws in a single call however many materials it was made with.
 - **Budgets and sizes** are checked on every build. A piece over its triangle budget, more than 10% (or 2 cm) off its declared size, off its declared origin, or using an unregistered material fails the build, and nothing is written.
 
@@ -68,6 +69,12 @@ Model in metres with Z up. The exporter turns that into the game's Y up: Blender
 Instanced meshes whose copies come and go (debris, bullet holes, spent cases) always draw at least one copy, shrunk to nothing, so their shaders are built while the map loads rather than at the first shot. The viewer hands the loaded pieces to the code that draws items as well as to the map: `WeaponVisuals` (gun stands), `LootViews` and `Ejecta` (magazines and spent cases, the cases packed into one instanced mesh per calibre each frame) and `WorldEffects` (grenades, debris and bullet holes).
 
 Physics, cover and breakage do not change when a code shape becomes a model. Colliders, entities and lamp hit boxes are still declared in `src/world/nightMarket.ts`, so a model only changes what is drawn.
+
+## Layered surfaces
+
+The models keep flat colours in their files, but the game does not draw them flat. `src/world/surfaces.ts` gives every material a kind from its name (painted, stone, wood, bare metal, rusted, fabric and paper, or plain) and builds the surface in layers per pixel: colour variation, paint worn through in small chips near the bottom (grey primer at the edge, dark old material in the middle), rust that grows from the bottom, wood grain, dust on faces that point up and grime near the ground, roughness that changes with all of these, and a little relief from bump mapping. The patterns follow each piece's own position, so no texture coordinates are needed and moving parts such as doors carry their pattern. Merged plain parts carry their kind per vertex in the `surface` attribute (roughness, metalness, kind); kept-apart materials get a layered copy; the food truck layers its parts the same way. Lamp glass, neon, cards and signs stay clean.
+
+The noise comes from one 64³ block that repeats in every direction, made once at load (`src/world/noiseVolume.ts`) and read three times per pixel. Working out the noise per pixel instead cost about 30% of the frame rate on a 2x screen; the block costs about 2 FPS. To change how a kind weathers, edit its row in `KINDS`; to change which materials are which kind, edit `surfaceKind()`.
 
 ## Signs
 

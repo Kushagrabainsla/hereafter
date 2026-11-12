@@ -312,6 +312,10 @@ export const NIGHT_MARKET: MapLayout = {
 // The low sun just above the rooftops to the west-southwest: where it lies from the market
 // (any length), its colour and strength. The baked bounce light uses it too.
 export const MARKET_SUN = { offset: [-220, 62, -60] as [number, number, number], color: 0xff9452, intensity: 1.1 };
+// The even light from the dusk sky above and the dark paving below. It fills what no lamp
+// reaches; the arms and weapon get the same, so they match the world around them. It is kept
+// low so the gaps between lamps stay dark and the pools of lamplight stand out.
+export const MARKET_FILL = { sky: 0x7c88b8, ground: 0x2a2026, intensity: 0.2 };
 
 // The playable square: 60 m across, centred on the origin.
 export const MARKET_ARENA: Arena = { sizeMeters: 60 };

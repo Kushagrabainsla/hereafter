@@ -2,7 +2,8 @@ import {
   AdditiveBlending, BufferGeometry, CanvasTexture, Color, Group, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, Quaternion, Scene,
   SRGBColorSpace, Sprite, SpriteMaterial, Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { float, materialColor, mix, mx_fractal_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { float, materialColor, materialMetalness, materialRoughness, mix, mx_fractal_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { layered, SurfaceKind, surfaceKind } from "./surfaces";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type LayoutBox, type MapToggle } from "./arena";
@@ -119,14 +120,19 @@ function canvas(width: number, height: number, draw: (g: CanvasRenderingContext2
   return texture;
 }
 
-// Grime on the paint: darker toward the ground and in broad noisy patches, like the walls.
-function weathered(source: MeshStandardMaterial): MeshStandardNodeMaterial {
+// The layered surface for what the part is made of (surfaces.ts), with road grime over it:
+// darker toward the ground and in broad noisy patches, like the walls.
+function weathered(source: MeshStandardMaterial, kind: number): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial();
   material.copy(source);
+  const layers = layered(materialColor, materialRoughness, materialMetalness, float(kind));
   const p = positionWorld;
   const patches = mx_fractal_noise_float(p.mul(vec3(1.3, 0.9, 1.3))).mul(0.5).add(0.5).clamp(0, 1);
   const road = smoothstep(0.1, 1.3, p.y);
-  material.colorNode = materialColor.mul(mix(float(0.62), float(1), road)).mul(mix(float(0.86), float(1.04), patches));
+  material.colorNode = layers.color.mul(mix(float(0.62), float(1), road)).mul(mix(float(0.86), float(1.04), patches));
+  material.roughnessNode = layers.roughness;
+  material.metalnessNode = layers.metalness;
+  material.normalNode = layers.normal;
   return material;
 }
 
@@ -213,7 +219,8 @@ export class FoodTruck {
   }
 
   private dressOnce(material: MeshStandardMaterial): SurfaceMaterial {
-    if (["paint", "teal", "red"].includes(material.name)) { const node = weathered(material); node.name = material.name; return node; }
+    const kind = ["paint", "teal", "red"].includes(material.name) ? SurfaceKind.painted : surfaceKind(material.name);
+    if (kind !== SurfaceKind.plain) { const node = weathered(material, kind); node.name = material.name; return node; }
     if (material.name === "glass") { material.transparent = true; material.depthWrite = false; material.opacity = 0.38; }
     // The truck is parked: headlights and tail lights glow faintly, the kitchen is lit.
     if (material.name === "headlight") material.emissiveIntensity = 0.25;

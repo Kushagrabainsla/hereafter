@@ -15,8 +15,9 @@ export interface Lightmap { data: LightmapData; bounce: Texture; sky: Texture }
 // How much the baked sky occlusion darkens sky light, from 0 (not at all) to 1 (fully).
 const SKY_OCCLUSION = 0.9;
 // The bake counts light from the lamps and the sun only; signs, lit windows, shopfronts and
-// lanterns glow too and would bounce their light as well, so the bounce is lifted for them.
-const BOUNCE_GAIN = 1.6;
+// lanterns glow too and would bounce their light as well. More than this washes the whole
+// alley in one even orange and fills the dark gaps between the lamps.
+const BOUNCE_GAIN = 0.72;
 
 // A position checksum that tolerates the last-bit differences between JavaScript engines,
 // so a lightmap is applied only to the geometry it was baked for.

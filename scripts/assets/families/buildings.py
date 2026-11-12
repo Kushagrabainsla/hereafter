@@ -31,10 +31,12 @@ from lib import RAD, Piece, box, cylinder, hull, join, material, mesh_object, pr
 
 
 def materials():
-    material("bld_frame", 0xcfc6b4, 0.0, 0.7)
+    # Old paint and city-weathered stone, not fresh white: bright trim glows under the lamps
+    # and reads as plastic.
+    material("bld_frame", 0xa89f8c, 0.0, 0.75)
     material("bld_sash", 0x2a2622, 0.2, 0.6)
-    material("bld_stone", 0xd8d0c0, 0.0, 0.85)
-    material("bld_trim", 0xcfc8ba, 0.0, 0.85)
+    material("bld_stone", 0xa49b8b, 0.0, 0.88)
+    material("bld_trim", 0xa0978a, 0.0, 0.88)
     material("bld_recess", 0x07090c, 0.0, 1.0)
     material("bld_shutter", 0x7d8287, 0.5, 0.5)
     material("bld_shutter_dark", 0x4a4e52, 0.6, 0.45)
@@ -63,17 +65,20 @@ def moulding(name, profile, mat, length=1.0):
 
 
 def window_unit():
-    """A sash window set in the wall: a painted frame with an inner casing, a dark reveal behind
-    the glass, sash bars crossing in front of it, a stone sill on corbels and a lintel with a
-    keystone over it. The glass is the card_window card, set 6 cm out."""
+    """A sash window set in the wall: a deep painted frame with an inner casing, a dark reveal
+    behind the glass, sash bars crossing in front of it, a stone sill on corbels and a lintel
+    with a keystone over it. The glass is the card_window card, set 6 cm out, so it sits 8 cm
+    back inside the frame and the frame's inner faces read as the window's depth."""
     W, H, w, h = 1.62, 2.0, 1.38, 1.76
+    D = 0.14
     parts = []
-    # The frame: four boards round the opening, and a narrower casing inside them.
+    # The frame: four boards round the opening, standing D out from the wall, and a narrower
+    # casing inside them, set back near the glass.
     for i, (x0, x1, z0, z1) in enumerate(((-W / 2, W / 2, h / 2, H / 2), (-W / 2, W / 2, -H / 2, -h / 2), (-W / 2, -w / 2, -h / 2, h / 2), (w / 2, W / 2, -h / 2, h / 2))):
-        parts.append(box(f"frame{i}", x0, x1, -0.045, 0.0, z0, z1, "bld_frame"))
+        parts.append(box(f"frame{i}", x0, x1, -D, 0.0, z0, z1, "bld_frame"))
     c = 0.035
     for i, (x0, x1, z0, z1) in enumerate(((-w / 2, w / 2, h / 2 - c, h / 2), (-w / 2, w / 2, -h / 2, -h / 2 + c), (-w / 2, -w / 2 + c, -h / 2 + c, h / 2 - c), (w / 2 - c, w / 2, -h / 2 + c, h / 2 - c))):
-        parts.append(box(f"casing{i}", x0, x1, -0.07, -0.045, z0, z1, "bld_frame"))
+        parts.append(box(f"casing{i}", x0, x1, -0.085, -0.055, z0, z1, "bld_frame"))
     parts.append(box("reveal", -w / 2, w / 2, -0.032, -0.03, -h / 2, h / 2, "bld_recess"))
     # Sash bars in front of the glass: a muntin up the middle and the meeting rail.
     parts.append(box("muntin", -0.025, 0.025, -0.105, -0.065, -h / 2 + c, h / 2 - c, "bld_sash"))
@@ -84,8 +89,8 @@ def window_unit():
     for i, x in enumerate((-0.72, 0.72)):
         parts.append(hull(f"corbel{i}", [(x + dx, y, z) for dx in (-0.06, 0.06) for y, z in ((0.0, -1.095), (-0.15, -1.095), (0.0, -1.24))], "bld_stone"))
     # Lintel and keystone.
-    parts.append(box("lintel", -0.9, 0.9, -0.08, 0.0, 1.0, 1.16, "bld_trim"))
-    parts.append(hull("keystone", [(x, y, z) for y in (0.0, -0.11) for x, z in ((-0.09, 0.98), (0.09, 0.98), (-0.12, 1.22), (0.12, 1.22))], "bld_trim"))
+    parts.append(box("lintel", -0.9, 0.9, -0.16, 0.0, 1.0, 1.16, "bld_trim"))
+    parts.append(hull("keystone", [(x, y, z) for y in (0.0, -0.19) for x, z in ((-0.09, 0.98), (0.09, 0.98), (-0.12, 1.22), (0.12, 1.22))], "bld_trim"))
     return join(parts, "window_unit")
 
 

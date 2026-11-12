@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, type Material as SurfaceMaterial } from "three/webgpu";
-import { attribute } from "three/tsl";
+import { attribute, float, materialColor, materialMetalness, materialRoughness } from "three/tsl";
+import { layered, SurfaceKind, surfaceKind } from "./surfaces";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -28,12 +29,40 @@ export const glowing = (material: SurfaceMaterial): boolean => material.name.sta
 const carded = (material: SurfaceMaterial): boolean => material.name.startsWith("card_");
 
 // Plain parts of every piece share this material: each vertex carries its part's colour,
-// roughness and metalness, so a piece of many plain materials draws in one call.
+// roughness, metalness and kind of surface (surfaces.ts), so a piece of many plain materials
+// draws in one call, each part layered as what it is made of.
 const merged = new MeshStandardNodeMaterial();
 merged.name = "kit:merged";
-merged.vertexColors = true;
-merged.roughnessNode = attribute("surface", "vec2").x;
-merged.metalnessNode = attribute("surface", "vec2").y;
+{
+  const surface = attribute("surface", "vec3");
+  const layers = layered(attribute("color", "vec3"), surface.x, surface.y, surface.z);
+  merged.colorNode = layers.color;
+  merged.roughnessNode = layers.roughness;
+  merged.metalnessNode = layers.metalness;
+  merged.normalNode = layers.normal;
+}
+
+// The materials a piece keeps apart (paint taking each copy's colour, textured parts) are
+// layered the same way, as a copy of each. Lamp glass, neon and cards are not.
+const layeredCopies = new Map<SurfaceMaterial, SurfaceMaterial>();
+function layeredCopy(material: SurfaceMaterial): SurfaceMaterial {
+  const standard = material as MeshStandardMaterial;
+  const kind = surfaceKind(material.name);
+  if (glowing(material) || carded(material) || !standard.isMeshStandardMaterial || kind === SurfaceKind.plain) return material;
+  let copy = layeredCopies.get(material);
+  if (!copy) {
+    const node = new MeshStandardNodeMaterial();
+    node.copy(standard);
+    const layers = layered(materialColor, materialRoughness, materialMetalness, float(kind));
+    node.colorNode = layers.color;
+    node.roughnessNode = layers.roughness;
+    node.metalnessNode = layers.metalness;
+    node.normalNode = layers.normal;
+    copy = node;
+    layeredCopies.set(material, copy);
+  }
+  return copy;
+}
 
 // A material that can join the merged one: opaque, unlit, untextured, not paint, glow or card.
 function plain(material: SurfaceMaterial): material is MeshStandardMaterial {
@@ -44,13 +73,14 @@ function plain(material: SurfaceMaterial): material is MeshStandardMaterial {
 
 // Geometry carrying a plain material's colour and surface on every vertex.
 function painted(geometry: BufferGeometry, material: MeshStandardMaterial): BufferGeometry {
-  const count = geometry.getAttribute("position").count, color = new Float32Array(count * 3), surface = new Float32Array(count * 2);
+  const count = geometry.getAttribute("position").count, color = new Float32Array(count * 3), surface = new Float32Array(count * 3);
+  const kind = surfaceKind(material.name);
   for (let i = 0; i < count; i += 1) {
     color.set([material.color.r, material.color.g, material.color.b], i * 3);
-    surface.set([material.roughness, material.metalness], i * 2);
+    surface.set([material.roughness, material.metalness, kind], i * 3);
   }
   geometry.setAttribute("color", new BufferAttribute(color, 3));
-  geometry.setAttribute("surface", new BufferAttribute(surface, 2));
+  geometry.setAttribute("surface", new BufferAttribute(surface, 3));
   return geometry;
 }
 
@@ -96,7 +126,7 @@ export function kitPieces(gltfs: (GLTF | null)[]): Map<string, KitPiece> {
         list.push(geometry);
         byMaterial.set(material, list);
       });
-      const parts = [...byMaterial].map(([material, list]) => ({ geometry: list.length > 1 ? mergeGeometries(list, false)! : list[0], material }));
+      const parts = [...byMaterial].map(([material, list]) => ({ geometry: list.length > 1 ? mergeGeometries(list, false)! : list[0], material: layeredCopy(material) }));
       if (plainParts.length) parts.unshift({ geometry: plainParts.length > 1 ? mergeGeometries(plainParts, false)! : plainParts[0], material: merged });
       pieces.set(node.name, { parts });
     }

@@ -1,4 +1,5 @@
 import { Color, DirectionalLight, HemisphereLight, PerspectiveCamera, PointLight, Scene, Vector3 } from "three/webgpu";
+import { MARKET_FILL } from "../world/nightMarket";
 
 // [x, y, z, colour, intensity, distance] of a lamp in the world (see BuiltMap.lightSources).
 export type LightSource = [number, number, number, number, number, number];
@@ -21,7 +22,9 @@ export class ViewLighting {
   private slots: PointLight[] = [];
   private key = new DirectionalLight(0xffffff, 0);
   private sun = new DirectionalLight(0xff9452, 0);
-  private ambient = new HemisphereLight(0x7c88b8, 0x2a2026, 0.85);
+  private ambient = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
+  // The fill light's strength, before the lamps that are not slots join it.
+  fill = MARKET_FILL.intensity;
   private flashLight = new PointLight(0xffc27a, 0, 3, 2);
   private visibility: number[];
   private visible: number[];
@@ -113,8 +116,8 @@ export class ViewLighting {
     }
     if (rest > 0) this.extra.multiplyScalar(1 / rest);
     // Only a little: lamps further off light the hands from above and the sides, not evenly.
-    this.ambient.color.setHex(0x7c88b8).lerp(this.extra, Math.min(0.5, rest * 0.3));
-    this.ambient.intensity = 0.85 + Math.min(0.4, rest * 0.2);
+    this.ambient.color.setHex(MARKET_FILL.sky).lerp(this.extra, Math.min(0.5, rest * 0.3));
+    this.ambient.intensity = this.fill + Math.min(0.4, rest * 0.2);
     const sun = this.scratch.copy(this.sunDirection).transformDirection(toView);
     this.sun.position.copy(sun).multiplyScalar(5);
     this.sun.intensity = this.sunIntensity * this.sunVisible;

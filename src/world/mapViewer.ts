@@ -24,7 +24,7 @@ import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
 import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
-import { buildNightMarket, nightMarketData, MARKET_SUN, STOVES } from "./nightMarket";
+import { buildNightMarket, nightMarketData, MARKET_FILL, MARKET_SUN, STOVES } from "./nightMarket";
 import { duskSky } from "./duskSky";
 import { applyLightmap, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
@@ -168,7 +168,7 @@ function paint(): Promise<void> {
 }
 
 // The tone mapping's exposure, which SMAA's edge detection also uses.
-const EXPOSURE = 1.25;
+const EXPOSURE = 1.4;
 // The first frames reveal the market in this many slices, building each slice's shaders.
 const WARM_SLICES = 16;
 
@@ -196,9 +196,12 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const sky = duskSky(sunOffset.clone().normalize());
   scene.background = sky;
   scene.environment = sky;
-  scene.environmentIntensity = 0.55;
-  scene.fog = new FogExp2(0x2a2638, 0.0075);
-  scene.add(new HemisphereLight(0x7c88b8, 0x2a2026, 0.85));
+  scene.environmentIntensity = 0.25;
+  // Dusk haze: the far ends of the alleys fade into the dark violet of the evening air, which
+  // gives the market depth; the near shops stay clear.
+  scene.fog = new FogExp2(0x312838, 0.028);
+  const fill = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
+  scene.add(fill);
   const sun = new DirectionalLight(MARKET_SUN.color, MARKET_SUN.intensity);
   sun.position.copy(sunOffset);
   sun.castShadow = true;
@@ -373,10 +376,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const lit = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
   const held = pass(viewScene, viewCamera, { samples: 4 }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
-  const glow = picture.add(bloom(vec4(picture, 1), 0.75, 0.55, 0.9).rgb);
+  // A tight glow, so lit windows and signs keep their frames readable.
+  const glowPass = bloom(vec4(picture, 1), 0.45, 0.4, 0.9);
+  const glow = picture.add(glowPass.rgb);
   const brightness = luminance(glow);
   const grade = mix(vec3(0.94, 1.0, 1.07), vec3(1.06, 1.0, 0.93), smoothstep(0.02, 0.5, brightness));
-  const graded = mix(vec3(brightness), glow, 1.08).mul(grade).max(0);
+  // Colour a little below full strength: with so many warm lamps, full colour turns every
+  // surface the same orange.
+  const graded = mix(vec3(brightness), glow, 0.82).mul(grade).max(0);
   const vignette = float(1).sub(smoothstep(0.32, 0.95, screenUV.sub(0.5).length()).mul(0.42));
   pipeline.outputColorTransform = false;
   pipeline.outputNode = film(renderOutput(vec4(graded.mul(vignette), 1)), float(0.06));
