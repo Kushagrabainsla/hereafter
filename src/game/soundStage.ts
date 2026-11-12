@@ -2,6 +2,7 @@ import { Vector3, type PerspectiveCamera } from "three/webgpu";
 import { gameAudio, type Gait, type Surface, type Vec3 } from "./gameAudio";
 import { type CombatEvent } from "./matchState";
 import { type PlayerGait, type PlayerMotion, type PlayerPose } from "./playerController";
+import { outdoorAt, puddleAt } from "../world/wetness";
 
 interface RemoteSteps { x: number; z: number; stride: number; height: number; sliding: boolean }
 interface RemoteSource { each: (visit: (peerId: string, feet: Vector3, pose: PlayerPose, dead: boolean) => void) => void }
@@ -34,11 +35,14 @@ export class SoundStage {
     camera.getWorldDirection(this.forward);
     this.up.copy(UP).applyQuaternion(camera.quaternion);
     gameAudio.listen(camera.position, this.forward, this.up);
+    gameAudio.setSheltered(!outdoorAt(camera.position.x, camera.position.z));
     const surface = (): Surface => this.surfaceAt();
     // The head bob is lowest when stride sits at 3/4 pi past a multiple of pi: one footfall.
+    // Feet on the street splash where water stands (wetness.ts); the ground is at height zero.
     const index = Math.floor((gait.stride - 0.75 * Math.PI) / Math.PI);
     if (index !== this.stepIndex) {
-      if (motion.moving && gait.grounded && !motion.sliding) gameAudio.step(surface(), motion.running ? "run" : motion.crouching ? "crouch" : "walk", index % 2 ? 1 : -1);
+      const wet = camera.position.y < 2.2 ? puddleAt(camera.position.x, camera.position.z) : 0;
+      if (motion.moving && gait.grounded && !motion.sliding) gameAudio.step(surface(), motion.running ? "run" : motion.crouching ? "crouch" : "walk", index % 2 ? 1 : -1, wet);
       this.stepIndex = index;
     }
     // The player's own voice: a grunt on some jumps, on every climb and on hard landings. (The
@@ -75,7 +79,7 @@ export class SoundStage {
       if (state.stride < 1) return;
       state.stride %= 1;
       if (gameAudio.distanceTo(at) > 40) return;
-      gameAudio.remoteStep(at, this.surfaceAt(), gaitName, gameAudio.occlusion(camera.position, chest));
+      gameAudio.remoteStep(at, this.surfaceAt(), gaitName, gameAudio.occlusion(camera.position, chest), feet.y < 0.3 ? puddleAt(feet.x, feet.z) : 0);
     });
     for (const peerId of this.remote.keys()) if (!seen.has(peerId)) this.remote.delete(peerId);
   }

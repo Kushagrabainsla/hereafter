@@ -2,13 +2,16 @@ import {
   ACESFilmicToneMapping, DirectionalLight, FogExp2, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
-import { float, luminance, mix, pass, renderOutput, screenUV, smoothstep, vec3, vec4 } from "three/tsl";
+import { float, getViewPosition, luminance, mix, mrt, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec3, vec4 } from "three/tsl";
+import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { film } from "three/addons/tsl/display/FilmNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { FixedGridLighting } from "./fixedClusters";
 import { QUALITY, type GraphicsQuality } from "./quality";
+import { puddleNode, rainTime } from "./wetness";
+import { Rain } from "./rain";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
@@ -333,6 +336,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   const soundStage = new SoundStage((peerId) => remotePlayers.position(peerId));
   scene.add(camera);
+  // Rain round the player (rain.ts); how many drops depends on the preset.
+  const rain = new Rain(scene, quality.raindrops);
   const viewScene = new Scene();
   viewScene.environment = scene.environment;
   viewScene.environmentIntensity = scene.environmentIntensity;
@@ -360,11 +365,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   renderer.setClearColor(0x000000, 0);
   const pipeline = new RenderPipeline(renderer);
   const worldPass = pass(scene, camera);
+  // Reflections need each pixel's normal, so with them the world pass also writes a normal
+  // buffer, which ambient occlusion then reads too. Without one, GTAO rebuilds normals from depth.
+  if (quality.reflections) worldPass.setMRT(mrt({ output: sceneOutput, normal: normalView }));
+  const normals = quality.reflections ? worldPass.getTextureNode("normal") : null;
   const world = worldPass.getTextureNode("output");
-  // Without a normal buffer GTAO rebuilds normals from depth, which saves writing one.
   let occlusion: Node<"float"> = float(1);
   if (quality.occlusion) {
-    const occlusionPass = ao(worldPass.getTextureNode("depth"), null as unknown as Node, camera);
+    const occlusionPass = ao(worldPass.getTextureNode("depth"), (normals ?? null) as unknown as Node, camera);
     occlusionPass.resolutionScale = quality.occlusion.scale;
     occlusionPass.radius.value = 0.8;
     occlusionPass.samples.value = quality.occlusion.samples;
@@ -375,7 +383,25 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // went unsmoothed. It sees the world at the game's exposure and gamma-encoded, as the eye
   // does, and the result is decoded back to linear light. (After tone mapping would be simpler,
   // but the passes it reads would then render inside SMAA's own pass and clear to black.)
-  const occluded = world.rgb.mul(occlusion);
+  let occluded: Node<"vec3"> = world.rgb.mul(occlusion);
+  // Puddles mirror the lamps, signs and lit windows. The reflection pass finds standing water
+  // itself: it rebuilds each pixel's place in the world from its depth and looks the puddle mask
+  // up there (wetness.ts), on the ground only. Everything that is not a puddle is skipped at
+  // once, so rays are only traced where there is water.
+  const reflectFrom = { inverseProjection: uniform(new Matrix4()), world: uniform(new Matrix4()) };
+  if (normals) {
+    const depth = worldPass.getTextureNode("depth");
+    const at = reflectFrom.world.mul(vec4(getViewPosition(uv(), depth.sample(uv()).r, reflectFrom.inverseProjection), 1)).xyz;
+    const water = puddleNode(at).mul(below(at.y, float(0.06))).mul(0.9);
+    const mirror = ssr(world, depth, normals as unknown as Node<"vec3">, { metalnessNode: water, roughnessNode: float(0.12), camera });
+    mirror.resolutionScale = 0.5;
+    mirror.quality.value = 0.5;
+    mirror.maxDistance.value = 30;
+    mirror.thickness.value = 0.25;
+    // The pass fades a reflection with distance and grazing angle; water at night mirrors the
+    // lamps more strongly than that leaves, so it is lifted.
+    occluded = occluded.add(mirror.getTextureNode().rgb.mul(3));
+  }
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
   const clouds = pass(cloudScene, camera).getTextureNode("output");
@@ -635,6 +661,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       events.onAim?.(spreadPixels, motion.aiming);
     }
     built.update(time / 1000);
+    rainTime.value = time / 1000;
+    rain.follow(camera.position);
+    reflectFrom.inverseProjection.value.copy(camera.projectionMatrixInverse);
+    reflectFrom.world.value.copy(camera.matrixWorld);
     hazeLevel += (built.pipes.fogAt(camera.position) - hazeLevel) * Math.min(1, delta * 6);
     haze.visible = hazeLevel > 0.01;
     if (haze.visible) {

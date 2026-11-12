@@ -22,6 +22,10 @@ export interface GraphicsQuality {
   shadows: boolean;
   // Multisampling of the hands and weapon, drawn in a pass of their own.
   viewSamples: number;
+  // The lamps, signs and lit windows mirrored in the puddles (screen-space reflections).
+  reflections: boolean;
+  // How many raindrops fall around the player at once.
+  raindrops: number;
 }
 
 // Measured on a 2560 x 1440 screen at 2x (4.2 million pixels drawn), against High in alternating
@@ -31,9 +35,9 @@ export interface GraphicsQuality {
 // without them the stalls and the service alley go dark (the six key lights of WebGL 2 ran 52%
 // faster but lost the market's light). Edge smoothing stays too: without it edges stair-step.
 export const QUALITY: Record<QualityLevel, GraphicsQuality> = {
-  high: { level: "high", manyLights: true, occlusion: { samples: 12, scale: 0.5 }, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 4 },
-  medium: { level: "medium", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 4 },
-  low: { level: "low", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: false, viewSamples: 2 },
+  high: { level: "high", manyLights: true, occlusion: { samples: 12, scale: 0.5 }, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 4, reflections: true, raindrops: 14000 },
+  medium: { level: "medium", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 4, reflections: true, raindrops: 10000 },
+  low: { level: "low", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: false, viewSamples: 2, reflections: false, raindrops: 6000 },
 };
 
 // What the player chose on the setup screen: a preset, or Auto.

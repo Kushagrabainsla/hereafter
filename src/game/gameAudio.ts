@@ -90,6 +90,8 @@ export class GameAudio {
   private lastVariant = new Map<SoundName, number>();
   private loading: Promise<void> | null = null;
   private noise: AudioBuffer | null = null;
+  private rainShelter: { filter: BiquadFilterNode; level: GainNode } | null = null;
+  private sheltered = false;
   private master!: GainNode;
   private muffle!: BiquadFilterNode;
   private mix!: GainNode;
@@ -199,9 +201,27 @@ export class GameAudio {
     this.play("latch", { gain: 0.15, when: now + 0.42 });
   }
 
-  step(surface: Surface, gait: Gait, side: number): void {
+  // A footfall; in standing water (wet near 1) it also splashes.
+  step(surface: Surface, gait: Gait, side: number, wet = 0): void {
     const gain = gait === "run" ? 0.16 : gait === "walk" ? 0.1 : 0.045;
     this.play(surface === "hard" ? "step-hard" : "step-soft", { gain, rate: 0.94 + Math.random() * 0.1, pan: side * 0.14 });
+    if (wet > 0.3) this.splash(null, gain * 1.6 * wet, side * 0.14);
+  }
+
+  // A foot coming down in a puddle: a short burst of water noise, brighter for a harder step.
+  splash(at: Vec3 | null, level: number, pan = 0): void {
+    const context = this.live();
+    if (!context || !this.noise || (at && this.distanceTo(at) > 25)) return;
+    const now = context.currentTime, length = 0.16 + Math.random() * 0.05;
+    const burst = this.noiseSource(now, length);
+    const band = new BiquadFilterNode(context, { type: "bandpass", frequency: 1700 + Math.random() * 900, Q: 0.7 });
+    band.frequency.exponentialRampToValueAtTime(900, now + length);
+    const gain = new GainNode(context, { gain: 0.0001 });
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
+    burst.connect(band).connect(gain);
+    if (at) gain.connect(this.panner(at, 2, 1.5)).connect(this.mix);
+    else gain.connect(new StereoPannerNode(context, { pan })).connect(this.mix);
   }
 
   jump(surface: Surface): void {
@@ -353,6 +373,54 @@ export class GameAudio {
     source.connect(filter).connect(gain).connect(this.mix);
     source.start();
     breath.start();
+  }
+
+  // Rain: a soft stereo hiss of rain on the street and a patter of nearer drops, each its own
+  // loop so they do not beat together. Under a roof both dull and drop (rainShelter).
+  private startRain(context: AudioContext): void {
+    const loop = (seconds: number, fill: (data: Float32Array, rate: number) => void): AudioBufferSourceNode => {
+      const buffer = context.createBuffer(2, context.sampleRate * seconds, context.sampleRate);
+      for (let channel = 0; channel < 2; channel += 1) {
+        const data = buffer.getChannelData(channel);
+        fill(data, context.sampleRate);
+        const fade = Math.floor(context.sampleRate * 0.3);
+        for (let i = 0; i < fade; i += 1) { const t = i / fade; data[data.length - fade + i] = data[data.length - fade + i] * (1 - t) + data[i] * t; }
+      }
+      return new AudioBufferSourceNode(context, { buffer, loop: true, loopStart: 0.3, loopEnd: seconds });
+    };
+    // The hiss: white noise, shaped below.
+    const hiss = loop(7, (data) => { for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1; });
+    // The patter: a few hundred small, fast-decaying ticks a second, at random levels.
+    const patter = loop(5.3, (data, rate) => {
+      for (let n = 0; n < data.length / rate * 260; n += 1) {
+        const start = Math.floor(Math.random() * data.length), level = 0.15 + Math.random() ** 3 * 0.85, decay = rate * (0.002 + Math.random() * 0.004);
+        for (let i = 0; i < decay * 4 && start + i < data.length; i += 1) data[start + i] += (Math.random() * 2 - 1) * level * Math.exp(-i / decay);
+      }
+    });
+    const high = new BiquadFilterNode(context, { type: "highpass", frequency: 350, Q: 0.5 });
+    const top = new BiquadFilterNode(context, { type: "lowpass", frequency: 6500, Q: 0.4 });
+    const hissGain = new GainNode(context, { gain: 0.035 });
+    const tick = new BiquadFilterNode(context, { type: "bandpass", frequency: 3200, Q: 0.6 });
+    const patterGain = new GainNode(context, { gain: 0.05 });
+    const shelter = new BiquadFilterNode(context, { type: "lowpass", frequency: 18000, Q: 0.4 });
+    const level = new GainNode(context, { gain: 1 });
+    hiss.connect(high).connect(top).connect(hissGain).connect(shelter);
+    patter.connect(tick).connect(patterGain).connect(shelter);
+    shelter.connect(level).connect(this.mix);
+    level.connect(new GainNode(context, { gain: 0.25 })).connect(this.reverb);
+    hiss.start();
+    patter.start();
+    this.rainShelter = { filter: shelter, level };
+  }
+
+  // Indoors the rain is heard through the roof: dull and quieter.
+  setSheltered(sheltered: boolean): void {
+    const context = this.live();
+    if (!context || !this.rainShelter || sheltered === this.sheltered) return;
+    this.sheltered = sheltered;
+    const now = context.currentTime;
+    this.rainShelter.filter.frequency.setTargetAtTime(sheltered ? 700 : 18000, now, 0.25);
+    this.rainShelter.level.gain.setTargetAtTime(sheltered ? 0.45 : 1, now, 0.25);
   }
 
   // A car passing a street away: a swell of tyre and engine noise crossing from one side.
@@ -566,9 +634,10 @@ export class GameAudio {
     this.spatial(name, at, { gain: weapon === "pistol" ? 1 : 0.95, ref: 7, rolloff: 0.95, rate: 0.97 + Math.random() * 0.06, reverb: 0.3 + 0.35 * Math.min(1, distance / 60), priority: "high" });
   }
 
-  remoteStep(at: Vec3, surface: Surface, gait: Gait, occluded: boolean): void {
+  remoteStep(at: Vec3, surface: Surface, gait: Gait, occluded: boolean, wet = 0): void {
     const gain = gait === "run" ? 0.45 : gait === "walk" ? 0.3 : 0.08;
     this.spatial(surface === "hard" ? "step-hard" : "step-soft", at, { gain, ref: 2, rolloff: 1.6, rate: 0.94 + Math.random() * 0.1, occluded });
+    if (wet > 0.3) this.splash(at, gain * 0.9 * wet * (occluded ? 0.5 : 1));
   }
 
   remoteLand(at: Vec3, surface: Surface): void {
@@ -902,6 +971,7 @@ export class GameAudio {
     for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
     this.noise = noise;
     this.startBed(context);
+    this.startRain(context);
     this.nextTraffic = context.currentTime + 2;
     this.nextSiren = context.currentTime + 40 + Math.random() * 60;
     window.setInterval(() => this.tickAmbience(), AMBIENT_TICK_MS);

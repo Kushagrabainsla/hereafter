@@ -4,7 +4,8 @@ import {
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { puddleNode, rippleHeight, setIndoors } from "./wetness";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
 import { type Material } from "./materials";
@@ -515,11 +516,18 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const footing = smoothstep(0.05, 2.9, P.y.add(mx_noise_float(P.mul(0.75)).mul(0.5)));
   const grime = mix(float(0.46), float(1), footing).mul(mix(float(0.72), float(1.08), patches));
   const wall = (options: NodeOptions): MeshStandardNodeMaterial => { const material = new MeshStandardNodeMaterial(options); material.colorNode = materialColor.mul(grime); return material; };
-  const wet = smoothstep(0.16, 0.36, mx_fractal_noise_float(vec3(P.x.mul(0.13), float(0.7), P.z.mul(0.13))));
+  // In the rain the whole street is wet: darker and glossy, its texture's relief softened so the
+  // lamps do not glitter in it. Where water stands (wetness.ts) it is smooth, flat but for the
+  // rings the rain makes, and only a little darker: a puddle at night shows mostly what it
+  // mirrors, and painted too dark it reads as a hole. Not perfectly smooth, so each lamp draws
+  // a long streak of light down the water instead of a pinpoint.
+  const wet = puddleNode(P);
   const street = (options: NodeOptions): MeshStandardNodeMaterial => {
     const material = new MeshStandardNodeMaterial(options);
-    material.colorNode = materialColor.mul(mix(float(1), float(0.55), wet));
-    material.roughnessNode = mix(materialRoughness, float(0.035), wet);
+    material.normalScale.set(0.5, 0.5);
+    material.colorNode = materialColor.mul(mix(float(0.78), float(0.72), wet));
+    material.roughnessNode = mix(materialRoughness.mul(0.58), float(0.14), wet);
+    material.normalNode = mix(materialNormal, bumpMap(rippleHeight(P)) as unknown as typeof materialNormal, wet);
     return material;
   };
   const brick = (color: number): MeshStandardNodeMaterial => wall({ map: textures.brick, normalMap: textures.brickNormal, color, roughness: 0.92 });
@@ -616,7 +624,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // Ground: paving in the market alley and passages, asphalt in the service alley, wooden
   // floors indoors.
   // Ground is cut into 4 m tiles so the parts under buildings can be left out of the lightmap.
+  const indoors: [number, number, number, number][] = [];
   const ground = (look: string, x0: number, x1: number, z0: number, z1: number, y: number): void => {
+    if (look === "floor" && y < 1) indoors.push([x0, x1, z0, z1]);
     const geometry = new PlaneGeometry(x1 - x0, z1 - z0, Math.ceil((x1 - x0) / 4), Math.ceil((z1 - z0) / 4));
     const uv = geometry.attributes.uv;
     for (let i = 0; i < uv.count; i += 1) uv.setXY(i, uv.getX(i) * (x1 - x0), uv.getY(i) * (z1 - z0));
@@ -1069,6 +1079,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const pipes = new SteamPipes(root);
   for (const item of extinguishers) pipes.addSource(item.id, item.source, item.wall, item.out, POWDER);
 
+  // Puddles stay off the floors indoors.
+  setIndoors(indoors);
   const surfaces: Mesh[] = [];
   statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
 
