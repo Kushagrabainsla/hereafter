@@ -223,6 +223,14 @@ const propSpots: [string, number, number, number, number][] = [
   ["crate_wood", 9.3, -4.0, 0, 0.6], ["plastic_crate", 16.3, 22.0, 0, 0.3], ["oil_drum", 9.3, -22.5, 0, 0],
   ["crate_wood_large", 19.0, 1.5, 4.2, 0.3], ["cardboard_box", 18.2, -1.0, 4.2, 0.5],
   ["plastic_crate", -13.9, -5.6, 0, 0.2], ["cardboard_box", -14.0, 13.6, 0, 0.4],
+  // Clutter stacked against the service alley's walls, clear of its doors, dumpsters and breaker.
+  ["crate_wood_large", 8.9, -14.6, 0, 1.6], ["cardboard_box", 8.95, -14.9, 0.47, 0.3], ["crate_wood", 8.95, -14.2, 0.47, 1.5],
+  ["crate_wood", 8.95, -10.6, 0, 1.55],
+  ["plastic_crate", 8.85, 5.4, 0, 0.1], ["plastic_crate", 8.85, 5.4, 0.26, 0.4], ["plastic_crate", 8.85, 6.0, 0, 1.6],
+  ["cardboard_box", 8.8, 7.6, 0, 0.2], ["cardboard_box", 8.85, 7.6, 0.35, 0.9],
+  ["oil_drum", 16.6, -13.3, 0, 0], ["oil_drum", 16.6, -14.0, 0, 0.8], ["trash_can", 16.6, -15.1, 0, 0.3],
+  ["cardboard_box", 16.7, 17.6, 0, 0.3], ["cardboard_box", 16.7, 18.2, 0, 1.2], ["cardboard_box", 16.7, 17.9, 0.35, 0.7],
+  ["crate_wood", 16.75, -20.8, 0, 1.6], ["crate_wood", 16.75, -20.8, 0.35, 1.5], ["plastic_crate", 16.65, -21.9, 0, 0.1], ["cardboard_box", 16.7, -23.0, 0, 0.7],
   // Red fuel drums: shot open, they vent fire and burst.
   ["fuel_drum", -7.6, 13.0, 0, 0], ["fuel_drum", 16.3, -3.0, 0, 0.6],
   ["fuel_drum", -7.8, -5.2, 0, 0.3], ["fuel_drum", 0.0, 4.6, 0, 1.1], ["fuel_drum", 9.0, 21.8, 0, 0.4], ["fuel_drum", 16.4, 11.6, 0, 2.0],
@@ -310,13 +318,16 @@ export const NIGHT_MARKET: MapLayout = {
   ],
 };
 
-// The low sun just above the rooftops to the west-southwest: where it lies from the market
-// (any length), its colour and strength. The baked bounce light uses it too.
-export const MARKET_SUN = { offset: [-220, 62, -60] as [number, number, number], color: 0xff9452, intensity: 1.1 };
-// The even light from the dusk sky above and the dark paving below. It fills what no lamp
-// reaches; the arms and weapon get the same, so they match the world around them. It is kept
-// low so the gaps between lamps stay dark and the pools of lamplight stand out.
-export const MARKET_FILL = { sky: 0x7c88b8, ground: 0x2a2026, intensity: 0.2 };
+// The late-afternoon sun, low in the north-northwest, so it shines down the main alley and rakes
+// across the cross alleys: where it lies from the market (any length), its colour and strength.
+// The baked bounce light uses it too.
+export const MARKET_SUN = { offset: [-90, 110, 200] as [number, number, number], color: 0xffc690, intensity: 3.2 };
+// The lamps burn at this share of their night strength: by day the sun and sky outshine them.
+export const LAMP_LEVEL = 0.5;
+// The even light from the grey sky above and the dark paving below. It fills what neither the sun
+// nor a lamp reaches; the arms and weapon get the same, so they match the world around them. It
+// is cool and kept low, so the shade stays blue and deep against the warm sunlight.
+export const MARKET_FILL = { sky: 0x9aa8c8, ground: 0x2c2a2c, intensity: 0.38 };
 
 // The playable square: 60 m across, centred on the origin.
 export const MARKET_ARENA: Arena = { sizeMeters: 60 };
@@ -555,7 +566,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // The dense set, on renderers that cluster lights, each kept by its index so the lamps that
   // feed it can dim it when they break.
   const many: [number, number, number, number, number, number][] = [];
-  const light = (entry: [number, number, number, number, number, number]): number => many.push(entry) - 1;
+  const light = ([x, y, z, color, intensity, distance]: [number, number, number, number, number, number]): number => many.push([x, y, z, color, intensity * LAMP_LEVEL, distance]) - 1;
   const strandLights = strands.map((strand) => [0.2, 0.5, 0.8].map((t) => light([strand.x0 + (strand.x1 - strand.x0) * t, strand.y - strand.sag * 4 * t * (1 - t) - 0.25, strand.z0 + (strand.z1 - strand.z0) * t, 0xffb46a, 9, 8.5])));
   const stallLights = stalls.map((stall) => light([stall.x + stall.side * 0.3, 2.05, stall.z, 0xffc27a, 8, 6]));
   const lanternLights = lanternRows.map((z) => [-6.3, -1.9].map((x) => light([x, 4.3, z, 0xff6a3a, 7, 7])));
@@ -1070,8 +1081,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // Steel ladders and the bar's stair.
   addClimbing(placer, ladders, [stair]);
-  // Only the fire escapes stand high enough in the low sun to throw shadows worth drawing.
-  placer.build(root, (name) => name.startsWith("escape"));
+  // The sun reaches the street, so every kit piece throws a shadow: stalls, signs, air conditioners.
+  placer.build(root, () => true);
   shopKit.build(root);
   const doors = new Doors(root, kit);
   for (const [id, objects] of doors.groups) groups.set(id, objects);
@@ -1100,7 +1111,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   return {
     refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES, ...BREACH_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes, stalls: stallViews, wrecks,
     light(manyLights) {
-      const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity, 16] as [number, number, number, number, number, number]);
+      const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity * LAMP_LEVEL, 16] as [number, number, number, number, number, number]);
       const points = list.map(([x, y, z, color, intensity, distance]) => {
         const point = new PointLight(color, intensity, distance, 2);
         point.position.set(x, y, z);

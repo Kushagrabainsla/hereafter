@@ -1,8 +1,10 @@
 import {
-  ACESFilmicToneMapping, DirectionalLight, FogExp2, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
+  ACESFilmicToneMapping, DirectionalLight, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
-import { float, getViewPosition, luminance, mix, mrt, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec3, vec4 } from "three/tsl";
+import { float, getViewPosition, int, length, rtt, luminance, mix, mrt, normalize, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec3, vec4 } from "three/tsl";
+import { radialBlur } from "three/addons/tsl/display/radialBlur.js";
+import { aimShafts, ATMOSPHERE, atmosphere, sunward } from "./atmosphere";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
@@ -172,9 +174,11 @@ function paint(): Promise<void> {
 }
 
 // The tone mapping's exposure, which SMAA's edge detection also uses.
-const EXPOSURE = 1.4;
+const EXPOSURE = 1.0;
 // The first frames reveal the market in this many slices, building each slice's shaders.
 const WARM_SLICES = 16;
+// The sun's shadow map is redrawn once in this many frames.
+const SHADOW_EVERY = 4;
 
 export type BuildStep = "textures" | "buildings" | "props" | "renderer" | "physics" | "shaders";
 
@@ -194,16 +198,16 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const [textures, lightmap] = await Promise.all([loadSurfaceTextures(), loadLightmap("night-market")]);
   await step("buildings");
   const scene = new Scene();
-  // Dusk: the last low orange light catches the upper floors while the alleys fall into
-  // shadow, lit by the market itself. The painted sky is also what surfaces reflect.
+  // The end of a wet afternoon: a low sun at the north end of the main alley shines down it
+  // through the haze, backlighting the market, while the cross alleys lie in shadow, lit by the
+  // grey sky and the market's lamps. The painted sky is also what surfaces reflect. The haze
+  // itself is laid over the finished picture (atmosphere.ts), not drawn as fog.
   const sunOffset = new Vector3(...MARKET_SUN.offset);
   const sky = duskSky(sunOffset.clone().normalize());
   scene.background = sky;
   scene.environment = sky;
-  scene.environmentIntensity = 0.25;
-  // Dusk haze: the far ends of the alleys fade into the dark violet of the evening air, which
-  // gives the market depth; the near shops stay clear.
-  scene.fog = new FogExp2(0x312838, 0.028);
+  scene.environmentIntensity = 0.55;
+  ATMOSPHERE.toSun.value.copy(sunOffset).normalize();
   const fill = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
   scene.add(fill);
   const sun = new DirectionalLight(MARKET_SUN.color, MARKET_SUN.intensity);
@@ -218,9 +222,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   sun.shadow.camera.far = 700;
   sun.shadow.bias = -0.0002;
   sun.shadow.normalBias = 0.035;
-  // The low sun only reaches the upper floors, where nothing moves, so its shadow map covers
-  // the whole map from a fixed place and is drawn once rather than every frame. Redrawing it
-  // took about 150 objects through the renderer each frame, a fifth of its work.
+  // The shadow map covers the whole map from a fixed place and is redrawn every fourth frame
+  // (SHADOW_EVERY), so shoved props, swinging doors and players cast moving shadows. Redrawing it
+  // every frame took about 150 objects through the renderer each frame, a fifth of its work.
   sun.shadow.autoUpdate = false;
   sun.shadow.needsUpdate = true;
   scene.add(sun, sun.target);
@@ -336,8 +340,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   const soundStage = new SoundStage((peerId) => remotePlayers.position(peerId));
   scene.add(camera);
-  // Rain round the player (rain.ts); how many drops depends on the preset.
-  const rain = new Rain(scene, quality.raindrops);
   const viewScene = new Scene();
   viewScene.environment = scene.environment;
   viewScene.environmentIntensity = scene.environmentIntensity;
@@ -389,27 +391,44 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // up there (wetness.ts), on the ground only. Everything that is not a puddle is skipped at
   // once, so rays are only traced where there is water.
   const reflectFrom = { inverseProjection: uniform(new Matrix4()), world: uniform(new Matrix4()) };
+  const eyeHeight = uniform(0);
   if (normals) {
     const depth = worldPass.getTextureNode("depth");
     const at = reflectFrom.world.mul(vec4(getViewPosition(uv(), depth.sample(uv()).r, reflectFrom.inverseProjection), 1)).xyz;
     const water = puddleNode(at).mul(below(at.y, float(0.06))).mul(0.9);
-    const mirror = ssr(world, depth, normals as unknown as Node<"vec3">, { metalnessNode: water, roughnessNode: float(0.12), camera });
+    const mirror = ssr(world, depth, normals as unknown as Node<"vec3">, { metalnessNode: water, roughnessNode: float(0.32), camera });
     mirror.resolutionScale = 0.5;
     mirror.quality.value = 0.5;
     mirror.maxDistance.value = 30;
     mirror.thickness.value = 0.25;
-    // The pass fades a reflection with distance and grazing angle; water at night mirrors the
-    // lamps more strongly than that leaves, so it is lifted.
-    occluded = occluded.add(mirror.getTextureNode().rgb.mul(3));
+    // The pass fades a reflection with distance and grazing angle; standing water mirrors the
+    // lamps and sunlit walls more strongly than that leaves, so it is lifted. A rough 0.32 blurs it
+    // through the pass's mip chain, which hides the half-resolution pixels.
+    occluded = occluded.add(mirror.getTextureNode().rgb.mul(2));
   }
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
+  // Rain round the player (rain.ts), in the clouds' scene too; how many drops depends on the preset.
+  const rain = new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth"));
   const clouds = pass(cloudScene, camera).getTextureNode("output");
-  const lit = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
+  const smoked = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
+  // The haze, the light shafts and the sun (atmosphere.ts). Each pixel's distance and direction
+  // come from its depth; the sky is where nothing was drawn. The shafts march the sun's shadow
+  // are the open sky round the sun, smeared toward the sun's place on the screen, so the edges
+  // of roofs, cables and signs cut beams through the haze when the player looks toward it.
+  const sceneDepth = worldPass.getTextureNode("depth");
+  const viewAt = getViewPosition(uv(), sceneDepth.sample(uv()).r, reflectFrom.inverseProjection);
+  const lookDirection = normalize(reflectFrom.world.mul(vec4(viewAt, 0)).xyz);
+  const isSky = below(float(0.999999), sceneDepth.sample(uv()).r);
+  // Both the opening and its blur are drawn at a quarter of the resolution: the beams are soft anyway.
+  const opening = rtt(vec4(vec3(isSky.mul(sunward(lookDirection))), 1), null, null, { resolutionScale: 0.25 });
+  const shafts = (rtt(radialBlur(opening, { center: ATMOSPHERE.sunScreen, count: int(24), weight: float(0.85), decay: float(0.96), exposure: float(1.6) }), null, null, { resolutionScale: 0.25 }) as unknown as Node<"vec4">).r.mul(ATMOSPHERE.sunInView);
+  const lit = atmosphere(smoked, length(viewAt), lookDirection, eyeHeight, isSky, shafts);
   const held = pass(viewScene, viewCamera, { samples: quality.viewSamples }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
-  // A tight glow, so lit windows and signs keep their frames readable.
-  const glow = quality.bloom ? picture.add(bloom(vec4(picture, 1), 0.45, 0.4, 0.9).rgb) : picture;
+  // A tight glow, so lit windows and signs keep their frames readable, and a wide halo that only
+  // the sun and the brightest haze round it reach, as light spreads in a real lens.
+  const glow = quality.bloom ? picture.add(bloom(vec4(picture, 1), 0.45, 0.4, 0.9).rgb).add(bloom(vec4(picture, 1), 0.5, 1, 2.2).rgb) : picture;
   const brightness = luminance(glow);
   const grade = mix(vec3(0.94, 1.0, 1.07), vec3(1.06, 1.0, 0.93), smoothstep(0.02, 0.5, brightness));
   // Colour a little below full strength: with so many warm lamps, full colour turns every
@@ -665,6 +684,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     rain.follow(camera.position);
     reflectFrom.inverseProjection.value.copy(camera.projectionMatrixInverse);
     reflectFrom.world.value.copy(camera.matrixWorld);
+    eyeHeight.value = camera.position.y;
+    aimShafts(camera);
     hazeLevel += (built.pipes.fogAt(camera.position) - hazeLevel) * Math.min(1, delta * 6);
     haze.visible = hazeLevel > 0.01;
     if (haze.visible) {
@@ -681,6 +702,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     viewCamera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     viewLighting.update(Math.min(delta, 0.1), camera);
+    if (sun.castShadow && renderedFrames % SHADOW_EVERY === 0) sun.shadow.needsUpdate = true;
     pipeline.render();
     frames += 1;
     renderedFrames += 1;

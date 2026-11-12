@@ -1,6 +1,6 @@
 # The Night Market
 
-The game's map is a back-alley market in San Jose's SoFA district at dusk, 60 × 60 m, designed for tight fights. Two players sprinting from random spots meet in about 3.8 s.
+The game's map is a back-alley market in San Jose's SoFA district at the end of a wet afternoon, 60 × 60 m, designed for tight fights. Two players sprinting from random spots meet in about 3.8 s.
 
 ## Layout
 
@@ -98,7 +98,7 @@ Counters are cover: they are wood, so rounds pass through them weakened, and the
 
 ## Look
 
-The market is lit at dusk by a painted sky, a low orange sun on the upper floors and 93 real lights from its lamps, strings, lanterns and signs, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`. See [rendering notes](rendering.md).
+The market is lit at the end of a wet afternoon by a painted sky, a low sun that shines down the main alley through haze, and 93 real lights from its lamps, strings, lanterns and signs at half strength, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`. See [rendering notes](rendering.md).
 
 ## How it is built
 

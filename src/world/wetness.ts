@@ -12,10 +12,14 @@ import { noiseVolume } from "./noiseVolume";
 // The noise block is laid flat over the ground, one block every PUDDLE_SCALE metres.
 const PUDDLE_SCALE = 14;
 // How much of the ground the puddles cover: the noise's upper part.
-const PUDDLE_FROM = 0.57;
-const PUDDLE_TO = 0.75;
+const PUDDLE_FROM = 0.535;
+const PUDDLE_TO = 0.68;
 // Where on the block's height the ground's slice is taken.
 const SLICE = 0.37;
+// The finer read: one block every FINE_SCALE metres, from another slice, with this share.
+const FINE_SCALE = 4.5;
+const FINE_SLICE = 0.71;
+const FINE_SHARE = 0.4;
 
 // The top-down mask: 1 outdoors, 0 on an indoor floor.
 const MAP = { x0: -40, x1: 40, z0: -42, z1: 42 };
@@ -42,10 +46,12 @@ export function outdoorNode(position: Node<"vec3">): Node<"float"> {
   return texture(outdoors, vec2(position.x.sub(MAP.x0).div(MAP.x1 - MAP.x0), position.z.sub(MAP.z0).div(MAP.z1 - MAP.z0))).r;
 }
 
-// How wet the ground is at a world position, from 0 (damp) to 1 (standing water).
+// How wet the ground is at a world position, from 0 (damp) to 1 (standing water). A second,
+// finer read breaks the broad wet areas into separate puddles.
 export function puddleNode(position: Node<"vec3">): Node<"float"> {
-  const n = texture3D(noiseVolume(), vec3(position.x.div(PUDDLE_SCALE), float(SLICE), position.z.div(PUDDLE_SCALE))).b;
-  return smoothstep(PUDDLE_FROM, PUDDLE_TO, n).mul(outdoorNode(position));
+  const broad = texture3D(noiseVolume(), vec3(position.x.div(PUDDLE_SCALE), float(SLICE), position.z.div(PUDDLE_SCALE))).b;
+  const fine = texture3D(noiseVolume(), vec3(position.x.div(FINE_SCALE), float(FINE_SLICE), position.z.div(FINE_SCALE))).b;
+  return smoothstep(PUDDLE_FROM, PUDDLE_TO, broad.mul(1 - FINE_SHARE).add(fine.mul(FINE_SHARE))).mul(outdoorNode(position));
 }
 
 // Rain rings on standing water, as relief for bump mapping: the ground is split into 32 cm cells,
@@ -68,15 +74,19 @@ export function outdoorAt(x: number, z: number): boolean {
 }
 
 // The same mask on the CPU, for footsteps: trilinear like the GPU's read.
-export function puddleAt(x: number, z: number): number {
+function noiseAt(x: number, z: number, scale: number, slice: number): number {
   const block = noiseVolume().image as { data: Uint8Array; width: number };
   const size = block.width, data = block.data;
-  const fx = (((x / PUDDLE_SCALE) % 1) + 1) % 1 * size - 0.5, fz = (((z / PUDDLE_SCALE) % 1) + 1) % 1 * size - 0.5, fy = SLICE * size - 0.5;
+  const fx = (((x / scale) % 1) + 1) % 1 * size - 0.5, fz = (((z / scale) % 1) + 1) % 1 * size - 0.5, fy = slice * size - 0.5;
   const x0 = Math.floor(fx), y0 = Math.floor(fy), z0 = Math.floor(fz), tx = fx - x0, ty = fy - y0, tz = fz - z0;
   const at = (i: number, j: number, k: number): number => data[(((((k % size) + size) % size) * size + (((j % size) + size) % size)) * size + (((i % size) + size) % size)) * 4 + 2] / 255;
   const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
   const plane = (j: number): number => lerp(lerp(at(x0, j, z0), at(x0 + 1, j, z0), tx), lerp(at(x0, j, z0 + 1), at(x0 + 1, j, z0 + 1), tx), tz);
-  const n = lerp(plane(y0), plane(y0 + 1), ty);
+  return lerp(plane(y0), plane(y0 + 1), ty);
+}
+
+export function puddleAt(x: number, z: number): number {
+  const n = noiseAt(x, z, PUDDLE_SCALE, SLICE) * (1 - FINE_SHARE) + noiseAt(x, z, FINE_SCALE, FINE_SLICE) * FINE_SHARE;
   const u = Math.floor((x - MAP.x0) / (MAP.x1 - MAP.x0) * MASK), v = Math.floor((z - MAP.z0) / (MAP.z1 - MAP.z0) * MASK);
   const out = u >= 0 && v >= 0 && u < MASK && v < MASK ? outdoorData[v * MASK + u] / 255 : 1;
   const t = Math.max(0, Math.min(1, (n - PUDDLE_FROM) / (PUDDLE_TO - PUDDLE_FROM)));
