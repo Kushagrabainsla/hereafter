@@ -5,8 +5,8 @@ import { type Material } from "../world/materials";
 
 export type ShotClear = (ray: ShotRay) => boolean;
 
-export type WeaponKind = "knife" | "pistol" | "rifle";
-export type GunKind = Exclude<WeaponKind, "knife">;
+export type WeaponKind = "pistol" | "rifle";
+export type GunKind = WeaponKind;
 export type { FoodKind };
 
 export interface WeaponDefinition {
@@ -19,7 +19,6 @@ export interface WeaponDefinition {
 }
 
 export const WEAPONS: Record<WeaponKind, WeaponDefinition> = {
-  knife: { label: "Field knife", damage: 30, range: 2, cooldownMs: 520, magazine: 0, reloadMs: 0 },
   pistol: { label: "9 mm pistol", damage: 25, range: 55, cooldownMs: 330, magazine: 12, reloadMs: 1200 },
   rifle: { label: "Carbine", damage: 18, range: 95, cooldownMs: 135, magazine: 30, reloadMs: 1700 },
 };
@@ -29,23 +28,9 @@ export const MAGAZINE_LABEL: Record<GunKind, string> = { pistol: "9 mm magazine"
 export const MAX_SPARE_MAGAZINES = 6;
 export const MAGAZINES_PER_PICKUP = 2;
 
-// The knife has two strokes. A slash sweeps the blade across the body from upper right to
-// lower left and stops at the first thing it meets; a stab draws back and drives straight
-// in with a short lunge, reaching further and cutting deeper. A stab in the back is fatal.
-// The blade lands contactMs after the click, when the swing reaches the target; recoveryMs
-// is how long until the next stroke can start.
-export type KnifeStroke = "slash" | "stab";
-export interface KnifeStrokeRules { reach: number; arc: number; drop: number; damage: Record<HitZone, number>; contactMs: number; recoveryMs: number; impulse: number }
-export const KNIFE: Record<KnifeStroke, KnifeStrokeRules> = {
-  slash: { reach: 1.7, arc: 70, drop: 22, damage: { head: 45, torso: 30, legs: 22 }, contactMs: 130, recoveryMs: 520, impulse: 3 },
-  stab: { reach: 2.05, arc: 4, drop: 0, damage: { head: 100, torso: 55, legs: 35 }, contactMs: 240, recoveryMs: 900, impulse: 6 },
-};
-export const BACKSTAB_DAMAGE = 100;
-
-// Real masses in kilograms: the guns empty, an empty magazine, one cartridge, and the kit
-// every player carries (knife and grenades). Rifle figures are an AKM with steel magazines.
+// Real masses in kilograms: the guns empty, an empty magazine, one cartridge, and the
+// grenades every player carries. Rifle figures are an AKM with steel magazines.
 export const MASS = {
-  knife: 0.25,
   grenade: 0.4,
   // A canister smoke grenade, like the M18.
   smoke: 0.54,
@@ -57,7 +42,7 @@ export interface Loadout { owned: WeaponKind[]; ammo: Record<GunKind, number>; m
 
 // Everything a player carries: guns with the magazine in them, spare magazines and rounds.
 export function carriedMass(player: Loadout): number {
-  let mass = MASS.knife + player.grenades * MASS.grenade + (player.smokes ?? 0) * MASS.smoke;
+  let mass = player.grenades * MASS.grenade + (player.smokes ?? 0) * MASS.smoke;
   for (const gun of ["pistol", "rifle"] as const) {
     const m = MASS[gun];
     if (player.owned.includes(gun)) mass += m.gun + m.magazine + player.ammo[gun] * m.round;
@@ -70,7 +55,8 @@ export function carriedMass(player: Loadout): number {
 // basic kit and sprinting 1.8%, to at most a fifth. The same legs launch more mass, so a
 // jump starts slower, and a heavier body takes longer to get going and to stop.
 export const BODY_MASS = 78;
-const BASE_LOAD = MASS.knife + 2 * MASS.grenade + 2 * MASS.smoke;
+// The kit every life starts with: the loaded pistol, two grenades and two smokes.
+const BASE_LOAD = MASS.pistol.gun + MASS.pistol.magazine + 12 * MASS.pistol.round + 2 * MASS.grenade + 2 * MASS.smoke;
 export function loadEffects(mass: number): { walk: number; sprint: number; jump: number; inertia: number } {
   const extra = Math.max(0, mass - BASE_LOAD);
   return {
@@ -166,14 +152,13 @@ export const EXTINGUISHER_RETURN_MS = 45_000;
 export interface AimState { moving: boolean; crouching: boolean; airborne: boolean; sliding: boolean; aiming?: boolean }
 export const AIM_SPREAD = 0.5;
 
-const SPREAD: Record<Exclude<WeaponKind, "knife">, { base: number; moving: number; airborne: number; sliding: number; crouched: number; bloom: number; bloomMax: number; recovery: number }> = {
+const SPREAD: Record<WeaponKind, { base: number; moving: number; airborne: number; sliding: number; crouched: number; bloom: number; bloomMax: number; recovery: number }> = {
   pistol: { base: 0.3, moving: 2.2, airborne: 5, sliding: 3, crouched: 0.6, bloom: 0.35, bloomMax: 1.2, recovery: 3.5 },
   rifle: { base: 0.4, moving: 2.6, airborne: 5, sliding: 3, crouched: 0.6, bloom: 0.2, bloomMax: 1.6, recovery: 2.8 },
 };
 const BLOOM_HOLD = 0.12;
 
 export function spreadDegrees(weapon: WeaponKind, state: AimState, bloom: number): number {
-  if (weapon === "knife") return 0;
   const s = SPREAD[weapon];
   const factor = state.airborne ? s.airborne : state.sliding ? s.sliding : state.moving ? s.moving * (state.crouching ? 0.6 : 1) : state.crouching ? s.crouched : 1;
   return (s.base * factor + bloom) * (state.aiming ? AIM_SPREAD : 1);
@@ -181,12 +166,10 @@ export function spreadDegrees(weapon: WeaponKind, state: AimState, bloom: number
 
 // Bloom left from earlier shots once the trigger has rested for this many seconds.
 export function currentBloom(weapon: WeaponKind, bloom: number, secondsSinceShot: number): number {
-  if (weapon === "knife") return 0;
   return Math.max(0, bloom - Math.max(0, secondsSinceShot - BLOOM_HOLD) * SPREAD[weapon].recovery);
 }
 
 export function bloomAfterShot(weapon: WeaponKind, bloom: number, secondsSinceShot: number): number {
-  if (weapon === "knife") return 0;
   return Math.min(SPREAD[weapon].bloomMax, currentBloom(weapon, bloom, secondsSinceShot) + SPREAD[weapon].bloom);
 }
 
@@ -277,12 +260,9 @@ export function targetHit(data: ArenaData, attacker: PlayerPose, target: PlayerP
   const zones: [HitZone, number, number, number, number, number][] = [["head", 1.45, 1.98, 0.205, 0.205, LEAN_OFFSET], ["torso", 0.73, 1.45, 0.29, 0.24, LEAN_OFFSET * 0.5], ["legs", 0.02, 0.73, 0.24, 0.19, 0]];
   let closest: TargetHit | null = null;
   for (const [zone, low, high, width, depth, shift] of zones) {
-    // The blade is a few centimetres wide and the arm swings it, so it catches a little
-    // more than a bullet's line would.
-    const padding = weapon === "knife" ? 0.06 : 0;
     const offset = -lean * shift;
-    const min = [offset-width-padding, low*scale-padding, -depth-padding];
-    const max = [offset+width+padding, high*scale+padding, depth+padding];
+    const min = [offset-width, low*scale, -depth];
+    const max = [offset+width, high*scale, depth];
     let near = 0, far = ray.distance;
     for (let axis = 0; axis < 3; axis++) {
       if (Math.abs(direction[axis]) < 1e-8) {
@@ -297,20 +277,7 @@ export function targetHit(data: ArenaData, attacker: PlayerPose, target: PlayerP
   return closest;
 }
 
-// A stroke lands from behind when the attacker stands in the half-space behind the target,
-// more than 60 degrees off its facing.
-export function fromBehind(attacker: { east: number; north: number }, target: PlayerPose): boolean {
-  const yaw = target.heading * Math.PI / 180, dx = attacker.east - target.east, dz = attacker.north - target.north, length = Math.hypot(dx, dz);
-  return length > 0.01 && (Math.sin(yaw) * dx + Math.cos(yaw) * dz) / length < -0.5;
-}
-
-export function knifeDamage(stroke: KnifeStroke, zone: HitZone, behind: boolean): number {
-  if (behind && stroke === "stab") return BACKSTAB_DAMAGE;
-  return Math.round(KNIFE[stroke].damage[zone] * (behind ? 1.25 : 1));
-}
-
 export function damageAt(weapon: WeaponKind, hit: TargetHit): number {
-  if (weapon === "knife") return KNIFE.slash.damage[hit.zone];
   const falloffStart = weapon === "pistol" ? 15 : 35;
   const falloff = 1 - 0.45 * Math.max(0, Math.min(1, (hit.distance-falloffStart)/(WEAPONS[weapon].range-falloffStart)));
   return Math.round(WEAPONS[weapon].damage * falloff * (hit.zone === "head" ? 2.5 : hit.zone === "legs" ? 0.7 : 1));

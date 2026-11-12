@@ -9,7 +9,7 @@ export class ShotEffects {
   constructor(private scene: Scene) {}
 
   show(event: CombatEvent, muzzle?: Vector3): void {
-    if (!event.shot || event.weapon === "knife") return;
+    if (!event.shot) return;
     const { origin, direction, distance } = event.shot;
     const start = new Vector3(origin.x, origin.y, origin.z);
     const end = start.clone().addScaledVector(new Vector3(direction.x, direction.y, direction.z), distance);

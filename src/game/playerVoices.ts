@@ -13,7 +13,7 @@ import { type VoiceChoice } from "../settings";
 // who has turned the 18+ lines off hears a clean line in place of an 18+ one. A line plays
 // only once its clip is built: the Hindi lines wait to be recorded. Memes (memes.ts) are
 // set off at the same moments, and at some of their own.
-export type VoiceMoment = "roundStart" | "roundWin" | "roundLose" | "reload" | "empty" | "grenade" | "smoke" | "grenadeNear" | "nearMiss" | "hurt" | "lowHealth" | "death" | "kill" | "headshot" | "knifeKill" | "doubleKill" | "revenge" | "respawn";
+export type VoiceMoment = "roundStart" | "roundWin" | "roundLose" | "reload" | "empty" | "grenade" | "smoke" | "grenadeNear" | "nearMiss" | "hurt" | "lowHealth" | "death" | "kill" | "headshot" | "doubleKill" | "revenge" | "respawn";
 interface Line { id: string; moment: string; tier: "clean" | "spicy" | "adult"; hi: string; hiLatin: string; en: string }
 
 const LINES = catalog.lines as Line[];
@@ -120,8 +120,7 @@ export class PlayerVoices {
           this.memes.say(target, "hurt", event.id, 300);
         }
         if (actor && actor !== target) {
-          if (event.weapon === "knife") this.memes.say(actor, "knifeHit", event.id);
-          else if (this.runningOf(target)) this.memes.say(actor, "shootRunner", event.id, 250);
+          if (this.runningOf(target)) this.memes.say(actor, "shootRunner", event.id, 250);
           else if (health > 0 && health <= LOW_HEALTH) this.memes.say(actor, "enemyLow", event.id, 500);
         }
       } else if (event.kind === "death" && target) {
@@ -151,7 +150,7 @@ export class PlayerVoices {
           this.say(id, "roundStart", event.id, 0.5, 400 + hash(`${event.id}:${id}`) % 1400);
           this.memes.say(id, "roundStart", event.id, 600 + hash(`meme:${event.id}:${id}`) % 2400);
         }
-      } else if (event.kind === "shot" && event.shot && event.weapon !== "knife") {
+      } else if (event.kind === "shot" && event.shot) {
         this.nearMiss(event, fresh, players);
         if (event.impacts?.some((impact) => impact.material === "glass")) this.memes.say(actor, "glass", event.id, 250);
       }
@@ -170,7 +169,7 @@ export class PlayerVoices {
   }
 
 
-  // A double kill, a revenge kill, a knife or a headshot gets its own line; others sometimes one.
+  // A double kill, a revenge kill or a headshot gets its own line; others sometimes one.
   private killLine(event: CombatEvent, killer: string, victim: string): void {
     const now = performance.now(), previous = this.lastKill.get(killer);
     this.lastKill.set(killer, now);
@@ -178,7 +177,7 @@ export class PlayerVoices {
     this.killedBy.set(victim, killer);
     this.killedBy.delete(killer);
     const moment: VoiceMoment = previous !== undefined && now - previous < DOUBLE_KILL_MS ? "doubleKill" : revenge ? "revenge"
-      : event.cause === "knife" ? "knifeKill" : event.zone === "head" ? "headshot" : "kill";
+      : event.zone === "head" ? "headshot" : "kill";
     // A killer's own pending line gives way to this one.
     this.quietUntil.delete(killer);
     this.say(killer, moment, event.id, moment === "kill" ? 0.6 : 0.95, 450);

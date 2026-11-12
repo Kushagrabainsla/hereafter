@@ -73,7 +73,7 @@ const LEAN_SPEED = 0.7;
 // Being hit jolts the aim and slows movement briefly ("tagging").
 const TAG_SECONDS = 0.55;
 const TAG_SLOW = 0.45;
-// Shoves (a stab's lunge, a blast, a heavy blow) add velocity that the feet bleed off.
+// Shoves (a blast, a heavy blow, recoil) add velocity that the feet bleed off.
 const SHOVE_DECAY = 8;
 
 interface Mantle { fromEast: number; fromNorth: number; fromFeet: number; to: Ledge; elapsed: number; duration: number }
@@ -133,7 +133,6 @@ export class PlayerController {
   private shoveEast = 0;
   private shoveNorth = 0;
   private shoveUp = 0;
-  private swingRoll = 0;
   private exertion = 0;
   private accumulator = 0;
   private eyeHeight = EYE_HEIGHT;
@@ -199,7 +198,6 @@ export class PlayerController {
     this.punchYaw = 0;
     this.tagged = 0;
     this.shoveEast = this.shoveNorth = this.shoveUp = 0;
-    this.swingRoll = 0;
     this.exertion = 0;
     this.accumulator = 0;
     this.eyeHeight = EYE_HEIGHT;
@@ -242,8 +240,8 @@ export class PlayerController {
     this.physics.setCharacterMass(BODY_MASS + this.worn + this.carried);
   }
 
-  // Velocity added to the body in metres per second along east, north and up: a stab's
-  // lunge, a blast or a heavy blow. Heavier players are moved less by outside forces.
+  // Velocity added to the body in metres per second along east, north and up: a blast,
+  // a heavy blow or recoil. Heavier players are moved less by outside forces.
   shove(east: number, north: number, up = 0, own = false): void {
     if (this.climbing || this.mantle) return;
     const scale = own ? 1 : 1 / this.load.inertia;
@@ -252,8 +250,6 @@ export class PlayerController {
     if (up > 0 && this.grounded) { this.shoveUp = Math.max(this.shoveUp, up * scale); }
   }
 
-  // A cosmetic roll of the view that follows a knife stroke; it does not move the aim.
-  swingView(roll: number): void { this.swingRoll += roll; }
 
   setLadders(ladders: Ladder[]): void { this.ladders = ladders; }
 
@@ -352,7 +348,6 @@ export class PlayerController {
     const settle = Math.exp(-delta * 8);
     this.punchPitch *= settle;
     this.punchYaw *= settle;
-    this.swingRoll *= Math.exp(-delta * 7);
     // Sprinting, climbing and jumping build exertion, faster under load; it eases at rest.
     const working = this.running ? 0.11 : this.climbing ? 0.08 : this.moving ? -0.03 : -0.07;
     this.exertion = Math.max(0, Math.min(1, this.exertion + delta * (working > 0 ? working * this.load.inertia ** 2 : working)));
@@ -655,7 +650,7 @@ export class PlayerController {
       this.camera.position.y + Math.sin(pitch),
       this.camera.position.z + Math.cos(heading) * Math.cos(pitch),
     );
-    const roll = this.roll - this.lean * LEAN_ROLL + this.swingRoll + limp * 0.018;
+    const roll = this.roll - this.lean * LEAN_ROLL + limp * 0.018;
     if (roll) this.camera.rotateZ(roll);
   }
 }

@@ -87,8 +87,8 @@ export class SoundStage {
     if (event.kind === "shot" && shot) {
       const weapon = event.weapon ?? "pistol";
       if (event.actor !== selfId) {
-        gameAudio.remoteFire(weapon, shot.origin, event.stroke === "stab");
-        if (weapon !== "knife") this.nearMiss(shot.origin, shot.direction, shot.distance);
+        gameAudio.remoteFire(weapon, shot.origin);
+        this.nearMiss(shot.origin, shot.direction, shot.distance);
       }
       // A few audible strikes per round: where it went in, and where it broke through.
       for (const impact of (event.impacts ?? []).slice(0, 4)) gameAudio.impact(impact.material, impact);
@@ -98,7 +98,7 @@ export class SoundStage {
       const at = this.positionOf(event.target);
       if (!at) return;
       const chest = { x: at.x, y: at.y + 1.1, z: at.z };
-      if (event.cause !== "fall" && event.cause !== "fire" && event.cause !== "bleed") gameAudio.bodyHit(chest, event.cause === "knife");
+      if (event.cause !== "fall" && event.cause !== "fire" && event.cause !== "bleed") gameAudio.bodyHit(chest);
       if (event.kind === "death") gameAudio.bodyFall(chest);
       return;
     }

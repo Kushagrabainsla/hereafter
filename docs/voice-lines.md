@@ -57,7 +57,6 @@ Record one take per line; the game varies the pitch a little each time it plays.
 | `kill-chutiya` | Gets a kill | 18+ | चूतिया कहीं का! | Chutiya kahin ka! | What a dumbass! |
 | `head-khopdi` | Kills with a headshot | Clean | सीधा खोपड़ी में! | Seedha khopdi mein! | Right between the eyes! |
 | `head-bheja` | Kills with a headshot | Spicy | भेजा फ़्राई! | Bheja fry! | Brains fried! |
-| `knife-chaku` | Kills with the knife | Clean | चाकू चल गया! | Chaaku chal gaya! | Knifed! |
 | `double-teer` | A second kill within 4 s | Clean | एक तीर, दो शिकार! | Ek teer, do shikaar! | Two for one! |
 | `double-dhamaal` | A second kill within 4 s | Spicy | धमाल! | Dhamaal! | Double trouble! |
 | `revenge-hisaab` | Kills whoever last killed them | Clean | हिसाब बराबर। | Hisaab barabar. | Now we're even. |
@@ -115,8 +114,8 @@ Meme lines and sound effects play on top of the voices, at the moments below ([h
 | E10 | Noice | Brooklyn Nine-Nine | English | Gets a kill | Clean | `assets-src/memes/E10.wav` |
 | E11 | Emotional damage! | Steven He | English | Gets a kill | Clean | `assets-src/memes/E11.wav` |
 | E12 | Hasta la vista, baby | Terminator 2 | English | Gets a kill | Clean | `assets-src/memes/E12.wav` |
-| E13 | This is Sparta! | 300 | English | Kills with the knife | Clean | `assets-src/memes/E13.wav` |
-| E14 | Surprise, motherf— | Dexter | English | Kills with the knife | 18+ | `assets-src/memes/E14.wav` |
+| E13 | This is Sparta! | 300 | English | Gets a kill | Clean | `assets-src/memes/E13.wav` |
+| E14 | Surprise, motherf— | Dexter | English | Gets a kill | 18+ | `assets-src/memes/E14.wav` |
 | E15 | Bruh | Viral | English | Out of ammunition | Clean | `assets-src/memes/E15.wav` |
 | E16 | I'll be back | The Terminator | English | Dies | Clean | `assets-src/memes/E16.wav` |
 | E17 | To Be Continued | "Roundabout" by Yes, song | English | Dies | Clean | `assets-src/memes/E17.wav` |
@@ -129,7 +128,7 @@ Meme lines and sound effects play on top of the voices, at the moments below ([h
 | S2 | Air horn | Sound effect | Any (no words) | A second kill within 4 s | Clean | Ships with the game |
 | S3 | Boing | Sound effect | Any (no words) | Jumps | Clean | Ships with the game |
 | S4 | Metal pipe clang | Sound effect | Any (no words) | Lands hard from a height | Clean | Ships with the game |
-| S5 | Bonk | Sound effect | Any (no words) | Hits someone with the knife | Clean | Ships with the game |
+| S5 | Bonk | Sound effect | Any (no words) | Kills with a headshot | Clean | Ships with the game |
 | S6 | Dramatic "dun dun dunnn" | Sound effect | Any (no words) | Hit down to 25 health or less | Clean | Ships with the game |
 | S7 | Crickets | Sound effect | Any (no words) | A round ends with no kills | Clean | Ships with the game |
 | S8 | Record scratch | Sound effect | Any (no words) | Respawns | Clean | Ships with the game |

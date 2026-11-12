@@ -16,17 +16,17 @@ The climb rises beside the ledge first, then moves over its top, taking 0.3 s pl
 
 ## Firing out of a sprint
 
-Firing while running drops the sprint, and the shot leaves once the weapon is up: 60 ms for the knife, 140 ms for the pistol and 220 ms for the carbine. A knife stroke then takes its own time to land (see [physics notes](physics.md#the-knife)). Each attack holds the sprint off for 0.35 s. A held trigger therefore walks, and a released one runs again on its own if Shift is still held. The weapon now comes out of the sprint carry about twice as fast as it drops into it.
+Firing while running drops the sprint, and the shot leaves once the weapon is up: 140 ms for the pistol and 220 ms for the carbine. Each attack holds the sprint off for 0.35 s. A held trigger therefore walks, and a released one runs again on its own if Shift is still held. The weapon now comes out of the sprint carry about twice as fast as it drops into it.
 
 ## Carried weight
 
 Guns, magazines and grenades weigh what they really do, and the load slows walking, sprinting, jumping, starting and stopping, ladder climbs and mantles; see [physics notes](physics.md#weight) for the figures. Hard work builds exertion: sprinting, climbing, jumping and mantling raise it, faster under a heavy load, and walking or standing lets it ease. Exertion shows in the hands as heavier breathing.
 
-Outside forces add velocity on top of walking, which the feet bleed off at 8 per second on the ground and slowly in the air: a stab's lunge (2.8 m/s), a knife cut or a carbine round knocking you back, and a nearby grenade throwing you off your feet. Heavier players are moved less.
+Outside forces add velocity on top of walking, which the feet bleed off at 8 per second on the ground and slowly in the air: a carbine round knocking you back and a nearby grenade throwing you off your feet. Heavier players are moved less.
 
 ## How the held weapon moves
 
-The weapon hangs off the hands like a mass on a spring (`WeaponVisuals` in `src/game/weaponVisuals.ts`). Each frame the spring is driven by the eyes' acceleration along the camera's own axes and by how the view turns. Turning drags the weapon behind the turn, sudden starts and stops add a swing, starting to run leaves it behind and stopping throws it forward, a jump or a landing dips it, and strafing rolls it a little. Heavier weapons swing slower and further: natural frequencies are 2.6 Hz for the knife, 2.1 Hz for the pistol and 1.5 Hz for the carbine, at half critical damping. Breathing raises and tips the weapon about 14 times a minute at rest, deepening and quickening to about 40 a minute after a hard sprint, over a faint tremor of the hands.
+The weapon hangs off the hands like a mass on a spring (`WeaponVisuals` in `src/game/weaponVisuals.ts`). Each frame the spring is driven by the eyes' acceleration along the camera's own axes and by how the view turns. Turning drags the weapon behind the turn, sudden starts and stops add a swing, starting to run leaves it behind and stopping throws it forward, a jump or a landing dips it, and strafing rolls it a little. Heavier weapons swing slower and further: natural frequencies are 2.1 Hz for the pistol and 1.5 Hz for the carbine, at half critical damping. Breathing raises and tips the weapon about 14 times a minute at rest, deepening and quickening to about 40 a minute after a hard sprint, over a faint tremor of the hands.
 
 ## Spread
 
@@ -41,9 +41,9 @@ Shots leave inside a cone around the aim. The coordinating peer applies it when 
 | Sliding | 0.90 | 1.20 |
 | In the air | 1.50 | 2.00 |
 
-Sustained fire blooms on top of that. Each shot adds 0.35° for the pistol and 0.2° for the carbine, up to 1.2° and 1.6°. After a 0.12 s rest, bloom recovers at 3.5° and 2.8° per second. The knife has no spread.
+Sustained fire blooms on top of that. Each shot adds 0.35° for the pistol and 0.2° for the carbine, up to 1.2° and 1.6°. After a 0.12 s rest, bloom recovers at 3.5° and 2.8° per second.
 
-Aiming down the sights, by holding the right button with a gun, halves the whole cone, bloom included. The sights come up in about a sixth of a second, magnifying the view 1.25 times for the pistol and 1.5 times for the carbine, with the look slowed in proportion and the weapon in hand drawn without the magnification. The gun moves so its sights sit on the centre of the view, its sway drops to a quarter and the walk's swing stops. The player walks at 55% of their pace and cannot sprint, and the sights drop for a reload or a weapon switch. Pose packets carry an `aiming` flag, protocol 17, which the coordinator applies to the cone. The crosshair hides while aiming.
+Aiming down the sights, by holding the right button, halves the whole cone, bloom included. The sights come up in about a sixth of a second, magnifying the view 1.25 times for the pistol and 1.5 times for the carbine, with the look slowed in proportion and the weapon in hand drawn without the magnification. The gun moves so its sights sit on the centre of the view, its sway drops to a quarter and the walk's swing stops. The player walks at 55% of their pace and cannot sprint, and the sights drop for a reload or a weapon switch. Pose packets carry an `aiming` flag, protocol 17, which the coordinator applies to the cone. The crosshair hides while aiming.
 
 The crosshair's four ticks open to the same spread every frame, converted to pixels from the camera's field of view, with a 3 px minimum. Pose packets carry new `sliding` and `airborne` flags for this. Older peers omit them, and those flags then count as false.
 

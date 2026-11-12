@@ -6,7 +6,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 26;
+const PROTOCOL_VERSION = 27;
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
 // of the five it picked failed or took seconds to pass a message on, and the rest took 135 to
@@ -180,13 +180,12 @@ function validIntent(value: unknown): value is CombatIntent {
   if (typeof value !== "object" || value === null) return false;
   const intent = value as CombatIntent;
   if (intent.kind === "attack") {
-    if (!["knife", "pistol", "rifle"].includes(intent.weapon ?? "")) return false;
-    if (intent.stroke !== undefined && intent.stroke !== "slash" && intent.stroke !== "stab") return false;
+    if (!["pistol", "rifle"].includes(intent.weapon ?? "")) return false;
     if (intent.aim !== undefined && !validAim(intent.aim)) return false;
     return intent.seen === undefined || (typeof intent.seen === "object" && intent.seen !== null && Object.keys(intent.seen).length <= 16
       && Object.values(intent.seen).every((time) => typeof time === "number" && Number.isFinite(time)));
   }
-  if (intent.kind === "select") return ["knife", "pistol", "rifle"].includes(intent.weapon ?? "");
+  if (intent.kind === "select") return ["pistol", "rifle"].includes(intent.weapon ?? "");
   if (intent.kind === "use") return typeof intent.target === "string" && intent.target.length < 40;
   if (intent.kind === "pickup") return typeof intent.pickupId === "string" && intent.pickupId.length < 40;
   if (intent.kind === "throw") return validAim(intent.aim) && (intent.smoke === undefined || typeof intent.smoke === "boolean");

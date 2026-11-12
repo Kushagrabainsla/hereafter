@@ -22,7 +22,7 @@ import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio, type AmbientSource } from "../game/gameAudio";
 import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
-import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, KNIFE, BODY_MASS, type GunKind, type KnifeStroke, type WeaponKind } from "../game/combatRules";
+import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, BODY_MASS, type GunKind, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
 import { buildNightMarket, nightMarketData, MARKET_FILL, MARKET_SUN, STOVES } from "./nightMarket";
 import { duskSky } from "./duskSky";
@@ -53,8 +53,8 @@ export interface MapMetrics {
 export interface MapViewerEvents {
   onStatus: (state: MapState, message: string) => void;
   onMetrics: (metrics: MapMetrics) => void;
-  // Current hip-fire spread as a crosshair gap in CSS pixels; melee is true for the knife.
-  onAim?: (spreadPixels: number, melee: boolean, aiming: boolean) => void;
+  // Current hip-fire spread as a crosshair gap in CSS pixels.
+  onAim?: (spreadPixels: number, aiming: boolean) => void;
   // Loading progress from 0 to 1, with the step under way when it changes.
   // Building the world, step by step: textures, buildings, props, renderer, physics, shaders.
   onStep?: (step: BuildStep) => void;
@@ -97,7 +97,7 @@ export interface MapViewer {
   applyPropStates: (states: PropState[], owner: string, rest: boolean, self: string) => void;
   resetWorld: () => void;
   quickThrow: () => void;
-  playAttack: (weapon: WeaponKind, stroke?: KnifeStroke) => void;
+  playAttack: (weapon: WeaponKind) => void;
   // The mass of everything the player carries, in kilograms.
   setLoad: (kilograms: number) => void;
   // Dropped guns and magazines; ones named in fresh just fell and tumble into place.
@@ -525,7 +525,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let lastSpread = -1, lastAiming = false;
   // Whether the aim button is held, and how much each gun's sights magnify the view.
   let aimWanted = false;
-  const AIM_ZOOM: Record<WeaponKind, number> = { knife: 1, pistol: 1.25, rifle: 1.5 };
+  const AIM_ZOOM: Record<WeaponKind, number> = { pistol: 1.25, rifle: 1.5 };
   // The first frames build every shader the market needs, the longest step of all on most
   // machines; the loading screen says so before the page stalls on it.
   DefaultLoadingManager.onProgress = () => undefined;
@@ -610,7 +610,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch, eye, axes);
     // The sights come up only with a gun ready in hand, and drop for a reload or a switch.
     const dynamics = weaponVisuals.dynamics();
-    player.setAiming(aimWanted && !dynamics.hands && dynamics.active !== "knife" && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
+    player.setAiming(aimWanted && !dynamics.hands && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
     const inGrip = physics.heldThing();
     if (inGrip && handsOutOfView(inGrip.prop)) authoredViewModel.setHold("hidden");
     else if (inGrip) {
@@ -626,7 +626,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     if (Math.abs(spreadPixels - lastSpread) > 0.25 || motion.aiming !== lastAiming) {
       lastSpread = spreadPixels;
       lastAiming = motion.aiming;
-      events.onAim?.(spreadPixels, active === "knife", motion.aiming);
+      events.onAim?.(spreadPixels, motion.aiming);
     }
     built.update(time / 1000);
     hazeLevel += (built.pipes.fogAt(camera.position) - hazeLevel) * Math.min(1, delta * 6);
@@ -796,29 +796,18 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       soundStage.combat(event, selfId);
       const own = event.actor === selfId;
       if (event.kind === "shot") {
-        if (event.weapon === "knife" && own && event.impact) {
-          // The blade met something hard and turned.
-          authoredViewModel.deflect();
-          const strike = event.impacts?.[0];
-          if (strike) gameAudio.blade(strike, !["wood", "timber", "cardboard", "plastic", "glass"].includes(strike.material));
-        } else if (event.weapon === "knife" && event.impact) {
-          const strike = event.impacts?.[0];
-          if (strike) gameAudio.blade(strike, !["wood", "timber", "cardboard", "plastic", "glass"].includes(strike.material));
-        }
         if (!own && event.weapon) {
-          remotePlayers.attack(event.actor, event.weapon, event.stroke);
-          if (event.weapon !== "knife") {
-            const hands = remotePlayers.hands(event.actor);
-            if (hands) {
-              const yaw = hands.heading * Math.PI / 180;
-              const right = new Vector3(-Math.cos(yaw), 0, Math.sin(yaw)), forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-              ejecta.ejectCase(event.weapon, hands.position.clone().addScaledVector(right, 0.03), right, forward);
-              flashAt(remotePlayers.muzzle(event.actor) ?? hands.position.clone().addScaledVector(forward, event.weapon === "rifle" ? 0.7 : 0.35), 1);
-            }
+          remotePlayers.attack(event.actor);
+          const hands = remotePlayers.hands(event.actor);
+          if (hands) {
+            const yaw = hands.heading * Math.PI / 180;
+            const right = new Vector3(-Math.cos(yaw), 0, Math.sin(yaw)), forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+            ejecta.ejectCase(event.weapon, hands.position.clone().addScaledVector(right, 0.03), right, forward);
+            flashAt(remotePlayers.muzzle(event.actor) ?? hands.position.clone().addScaledVector(forward, event.weapon === "rifle" ? 0.7 : 0.35), 1);
           }
         }
       }
-      if (event.kind === "reload" && event.dropped && event.weapon && event.weapon !== "knife") {
+      if (event.kind === "reload" && event.dropped && event.weapon) {
         const gun = event.weapon;
         if (own) {
           // The empty magazine falls from under the gun as the reload starts.
@@ -829,12 +818,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
           if (hands) ejecta.dropMagazine(gun, hands.position.clone().add(new Vector3(0, -0.15, 0)));
         }
       }
-      if ((event.kind === "hit" || event.kind === "death") && own && event.cause === "knife") authoredViewModel.bite();
-      // A blade or a heavy round knocks the body back a little.
-      if ((event.kind === "hit" || event.kind === "death") && event.target === selfId && event.from && (event.cause === "knife" || event.cause === "rifle")) {
+      // A heavy round knocks the body back a little.
+      if ((event.kind === "hit" || event.kind === "death") && event.target === selfId && event.from && event.cause === "rifle") {
         const dx = camera.position.x - event.from.x, dz = camera.position.z - event.from.z, length = Math.hypot(dx, dz) || 1;
-        const strength = event.cause === "knife" ? (event.stroke === "stab" ? 1.8 : 1.1) : 0.6;
-        player.shove(dx / length * strength, dz / length * strength);
+        player.shove(dx / length * 0.6, dz / length * 0.6);
       }
       // A heavy thing thrown at a player staggers them.
       if ((event.kind === "hit" || event.kind === "death") && event.target === selfId && event.cause === "struck" && event.velocity) player.shove(event.velocity.x, event.velocity.z);
@@ -853,8 +840,6 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         const toggle = data.layout.toggles.find((item) => item.id === event.entity);
         if (toggle?.verbs) gameAudio.switchClick(toggle.at);
         else if (toggle) gameAudio.hinge(toggle.at, event.open === true, event.entity.endsWith("hatch"));
-        // A kicked door bangs open.
-        if (toggle && event.weapon === "knife") gameAudio.kick(toggle.at);
       }
       if (event.kind === "explode" && event.position) {
         const at = event.position, chest = { x: camera.position.x, y: camera.position.y - 0.6, z: camera.position.z };
@@ -885,7 +870,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
             const from = event.from ?? { x: at.x, y: at.y + 1, z: at.z - 1 };
             const dx = at.x - from.x, dz = at.z - from.z, length = Math.hypot(dx, dz) || 1;
             const blast = event.cause === "grenade" ? 140 * Math.max(0.2, 1 - Math.hypot(dx, dz) / 7) : 0;
-            const strength = blast || { knife: 10, pistol: 20, rifle: 28, bleed: 1, fire: 1 }[event.cause as "knife" | "pistol" | "rifle" | "bleed" | "fire"] || 15;
+            const strength = blast || { pistol: 20, rifle: 28, bleed: 1, fire: 1 }[event.cause as "pistol" | "rifle" | "bleed" | "fire"] || 15;
             remotePlayers.kill(event.target, event.zone === "head" ? "head" : "chest", { x: dx / length * strength, y: blast ? strength * 0.6 : 2, z: dz / length * strength });
           }
         }
@@ -925,19 +910,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (dead && !deathView) deathView = { position: camera.position.clone(), quaternion: camera.quaternion.clone(), time: 0 };
       if (!dead) deathView = null;
     },
-    playAttack(weapon, stroke) {
-      authoredViewModel.fire(weapon === "knife" ? stroke ?? "slash" : undefined);
-      gameAudio.fire(weapon, stroke === "stab");
-      if (weapon === "knife") {
-        // The body turns into a slash and steps into a stab as the arm drives forward.
-        if (stroke === "stab") window.setTimeout(() => {
-          const yaw = player.pose().heading * Math.PI / 180;
-          player.shove(Math.sin(yaw) * 2.8, Math.cos(yaw) * 2.8, 0, true);
-          player.swingView(0.025);
-        }, KNIFE.stab.contactMs - 90);
-        else window.setTimeout(() => player.swingView(-0.05), 40);
-        return;
-      }
+    playAttack(weapon) {
+      authoredViewModel.fire();
+      gameAudio.fire(weapon);
       const now = performance.now();
       localBloom = bloomAfterShot(weapon, localBloom, (now - lastLocalShot) / 1000);
       lastLocalShot = now;

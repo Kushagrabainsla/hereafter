@@ -86,12 +86,9 @@ for i in 0 1; do whole "$IMPACT/impactWood_heavy_00$i.ogg" wood-break-$((i + 1))
 # Handling: Kenney RPG Audio foley and BMacZero's magazine seat.
 whole "$RPG/metalClick.ogg" dry-fire mono 4 0.2
 whole "$RPG/metalLatch.ogg" latch mono 4
-for i in 1 2 3; do whole "$RPG/drawKnife$i.ogg" draw-knife-$i mono 4; done
 for i in 1 2 3 4; do whole "$RPG/cloth$i.ogg" cloth-$i mono 4; done
 whole "$RPG/handleSmallLeather.ogg" grab-1 mono 4
 whole "$RPG/handleSmallLeather2.ogg" grab-2 mono 4
 whole "$SRC/oga-bmaczero-reloads/clipload1.wav" mag-in mono 4
-whole "$RPG/knifeSlice.ogg" knife-hit-1 mono 4
-whole "$RPG/knifeSlice2.ogg" knife-hit-2 mono 4
 
 ls -l "$OUT" | awk 'NR > 1 { total += $5; files += 1 } END { printf "%d files, %.0f KB in %s\n", files, total / 1024, "public/audio" }'

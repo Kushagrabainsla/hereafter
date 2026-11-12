@@ -17,7 +17,7 @@ There is high ground in two places:
 - **The bar** has a stair along its back wall up to an upper room. The room opens onto a balcony over the service alley, which a ladder also reaches.
 - **A fire escape** on the market alley's west side is reached by a ladder. Its platform at 4.6 m overlooks the stalls.
 
-Spawns sit at the four ends of the alleys, in the gap beside the food truck and in the end passages. The first two players start at opposite corners with only a knife. A pistol lies a few steps from the south market spawn and from the north service spawn, and carbines lie in the cut-through and the restaurant kitchen.
+Spawns sit at the four ends of the alleys, in the gap beside the food truck and in the end passages. The first two players start at opposite corners. Each life starts with a loaded 9 mm pistol. A second pistol lies a few steps from the south market spawn and from the north service spawn. A player who already has a pistol takes its magazine as a spare. Carbines lie in the cut-through and the restaurant kitchen.
 
 Each gun holds one magazine, so the nine spare-magazine pickups decide how long a fight lasts. Each holds two magazines:
 
@@ -77,14 +77,14 @@ The walls are dressed from a kit of pieces modelled in Blender by `scripts/kit/b
 
 All of it is drawn as instanced meshes, and none of it has colliders: it is flat against a wall or, like the fire escapes, starts 4.25 m up, beyond reach.
 
-- **Doors** (`src/world/doors.ts`). The restaurant's two doorways have pairs of glass doors, the bar's have panelled doors with portholes, the balcony has French doors, and the record shop has glass doors at the front and a steel door at the back. Each leaf is a real body on a hinge and opens inward. A shut door is latched. Press E at it to swing it, or attack it with the knife to kick it open. Some start open and some shut. An open door can be pushed, and furniture or a drum dragged inside, in its way, stops it: a light table gives to a shove, a full drum holds against kicks ([physics notes](physics.md#doors-and-barricades)). Rounds that strike a leaf wear it down.
+- **Doors** (`src/world/doors.ts`). The restaurant's two doorways have pairs of glass doors, the bar's have panelled doors with portholes, the balcony has French doors, and the record shop has glass doors at the front and a steel door at the back. Each leaf is a real body on a hinge and opens inward. A shut door is latched. Press E at it to swing it. Some start open and some shut. An open door can be pushed, and furniture or a drum dragged inside, in its way, stops it: a light table gives to a shove and a full drum holds the door ([physics notes](physics.md#doors-and-barricades)). Rounds that strike a leaf wear it down, and enough rounds or a grenade blow it off its hinges.
 - **Steam pipes** (`src/world/steamPipes.ts`). Lagged pipes with a valve and gauge run along the service alley, the laundry wall, the cut-through and the market alley's east wall. A round anywhere along one bursts it. A thick cloud then fills the space around it for about 11 s, hiding anyone inside, and thins over 4 s to a wisp that leaks until the next round or the room resets. The cloud blocks sight only. A player who joins after a pipe burst sees only the wisp.
 - **Stalls** (`src/world/stalls.ts`) come from the same kit: a plank counter, posts, a back rack with two shelves, a chalk price board, a striped awning in the stall's colour and the goods of its trade. Each also has a torn awning and a collapsed pile, shown as it takes damage.
 - **The record shop** cuts a new route through the middle block. Inside are record bins down the middle, shelves along both side walls and a counter with a turntable and a pair of spare pistol magazines. Two pendant lamps light it. The bins are waist-high cover, and the shop window, the doors and the boarded window all break.
 
 ## The shops
 
-The dumpling shop, the boba shop and the pho house (`src/world/shops.ts`) are built like the record shop: a glass front and a pair of doors on the market alley, a counter, a ceiling, a wooden floor and pendants that can be shot out. Their shop windows shatter with one round and can be climbed through, and their doors open with E or a knife kick.
+The dumpling shop, the boba shop and the pho house (`src/world/shops.ts`) are built like the record shop: a glass front and a pair of doors on the market alley, a counter, a ceiling, a wooden floor and pendants that can be shot out. Their shop windows shatter with one round and can be climbed through, and their doors open with E.
 
 | Shop | Size | Way through | On the counter |
 |---|---|---|---|

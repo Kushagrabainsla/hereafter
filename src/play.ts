@@ -2,7 +2,7 @@ import { MARKET_ARENA } from "./world/nightMarket";
 import { createMapViewer, type MapViewer } from "./world/mapViewer";
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
-import { BANDAGE_MS, BLEED_DRIP_MS, SPRAY_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, KNIFE, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type KnifeStroke, type WeaponKind } from "./game/combatRules";
+import { BANDAGE_MS, BLEED_DRIP_MS, SPRAY_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type WeaponKind } from "./game/combatRules";
 import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
@@ -66,7 +66,7 @@ const magPips = element<HTMLElement>("mag-pips");
 const loadCount = element<HTMLElement>("load-count");
 const woundRow = element<HTMLElement>("wound-row");
 const bandageCount = element<HTMLElement>("bandage-count");
-const CAUSE_LABEL: Record<string, string> = { knife: WEAPONS.knife.label, pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object", bleed: "Bled out", fire: "Fire" };
+const CAUSE_LABEL: Record<string, string> = { pistol: WEAPONS.pistol.label, rifle: WEAPONS.rifle.label, grenade: "Frag grenade", fall: "Fall", struck: "Thrown object", bleed: "Bled out", fire: "Fire" };
 const damageFlash = element<HTMLElement>("damage-flash");
 const performanceLabel = element<HTMLElement>("performance");
 const playerNameInput = element<HTMLInputElement>("player-name");
@@ -97,10 +97,8 @@ let lastDryFire = 0;
 let pendingShot = 0;
 let triggerHeld = false;
 let sprayHeld = false;
-// The knife can start its next stroke after this moment.
-let knifeFreeAt = 0;
 // Time to bring a weapon up out of a sprint before it fires.
-const SPRINT_OUT_MS: Record<WeaponKind, number> = { knife: 60, pistol: 140, rifle: 220 };
+const SPRINT_OUT_MS: Record<WeaponKind, number> = { pistol: 140, rifle: 220 };
 const crosshair = document.querySelector<HTMLElement>(".crosshair");
 const previousPlayers = new Map<string, { active: WeaponKind; reloadUntil: number; health: number }>();
 // Browsers only start audio from a user gesture; every gesture retries until it runs.
@@ -269,9 +267,9 @@ function showElimination(event: CombatEvent): void {
 
 // Rounds in the gun and spare rounds, one bar per spare magazine and what it all weighs.
 function showAmmo(player: CombatPlayer): void {
-  const gun = player.active === "knife" ? null : player.active;
+  const gun = player.owned.includes(player.active) ? player.active : null;
   const spares = gun ? player.mags[gun] : [];
-  ammoCount.textContent = !gun ? "SLASH · STAB" : player.reloadUntil > Date.now() ? "RELOADING" : `${player.ammo[gun]} / ${spares.reduce((sum, rounds) => sum + rounds, 0)}`;
+  ammoCount.textContent = !gun ? "—" : player.reloadUntil > Date.now() ? "RELOADING" : `${player.ammo[gun]} / ${spares.reduce((sum, rounds) => sum + rounds, 0)}`;
   magRow.hidden = !gun;
   magPips.replaceChildren(...(gun && spares.length ? spares.map((rounds) => {
     const pip = document.createElement("i");
@@ -411,7 +409,7 @@ function playEvent(event: CombatEvent): void {
   }
   if (event.kind === "reload" && event.actor === selfId && match) {
     const player = match.player(selfId);
-    if (player && player.active !== "knife" && !player.mags[player.active].length) window.setTimeout(() => toast("That was your last magazine"), 600);
+    if (player && !player.mags[player.active].length) window.setTimeout(() => toast("That was your last magazine"), 600);
   }
   if (damaging && event.target === selfId) {
     pulse(damageFlash, 420);
@@ -423,7 +421,7 @@ function playEvent(event: CombatEvent): void {
   }
   if (event.kind === "death" && event.target === selfId) {
     deathCause.textContent = event.cause === "fall" ? "You fell too far" : event.cause === "struck" && event.actor === selfId ? "Something heavy hit you" : event.cause === "bleed" && event.actor === selfId ? "You bled out" : event.cause === "fire" && event.actor === selfId ? "You burned" : event.actor === selfId ? "Caught in your own blast"
-      : [`By ${nameOf(event.actor)}`, CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "Headshot" : "", event.behind ? "From behind" : ""].filter(Boolean).join(" · ");
+      : [`By ${nameOf(event.actor)}`, CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "Headshot" : ""].filter(Boolean).join(" · ");
   }
 }
 
@@ -466,7 +464,7 @@ function addToKillFeed(event: CombatEvent): void {
     how.textContent = `${CAUSE_LABEL[event.cause ?? ""] ?? ""} · own blast`;
     line.append(who(victim), how);
   } else {
-    how.textContent = [CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "headshot" : "", event.behind ? "from behind" : ""].filter(Boolean).join(" · ");
+    how.textContent = [CAUSE_LABEL[event.cause ?? ""] ?? "", event.zone === "head" ? "headshot" : ""].filter(Boolean).join(" · ");
     line.append(who(event.actor), how, who(victim));
   }
   killFeed.prepend(line);
@@ -608,38 +606,24 @@ function nearestPickup(): { id: string; label: string; full: boolean; idle?: boo
     .sort((a, b) => a.distance - b.distance)[0]?.candidate ?? null;
 }
 
-function attack(stroke: KnifeStroke = "slash"): void {
+function attack(): void {
   if (!viewer || !match || dialogOpen() || ceasefire()) return;
   const player = match.player(selfId);
   // With both hands on something, the attack is to throw it, or to spray.
-  if (viewer.holding()) { if (stroke === "slash") viewer.beginThrow(); return; }
-  if ((player?.powder ?? 0) > 0) { if (stroke === "slash" && !sprayHeld) { sprayHeld = true; sprayOnce(); } return; }
+  if (viewer.holding()) { viewer.beginThrow(); return; }
+  if ((player?.powder ?? 0) > 0) { if (!sprayHeld) { sprayHeld = true; sprayOnce(); } return; }
   if (!player || player.health <= 0 || !viewer.weaponReady()) return;
   const weapon = player.active;
-  if (weapon !== "knife" && stroke === "stab") return;
+  if (!player.owned.includes(weapon)) return;
   // Firing drops a sprint; the shot follows once the weapon is up. Each attack keeps the
   // sprint held off briefly, so a held trigger walks and a released one runs again.
   const sprinting = viewer.playerPose().running;
   viewer.holdSprint(0.35);
   if (sprinting || pendingShot) {
-    if (!pendingShot) pendingShot = window.setTimeout(() => { pendingShot = 0; attack(stroke); }, SPRINT_OUT_MS[weapon]);
+    if (!pendingShot) pendingShot = window.setTimeout(() => { pendingShot = 0; attack(); }, SPRINT_OUT_MS[weapon]);
     return;
   }
   const now = Date.now();
-  if (weapon === "knife") {
-    // The stroke starts now and the blade lands when the swing reaches its target, aimed
-    // wherever the player is looking by then.
-    if (now < knifeFreeAt) return;
-    knifeFreeAt = now + KNIFE[stroke].recoveryMs;
-    viewer.playAttack("knife", stroke);
-    window.setTimeout(() => {
-      const current = match?.player(selfId);
-      if (!viewer || !current || current.health <= 0 || current.active !== "knife") return;
-      const { heading, pitch } = viewer.playerPose();
-      submit({ kind: "attack", weapon: "knife", stroke, aim: { heading, pitch }, seen: viewer.seenTimes() });
-    }, KNIFE[stroke].contactMs);
-    return;
-  }
   if (now - lastLocalAttack < WEAPONS[weapon].cooldownMs || player.reloadUntil > now) return;
   if (player.ammo[weapon] <= 0) {
     // Held triggers retry every frame; click and remind at most a few times a second.
@@ -698,7 +682,7 @@ function bandage(): void {
 
 function reload(): void {
   const player = match?.player(selfId);
-  if (!player || player.health <= 0 || player.active === "knife" || viewer?.holding() || player.powder > 0) return;
+  if (!player || player.health <= 0 || !player.owned.includes(player.active) || viewer?.holding() || player.powder > 0) return;
   if (!player.mags[player.active].length) { toast("No spare magazines. Find some on tables, counters and high ground"); return; }
   submit({ kind: "reload" });
 }
@@ -827,13 +811,12 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (!launched || event.repeat || event.altKey || event.metaKey || event.ctrlKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
-  if (!["f", "v", "e", "g", "t", "b", "1", "2", "3", "r", "m", "enter"].includes(key)) return;
+  if (!["f", "e", "g", "t", "b", "1", "2", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
   if (key === "m") {
     gameAudio.setMuted(!gameAudio.isMuted());
     toast(gameAudio.isMuted() ? "Sound off · press M to turn it back on" : "Sound on");
   } else if (key === "f") attack();
-  else if (key === "v") attack("stab");
   else if (key === "g") throwGrenade();
   else if (key === "t") throwGrenade(true);
   else if (key === "b") bandage();
@@ -844,7 +827,7 @@ document.addEventListener("keydown", (event) => {
     // Reaching for a weapon lets go of whatever the hands hold.
     viewer?.putDown();
     if ((match?.player(selfId)?.powder ?? 0) > 0) submit({ kind: "stow" });
-    const weapon: WeaponKind = key === "1" ? "knife" : key === "2" ? "pistol" : "rifle";
+    const weapon: WeaponKind = key === "1" ? "pistol" : "rifle";
     submit({ kind: "select", weapon });
   }
 });
@@ -1023,9 +1006,8 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
     onStepProgress(step, fraction) { loading.progress(STEP_OF[step] ?? "world", fraction); },
     onHardLanding(speed) { submit({ kind: "fall", speed }); ownMeme("hardLanding"); },
     // The crosshair stays the same down the sights; its gap follows the spread.
-    onAim(spreadPixels, melee) {
+    onAim(spreadPixels) {
       crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
-      crosshair?.classList.toggle("melee", melee);
     },
     onMetrics(metrics) {
       performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
@@ -1039,15 +1021,11 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
     const canvas = element("map").querySelector("canvas");
     if (canvas) {
       let pointerDown: { x: number; y: number; time: number } | null = null;
-      // The right button stabs with the knife, and with a gun aims down its sights while held.
+      // The right button aims down the sights while held.
       canvas.addEventListener("contextmenu", (event) => event.preventDefault());
       const press = (event: PointerEvent): void => {
         if (!launched) return;
-        if (event.button === 2) {
-          if (match?.player(selfId)?.active === "knife") attack("stab");
-          else viewer?.setAiming(true);
-          return;
-        }
+        if (event.button === 2) { viewer?.setAiming(true); return; }
         if (event.button !== 0) return;
         if (document.pointerLockElement === canvas) { triggerHeld = true; attack(); }
         else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };

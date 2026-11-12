@@ -3,20 +3,27 @@ import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { type WeaponKind } from "./combatRules";
 
-const KINDS: WeaponKind[] = ["knife", "pistol", "rifle"];
-const PATHS: Record<WeaponKind, unknown> = { knife: import.meta.env.VITE_KNIFE_VIEWMODEL, pistol: import.meta.env.VITE_PISTOL_VIEWMODEL, rifle: import.meta.env.VITE_RIFLE_VIEWMODEL };
-const loads = new Map<WeaponKind, Promise<GLTF | null>>();
+const KINDS: WeaponKind[] = ["pistol", "rifle"];
+// The first-person files: one per gun, and the bare arms, which the view uses for hands on a
+// carried prop or the extinguisher.
+export type ViewFile = WeaponKind | "hands";
+const PATHS: Record<ViewFile, unknown> = { hands: import.meta.env.VITE_HANDS_VIEWMODEL, pistol: import.meta.env.VITE_PISTOL_VIEWMODEL, rifle: import.meta.env.VITE_RIFLE_VIEWMODEL };
+const loads = new Map<ViewFile, Promise<GLTF | null>>();
 
 // The authored first-person files hold the arms and the weapon together. Each is loaded
 // once: the first-person view uses the whole file, and pickups and other players use a
-// copy of just the weapon, so every weapon in the game is the same model.
-export function loadWeaponFile(kind: WeaponKind): Promise<GLTF | null> {
+// copy of just the weapon, so every weapon in the game is the same model. The arms file was
+// built holding a blade, which is taken out as it loads.
+export function loadWeaponFile(kind: ViewFile): Promise<GLTF | null> {
   let load = loads.get(kind);
   if (!load) {
     const path = PATHS[kind];
     const url = typeof path === "string" && path ? new URL(path, new URL(import.meta.env.BASE_URL, location.origin)) : null;
     // Only same-origin build settings: no third-party requests.
-    load = url && url.origin === location.origin ? new GLTFLoader().loadAsync(url.href).catch((error: unknown) => { console.warn(`Could not load ${kind} model`, error); return null; }) : Promise.resolve(null);
+    load = url && url.origin === location.origin ? new GLTFLoader().loadAsync(url.href).then((gltf) => {
+      if (kind === "hands") gltf.scene.getObjectByName("weapon")?.removeFromParent();
+      return gltf;
+    }).catch((error: unknown) => { console.warn(`Could not load ${kind} model`, error); return null; }) : Promise.resolve(null);
     loads.set(kind, load);
   }
   return load;
@@ -46,8 +53,7 @@ function gripOf(gltf: GLTF): HeldGrip | null {
   };
 }
 
-// Just the weapon from each file, in its own frame: grip at the origin, barrel or blade
-// along -Z, up +Y, real size in metres. Its muzzle flash stays, hidden, for other players'
+// Just the gun from each file, in its own frame: grip at the origin, barrel along -Z, up +Y, real size in metres. Its muzzle flash stays, hidden, for other players'
 // guns to show as they fire; a gun's userData.grip says how it is held. Copies share
 // geometry and materials with the first-person model.
 export async function loadWeaponModels(): Promise<Map<WeaponKind, Object3D>> {
@@ -68,7 +74,7 @@ export async function loadWeaponModels(): Promise<Map<WeaponKind, Object3D>> {
     const holder = new Group();
     holder.name = `${kind}-model`;
     holder.add(copy);
-    if (kind !== "knife") holder.userData.grip = gripOf(gltf);
+    holder.userData.grip = gripOf(gltf);
     models.set(kind, holder);
   }));
   return models;

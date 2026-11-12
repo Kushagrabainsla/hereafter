@@ -20,7 +20,6 @@ export interface ViewDynamics { active: WeaponKind; lower: number; sway: Sway; r
 // swing slower and further: these are each one's natural frequency (Hz), how far it lags
 // a turn (seconds of turn) and how strongly it follows the body's acceleration.
 const SPRING: Record<WeaponKind, { frequency: number; lag: number; follow: number }> = {
-  knife: { frequency: 2.6, lag: 0.012, follow: 0.16 },
   pistol: { frequency: 2.1, lag: 0.016, follow: 0.2 },
   rifle: { frequency: 1.5, lag: 0.024, follow: 0.24 },
 };
@@ -39,7 +38,7 @@ class SpringAxis {
 
 // Moments in each reload recording (seconds) when the magazine seats and the action closes,
 // so the weapon jolts in time with the sound (scripts/audio/build.sh cuts the recordings).
-const RELOAD_JOLTS: Record<WeaponKind, number[]> = { knife: [], pistol: [0.42, 0.95], rifle: [1.15, 1.38] };
+const RELOAD_JOLTS: Record<WeaponKind, number[]> = { pistol: [0.42, 0.95], rifle: [1.15, 1.38] };
 
 function smoothstep(edge0: number, edge1: number, value: number): number {
   const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
@@ -53,8 +52,8 @@ const SWITCH_SECONDS = 0.56;
 // each frame; and the gun pickups, each spinning above a modelled stand.
 export class WeaponVisuals {
   private pickups = new Map<string, PickupView>();
-  private active: WeaponKind = "knife";
-  private requested: WeaponKind = "knife";
+  private active: WeaponKind = "pistol";
+  private requested: WeaponKind = "pistol";
   private switchPhase = 0;
   private switchSeconds = SWITCH_SECONDS;
   private switching = false;
@@ -68,7 +67,7 @@ export class WeaponVisuals {
   private armWound = 0;
   private reloadElapsed = 0;
   private reloadDuration = 0;
-  private reloadWeapon: WeaponKind = "knife";
+  private reloadWeapon: WeaponKind = "pistol";
   private reloadTilt = 0;
   private reloadJolt = 0;
   private lastHeading: number | null = null;
@@ -130,7 +129,7 @@ export class WeaponVisuals {
 
   // Cant the weapon for a reload lasting durationMs, with jolts timed to the reload sound.
   reload(kind: WeaponKind, durationMs: number): void {
-    if (kind === "knife" || kind !== this.requested) return;
+    if (kind !== this.requested) return;
     this.reloadWeapon = kind;
     this.reloadElapsed = 0;
     this.reloadDuration = durationMs / 1000;

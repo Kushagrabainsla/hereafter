@@ -52,7 +52,6 @@
 
     { "id": "head-khopdi", "moment": "headshot", "tier": "clean", "hi": "सीधा खोपड़ी में!", "hiLatin": "Seedha khopdi mein!", "en": "Right between the eyes!" },
     { "id": "head-bheja", "moment": "headshot", "tier": "spicy", "hi": "भेजा फ़्राई!", "hiLatin": "Bheja fry!", "en": "Brains fried!" },
-    { "id": "knife-chaku", "moment": "knifeKill", "tier": "clean", "hi": "चाकू चल गया!", "hiLatin": "Chaaku chal gaya!", "en": "Knifed!" },
     { "id": "double-teer", "moment": "doubleKill", "tier": "clean", "hi": "एक तीर, दो शिकार!", "hiLatin": "Ek teer, do shikaar!", "en": "Two for one!" },
     { "id": "double-dhamaal", "moment": "doubleKill", "tier": "spicy", "hi": "धमाल!", "hiLatin": "Dhamaal!", "en": "Double trouble!" },
     { "id": "revenge-hisaab", "moment": "revenge", "tier": "clean", "hi": "हिसाब बराबर।", "hiLatin": "Hisaab barabar.", "en": "Now we're even." },

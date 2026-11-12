@@ -36,6 +36,6 @@ export const MATERIALS: Record<Material, MaterialRule> = {
   masonry: { resistance: 12, bullet: 0.12, blast: 1, impact: "dust" },
 };
 
-// Starting penetration power per weapon; the knife never passes through anything.
-export const PENETRATION = { knife: 0, pistol: 1, rifle: 2 } as const;
+// Starting penetration power per weapon.
+export const PENETRATION = { pistol: 1, rifle: 2 } as const;
 export const BODY_COST = 1;

@@ -1,6 +1,6 @@
 import { AnimationMixer, Color, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3, type AnimationAction, type AnimationClip } from "three/webgpu";
 import { type HeldGrip } from "./weaponModels";
-import { FIST, HandRig, SUPPORT, TRIGGER } from "./handPose";
+import { HandRig, SUPPORT, TRIGGER } from "./handPose";
 import { type Hold } from "./holding";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
@@ -82,9 +82,9 @@ export class PlayerModelInstance {
   private frozen: { bone: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 }[] | null = null;
   private materials: MeshStandardMaterial[] = [];
   private scratch = new Quaternion();
-  // The right upper arm and forearm, for strokes.
+  // The right upper arm and forearm, for the kick of a shot without a gun held to the shoulder.
   private arm: Object3D[] = [];
-  private stroke: { kind: "slash" | "stab" | "shot"; time: number } | null = null;
+  private stroke: { time: number } | null = null;
   // Both arms, for holding a gun to the shoulder; the gun held, how far it has dropped to a
   // low ready, its recoil and how long its flash still shows.
   private arms: { right: ArmChain; left: ArmChain } | null = null;
@@ -92,9 +92,8 @@ export class PlayerModelInstance {
   // Both hands out in front on something carried, and how far they have come up.
   private carrying = false;
   private carried = 0;
-  // Hands on what is carried, the knife in the fist, and the finger joints behind them.
+  // Hands on what is carried, and the finger joints behind them.
   private hold: Hold | null = null;
-  private knife = false;
   private hands: HandRig | null = null;
   private ready = 0;
   private recoil = 0;
@@ -148,20 +147,18 @@ export class PlayerModelInstance {
     this.play("idle");
   }
 
-  // Plays a knife stroke on the right arm over whatever the body is doing, or a shot: the gun
-  // kicks and flashes, or without a gun held the arm kicks.
-  attack(kind: "slash" | "stab" | "shot"): void {
-    if (kind === "shot" && this.gun) { this.recoil = 1; this.flashFor = FLASH_SECONDS; this.ready = 0; return; }
-    this.stroke = { kind, time: 0 };
+  // Plays a shot over whatever the body is doing: the gun kicks and flashes, or without a gun
+  // held the arm kicks.
+  attack(): void {
+    if (this.gun) { this.recoil = 1; this.flashFor = FLASH_SECONDS; this.ready = 0; return; }
+    this.stroke = { time: 0 };
   }
 
   setCarrying(carrying: boolean): void { this.carrying = carrying; }
   // Where the hands go on what is carried, when that is known.
   setHold(hold: Hold | null): void { this.hold = hold; }
-  setKnife(out: boolean): void { this.knife = out; }
 
-  // The gun to hold to the shoulder (it must be a child of root), or null for the knife or
-  // empty hands, which the animation carries on the hand socket.
+  // The gun to hold to the shoulder (it must be a child of root), or null for empty hands.
   holdGun(object: Object3D | null): void {
     if ((this.gun?.object ?? null) === object) return;
     const grip = object?.userData.grip as HeldGrip | null | undefined;
@@ -237,7 +234,6 @@ export class PlayerModelInstance {
     this.strike(seconds);
     this.aimGun(seconds);
     this.carryOut(seconds);
-    if (this.knife && !this.gun && this.carried < 0.02) this.hands?.curl("R", FIST);
   }
 
   // Something carried in both hands: the hands come forward from the chest, to either side of
@@ -348,40 +344,21 @@ export class PlayerModelInstance {
     bone.updateMatrixWorld(true);
   }
 
-  // A slash raises the arm forward and sweeps it across the body; a stab draws the arm back
-  // and drives it straight out; a shot kicks it up a little. Each eases in and out.
+  // A shot without a gun held to the shoulder kicks the arm up a little, easing in and out.
   private strike(seconds: number): void {
     const stroke = this.stroke;
     if (!stroke || this.arm.length < 2) return;
     stroke.time += seconds;
-    const length = stroke.kind === "slash" ? 0.5 : stroke.kind === "stab" ? 0.75 : 0.16;
-    const t = stroke.time / length;
+    const t = stroke.time / 0.16;
     if (t >= 1) { this.stroke = null; return; }
     const ease = (from: number, to: number): number => Math.max(0, Math.min(1, (t - from) / (to - from)));
     const bell = (from: number, peak: number, to: number): number => t < peak ? Math.sin(ease(from, peak) * Math.PI / 2) : 1 - ease(peak, to) ** 2;
-    const [upper, fore] = this.arm;
-    // Rotations about the character's own side-to-side and vertical axes, expressed in
-    // each bone's parent frame as the animation has posed it this frame.
-    const around = (bone: Object3D, axis: Vector3, angle: number): void => {
-      const parent = bone.parent!.getWorldQuaternion(new Quaternion()).invert();
-      const local = axis.clone().applyQuaternion(this.root.getWorldQuaternion(new Quaternion())).applyQuaternion(parent);
-      bone.quaternion.premultiply(this.scratch.setFromAxisAngle(local, angle));
-    };
-    let raise = 0, sweep = 0, bend = 0;
-    if (stroke.kind === "slash") {
-      raise = 1.25 * bell(0, 0.25, 1);
-      sweep = 0.7 - 1.6 * ease(0.15, 0.45);
-      sweep *= bell(0, 0.2, 1);
-      bend = 0.6 * bell(0, 0.2, 0.7);
-    } else if (stroke.kind === "stab") {
-      raise = 1.35 * bell(0.25, 0.42, 1) - 0.3 * bell(0, 0.2, 0.32);
-      bend = 1.3 * bell(0, 0.22, 0.38);
-    } else {
-      raise = 0.12 * bell(0, 0.15, 1);
-    }
-    around(upper, WORLD_RIGHT, -raise);
-    around(upper, WORLD_UP, sweep);
-    if (bend) around(fore, WORLD_RIGHT, -bend);
+    const upper = this.arm[0];
+    // A rotation about the character's own side-to-side axis, expressed in the bone's parent
+    // frame as the animation has posed it this frame.
+    const parent = upper.parent!.getWorldQuaternion(new Quaternion()).invert();
+    const local = WORLD_RIGHT.clone().applyQuaternion(this.root.getWorldQuaternion(new Quaternion())).applyQuaternion(parent);
+    upper.quaternion.premultiply(this.scratch.setFromAxisAngle(local, -0.12 * bell(0, 0.15, 1)));
   }
 
   dispose(): void {

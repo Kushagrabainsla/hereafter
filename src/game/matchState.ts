@@ -1,10 +1,10 @@
 import { type ArenaData, terrainHeight } from "../world/arena";
 import {
-  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, fromBehind, knifeDamage, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime, burnSeconds, catchesAt, EXTINGUISHER_RETURN_MS, POWDER_SECONDS, SPRAY_MS, SPRAY_REACH, BURN_DAMAGE, BURN_MS,
+  targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime, burnSeconds, catchesAt, EXTINGUISHER_RETURN_MS, POWDER_SECONDS, SPRAY_MS, SPRAY_REACH, BURN_DAMAGE, BURN_MS,
   DOUSE_RADIUS, EXPLOSIVE_CATCHES, FIRE_DAMAGE, FIRE_HEAT, FIRE_REACH, FIRE_STEP_MS, FRAG_HEAT, FRAG_LIGHTS, FUEL_HEAT, MAX_FIRES, POOL_MS, POOL_RADIUS, SCRAPS_MS, SCRAPS_RADIUS,
   ARM_WOUND_DAMAGE, BANDAGE_MS, BANDAGES_PER_LIFE, BLEED_DRIP_MS, BLEED_LONGEST_MS, BLEED_MIN_DAMAGE, BLEED_PER_WOUND_MS, LEG_WOUND_DAMAGE,
-  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, KNIFE, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
-  type FoodKind, type GunKind, type HitZone, type KnifeStroke, type WeaponKind, type WeaponPickup,
+  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
+  type FoodKind, type GunKind, type HitZone, type WeaponKind, type WeaponPickup,
 } from "./combatRules";
 import { type ShotRay } from "../world/physics";
 import { type PlayerPose } from "./playerController";
@@ -79,8 +79,7 @@ export function standings(players: Record<string, CombatPlayer>): (CombatPlayer 
 
 export type CombatIntent =
   // seen maps each target to the moment of its own pose timeline the shooter was looking at.
-  // A knife attack names its stroke and arrives when the blade reaches the target.
-  | { kind: "attack"; weapon: WeaponKind; stroke?: KnifeStroke; aim?: { heading: number; pitch: number }; seen?: Record<string, number> }
+  | { kind: "attack"; weapon: WeaponKind; aim?: { heading: number; pitch: number }; seen?: Record<string, number> }
   | { kind: "pickup"; pickupId: string }
   | { kind: "reload" }
   | { kind: "select"; weapon: WeaponKind }
@@ -126,9 +125,6 @@ export interface CombatEvent {
   velocity?: Vec3;
   fuseMs?: number;
   grenade?: number;
-  stroke?: KnifeStroke;
-  // A knife stroke into someone's back.
-  behind?: boolean;
   // What a pickup was: a gun, spare magazines, something a fallen player dropped, or food.
   item?: "gun" | "magazines" | "drop" | "food" | "extinguisher";
   food?: FoodKind;
@@ -232,8 +228,6 @@ const REWIND_LIMIT_MS = 350;
 const FALL_SAFE_SPEED = 9;
 const FALL_DAMAGE_PER_MS = 9;
 const BULLET_IMPULSE = { pistol: 2.5, rifle: 4.5 } as const;
-// A front kick: about a 12 kg leg arriving at 6 m/s.
-const KICK_IMPULSE = 70;
 const MATERIAL_NAMES = Object.keys(MATERIALS);
 const EVENT_KINDS = ["shot", "hit", "pickup", "death", "respawn", "throw", "explode", "reload", "drop", "use", "vent", "smoke", "round", "bandage", "spray"];
 // A shot gas cylinder vents burning gas for this long, then bursts like a grenade.
@@ -241,9 +235,9 @@ const VENT_MS = 1600;
 // How far a player can reach to open or close something, from the eyes.
 const USE_REACH = 2.3;
 const GUNS = ["pistol", "rifle"] as const;
-const CAUSES = ["knife", "pistol", "rifle", "grenade", "fall", "struck", "bleed", "fire"];
+const CAUSES = ["pistol", "rifle", "grenade", "fall", "struck", "bleed", "fire"];
 // What breaks the skin; a fall or a thrown crate bruises instead.
-const CUTTING: (DamageCause | undefined)[] = ["knife", "pistol", "rifle", "grenade"];
+const CUTTING: (DamageCause | undefined)[] = ["pistol", "rifle", "grenade"];
 // One prop hits one player once per impact, and breaks a bit at a time.
 const STRUCK_GAP_MS = 500;
 const SMASH_GAP_MS = 250;
@@ -263,12 +257,11 @@ function validEvent(event: CombatEvent): boolean {
     && (event.target === undefined || typeof event.target === "string")
     && (!event.shot || validShot(event.shot))
     && (event.damage === undefined || (finite(event.damage) && event.damage >= 0 && event.damage <= 200))
-    && (!event.weapon || ["knife", "pistol", "rifle"].includes(event.weapon))
+    && (!event.weapon || ["pistol", "rifle"].includes(event.weapon))
     && (!event.cause || CAUSES.includes(event.cause))
     && (!event.impacts || (Array.isArray(event.impacts) && event.impacts.length <= 24 && event.impacts.every((impact) => validVec(impact) && finite(impact.nx, impact.ny, impact.nz) && MATERIAL_NAMES.includes(impact.material))))
     && validVec(event.from) && validVec(event.position) && validVec(event.velocity)
     && (event.fuseMs === undefined || (finite(event.fuseMs) && event.fuseMs >= 0 && event.fuseMs <= 10_000))
-    && (event.stroke === undefined || event.stroke === "slash" || event.stroke === "stab")
     && (event.item === undefined || ["gun", "magazines", "drop", "food", "extinguisher"].includes(event.item))
     && (event.food === undefined || FOOD_KINDS.includes(event.food))
     && (event.drop === undefined || (typeof event.drop === "string" && event.drop.length < 40))
@@ -287,16 +280,17 @@ function validDrop(drop: Drop): boolean {
     && validVec(drop.from) && validVec(drop.velocity) && validVec(drop.position) && !!drop.from && !!drop.velocity && !!drop.position && finite(drop.expires);
 }
 
-// Every life starts with only the knife and grenades: guns and ammunition are found.
+// Every life starts with the pistol, loaded, and grenades: the rifle and spare magazines are
+// found.
 function freshPlayer(): CombatPlayer {
-  return { health: 100, owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "", leg: 0, arm: 0, bleedUntil: 0, bleedBy: "", bandages: BANDAGES_PER_LIFE, powder: 0, burnUntil: 0, burnBy: "" };
+  return { health: 100, owned: ["pistol"], active: "pistol", ammo: { pistol: WEAPONS.pistol.magazine, rifle: 0 }, mags: { pistol: [], rifle: [] }, grenades: GRENADES_PER_LIFE, smokes: SMOKES_PER_LIFE, reloadUntil: 0, respawnAfter: 0, kills: 0, deaths: 0, intent: 0, name: "", voice: "", leg: 0, arm: 0, bleedUntil: 0, bleedBy: "", bandages: BANDAGES_PER_LIFE, powder: 0, burnUntil: 0, burnBy: "" };
 }
 
 function validPlayer(player: CombatPlayer): boolean {
-  const validWeapon = (weapon: unknown): weapon is WeaponKind => weapon === "knife" || weapon === "pistol" || weapon === "rifle";
+  const validWeapon = (weapon: unknown): weapon is WeaponKind => weapon === "pistol" || weapon === "rifle";
   return Number.isInteger(player.health) && player.health >= 0 && player.health <= 100
-    && Array.isArray(player.owned) && player.owned.every(validWeapon) && player.owned.includes("knife")
-    && validWeapon(player.active) && player.owned.includes(player.active)
+    && Array.isArray(player.owned) && player.owned.every(validWeapon) && player.owned.length <= GUNS.length
+    && validWeapon(player.active) && (player.owned.includes(player.active) || player.owned.length === 0)
     && GUNS.every((gun) => Number.isInteger(player.ammo?.[gun]) && player.ammo[gun] >= 0 && player.ammo[gun] <= WEAPONS[gun].magazine + 1 && validMagazines(gun, player.mags?.[gun]))
     && Number.isInteger(player.grenades) && player.grenades >= 0 && player.grenades <= GRENADES_PER_LIFE
     && Number.isInteger(player.smokes) && player.smokes >= 0 && player.smokes <= SMOKES_PER_LIFE
@@ -349,7 +343,6 @@ export class MatchState {
   private lastAttack = new Map<string, number>();
   private lastThrow = new Map<string, number>();
   private bloom = new Map<string, number>();
-  private lastStroke = new Map<string, KnifeStroke>();
   private lastUse = new Map<string, number>();
   private lastStruck = new Map<string, number>();
   private lastSmash = new Map<string, number>();
@@ -380,7 +373,6 @@ export class MatchState {
     this.lastAttack.clear();
     this.lastThrow.clear();
     this.bloom.clear();
-    this.lastStroke.clear();
     this.equipUntil.clear();
     this.lastStruck.clear();
     this.lastSmash.clear();
@@ -677,7 +669,7 @@ export class MatchState {
     // in the pouch and an empty one is dropped; a round already chambered stays there.
     if (intent.kind === "reload") {
       const gun = player.active;
-      if (gun === "knife" || player.reloadUntil > now || !player.mags[gun].length) return false;
+      if (!player.owned.includes(gun) || player.reloadUntil > now || !player.mags[gun].length) return false;
       const loaded = player.ammo[gun], chamber = loaded > 0 ? 1 : 0;
       if (Math.max(...player.mags[gun]) + chamber <= loaded) return false;
       player.reloadUntil = now + reloadTime(gun, player.arm);
@@ -707,7 +699,7 @@ export class MatchState {
     if (intent.kind === "use") {
       const toggle = this.data.layout.toggles.find((item) => item.id === intent.target);
       if (!toggle || !pose || !fresh || now - (this.lastUse.get(toggle.id) ?? 0) < 500) return false;
-      const eye = shotRay(this.data, pose, "knife").origin;
+      const eye = shotRay(this.data, pose, "pistol").origin;
       if (Math.hypot(eye.x - toggle.at.x, eye.y - toggle.at.y, eye.z - toggle.at.z) > USE_REACH) return false;
       // A door is swung by hand and goes as far as nothing stops it; its leaves' bodies carry
       // where it is, not the shared state.
@@ -750,21 +742,11 @@ export class MatchState {
     }
     if (intent.kind === "attack") {
       const weapon = player.active;
-      if (now < (this.equipUntil.get(actor) ?? 0) || intent.weapon !== weapon || player.reloadUntil > now) return false;
+      if (now < (this.equipUntil.get(actor) ?? 0) || intent.weapon !== weapon || !player.owned.includes(weapon) || player.reloadUntil > now) return false;
       const aim = intent.aim;
       if (aim && (!finite(aim.heading, aim.pitch) || Math.abs(aim.pitch) > 80)) return false;
       if (!pose || !fresh || pose.running) return false;
       const last = this.lastAttack.get(actor) ?? 0;
-      if (weapon === "knife") {
-        // Strokes arrive when the blade lands, so the gap allows for each one's wind-up.
-        const stroke = intent.stroke === "stab" ? "stab" : "slash", previous = KNIFE[this.lastStroke.get(actor) ?? "slash"];
-        if (now - last < previous.recoveryMs - previous.contactMs + KNIFE[stroke].contactMs - 90) return false;
-        this.lastAttack.set(actor, now);
-        this.lastStroke.set(actor, stroke);
-        this.resolveKnife(actor, stroke, { ...pose, ...(aim ?? {}) }, intent.seen);
-        this.changed();
-        return true;
-      }
       if (now - last < WEAPONS[weapon].cooldownMs || player.ammo[weapon] <= 0) return false;
       // Spread follows how the shooter was moving and how fast they have been firing.
       const sinceLast = (now - last) / 1000;
@@ -882,77 +864,8 @@ export class MatchState {
       side = -side;
     }
     if (this.snapshot.drops.length > DROPS_KEPT) this.snapshot.drops.splice(0, this.snapshot.drops.length - DROPS_KEPT);
-    Object.assign(player, { owned: ["knife"], active: "knife", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] } });
-  }
-
-  // A knife stroke sweeps the blade along a fan of short rays in the order the arm moves it:
-  // across from upper right to lower left for a slash, straight ahead for a stab. The blade
-  // stops at the first thing it meets: a body takes the cut, and anything else turns it,
-  // taking a little damage and a shove.
-  private resolveKnife(actor: string, stroke: KnifeStroke, pose: PlayerPose, seen?: Record<string, number>): void {
-    const rules = KNIFE[stroke];
-    const count = stroke === "slash" ? 9 : 3;
-    const order = stroke === "slash" ? Array.from({ length: count }, (_, index) => index / (count - 1)) : [0.5, 0, 1];
-    let center = shotRay(this.data, pose, "knife", rules.reach);
-    // Straight into a shut door, the blow kicks it open, even if the swing would clip the frame.
-    const ahead = (this.world?.traceBullet(center) ?? []).find((hit) => hit.material !== "boundary");
-    if (ahead?.entity && this.kick(actor, ahead.entity, center, ahead.point)) {
-      this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...center, distance: ahead.distance }, impact: false });
-      return;
-    }
-    for (const t of order) {
-      // Screen right is lower heading; the swing runs from right to left and high to low.
-      const swept = { ...pose, heading: (pose.heading - rules.arc / 2 + rules.arc * t + 360) % 360, pitch: Math.max(-80, Math.min(80, pose.pitch + rules.drop / 2 - rules.drop * t)) };
-      const ray = shotRay(this.data, swept, "knife", rules.reach);
-      if (t === 0.5) center = ray;
-      const surface = (this.world?.traceBullet(ray) ?? []).find((hit) => hit.material !== "boundary");
-      let body: { id: string; target: PlayerPose; distance: number; zone: HitZone; arm?: boolean } | null = null;
-      for (const id of this.poses.keys()) {
-        if (id === actor || (this.snapshot.players[id]?.health ?? 0) <= 0 || this.now - (this.poseTimes.get(id) ?? 0) > 1500) continue;
-        const target = this.poseAt(id, seen?.[id]);
-        const hit = target && targetHit(this.data, swept, target, "knife", rules.reach);
-        if (target && hit && hit.distance <= rules.reach && (!body || hit.distance < body.distance)) body = { id, target, distance: hit.distance, zone: hit.zone, arm: hit.arm };
-      }
-      if (body && (!surface || body.distance <= surface.distance)) {
-        const behind = fromBehind(pose, body.target);
-        this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: body.distance }, impact: false });
-        this.hurt(body.id, knifeDamage(stroke, body.zone, behind), { kind: "hit", actor, target: body.id, weapon: "knife", cause: "knife", stroke, behind, zone: body.zone, arm: body.arm, from: ray.origin });
-        return;
-      }
-      if (surface) {
-        // A blade driven into a shut door kicks it open instead of cutting it.
-        if (surface.entity && this.kick(actor, surface.entity, ray, surface.point)) {
-          this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: surface.distance }, impact: false });
-          return;
-        }
-        if (surface.entity) {
-          const push = rules.impulse, d = ray.direction;
-          this.damageEntity(actor, surface.entity, rules.damage.torso * MATERIALS[surface.material].bullet, surface.point, { x: d.x * push, y: d.y * push, z: d.z * push });
-        }
-        this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: { ...ray, distance: surface.distance }, impact: true,
-          impacts: [{ ...surface.point, nx: surface.normal.x, ny: surface.normal.y, nz: surface.normal.z, material: surface.material }] });
-        return;
-      }
-    }
-    this.emit({ kind: "shot", actor, weapon: "knife", stroke, shot: center, impact: false });
-  }
-
-  // A blade driven into a door is a kick instead: a boot's momentum at the spot struck, enough to
-  // burst the latch. Whatever is piled behind the door takes the blow through it, so a heavy
-  // barricade holds and a light one gives. False if the entity is no door leaf.
-  private kick(actor: string, leaf: string, ray: ShotRay, point: Vec3): boolean {
-    const toggle = this.data.layout.toggles.find((item) => item.id.startsWith("door:") && leaf.startsWith(`${item.id}:`));
-    if (!toggle) return false;
-    if (this.world?.swingDoor) {
-      const d = ray.direction, flat = Math.hypot(d.x, d.z) || 1;
-      this.world.push(leaf, point, { x: d.x / flat * KICK_IMPULSE, y: 0, z: d.z / flat * KICK_IMPULSE });
-    } else {
-      if (this.snapshot.open[toggle.id] ?? toggle.open) return false;
-      this.snapshot.open[toggle.id] = true;
-    }
-    this.lastUse.set(toggle.id, this.now);
-    this.emit({ kind: "use", actor, entity: toggle.id, open: true, weapon: "knife" });
-    return true;
+    // Everything fell from the hands; the next life starts with a fresh pistol.
+    Object.assign(player, { owned: [], active: "pistol", ammo: { pistol: 0, rifle: 0 }, mags: { pistol: [], rifle: [] } });
   }
 
   // A round travels through surfaces and bodies in order, spending penetration power on
@@ -1241,7 +1154,7 @@ export class MatchState {
       if (player.reloadUntil > 0 && now >= player.reloadUntil) {
         player.reloadUntil = 0;
         const gun = player.active;
-        if (gun !== "knife" && player.mags[gun].length) {
+        if (player.mags[gun].length) {
           const spares = player.mags[gun];
           const fresh = spares.splice(spares.indexOf(Math.max(...spares)), 1)[0];
           const chamber = player.ammo[gun] > 0 ? 1 : 0, left = player.ammo[gun] - chamber;
@@ -1308,7 +1221,7 @@ export class MatchState {
     }
     Object.assign(this.snapshot, { taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, fires: [] });
     this.heat.clear();
-    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.lastStroke, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash, this.drips, this.bandaging]) map.clear();
+    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash, this.drips, this.bandaging]) map.clear();
     this.emit({ kind: "round", actor: "" });
   }
 

@@ -5,7 +5,7 @@ import { assetFetch } from "../assetStore";
 
 // Sound effects for the local player, other players and the HUD. Recorded CC0 samples
 // (public/audio, built by scripts/audio/build.sh) cover guns, reloads, footsteps and
-// impacts; hit confirmation, the knife swing and near-miss cracks are synthesised.
+// impacts; hit confirmation and near-miss cracks are synthesised.
 // Samples are fetched and decoded at start-up on an offline context, so nothing waits
 // on the first click; the playing context starts on the first user gesture, as browsers
 // require. Other players' sounds are positioned with HRTF panners, dulled with distance
@@ -22,7 +22,7 @@ export type Gait = "walk" | "run" | "crouch";
 const BANK = {
   "pistol-near": 3, "pistol-far": 2, "rifle-near": 4, "rifle-far": 2,
   "reload-pistol": 1, "reload-rifle": 1, "dry-fire": 1, "latch": 1, "mag-in": 1,
-  "draw-knife": 3, "cloth": 4, "grab": 2, "knife-hit": 2,
+  "cloth": 4, "grab": 2,
   "step-hard": 5, "step-soft": 5, "land": 3,
   "body-hit": 5, "hurt": 3, "bullet-impact": 4,
   "impact-metal": 3, "impact-wood": 3, "impact-glass": 3, "impact-soft": 3, "glass-break": 3, "wood-break": 2,
@@ -169,9 +169,8 @@ export class GameAudio {
 
   // Local player ------------------------------------------------------------------------
 
-  fire(weapon: WeaponKind, stab = false): void {
+  fire(weapon: WeaponKind): void {
     if (!this.live()) return;
-    if (weapon === "knife") { this.swing(undefined, stab); return; }
     this.play(weapon === "pistol" ? "pistol-near" : "rifle-near", { gain: weapon === "pistol" ? 0.95 : 0.85, rate: 0.97 + Math.random() * 0.06, reverb: 0.42, bus: this.mix });
     this.thump(weapon === "pistol" ? 0.55 : 0.45);
   }
@@ -179,22 +178,18 @@ export class GameAudio {
   dryFire(): void { this.play("dry-fire", { gain: 0.14 }); }
 
   reload(weapon: WeaponKind): void {
-    if (weapon === "knife") return;
     this.localReload?.stop();
     this.localReload = this.play(weapon === "pistol" ? "reload-pistol" : "reload-rifle", { gain: 0.2 });
   }
 
   cancelReload(): void { this.localReload?.stop(); this.localReload = null; }
 
-  // Holster during the first half of the 560 ms switch, then draw and, for guns, a ready click.
+  // Holster during the first half of the 560 ms switch, then draw and a ready click.
   switchWeapon(weapon: WeaponKind): void {
     const now = this.time();
     this.play("cloth", { gain: 0.13, when: now });
-    if (weapon === "knife") this.play("draw-knife", { gain: 0.15, when: now + 0.28 });
-    else {
-      this.play("grab", { gain: 0.15, when: now + 0.26 });
-      this.play("latch", { gain: 0.14, when: now + 0.5, rate: weapon === "pistol" ? 1.12 : 0.95 });
-    }
+    this.play("grab", { gain: 0.15, when: now + 0.26 });
+    this.play("latch", { gain: 0.14, when: now + 0.5, rate: weapon === "pistol" ? 1.12 : 0.95 });
   }
 
   pickup(): void {
@@ -564,10 +559,9 @@ export class GameAudio {
 
   // Other players -----------------------------------------------------------------------
 
-  remoteFire(weapon: WeaponKind, at: Vec3, stab = false): void {
+  remoteFire(weapon: WeaponKind, at: Vec3): void {
     if (!this.live()) return;
     const distance = this.distanceTo(at);
-    if (weapon === "knife") { this.swing(at, stab); return; }
     const name: SoundName = weapon === "pistol" ? distance < 14 ? "pistol-near" : "pistol-far" : distance < 14 ? "rifle-near" : "rifle-far";
     this.spatial(name, at, { gain: weapon === "pistol" ? 1 : 0.95, ref: 7, rolloff: 0.95, rate: 0.97 + Math.random() * 0.06, reverb: 0.3 + 0.35 * Math.min(1, distance / 60), priority: "high" });
   }
@@ -588,7 +582,6 @@ export class GameAudio {
   }
 
   remoteReload(weapon: WeaponKind, at: Vec3): void {
-    if (weapon === "knife") return;
     this.spatial(weapon === "pistol" ? "reload-pistol" : "reload-rifle", at, { gain: 0.45, ref: 2.5, rolloff: 1.4, priority: "high" });
   }
 
@@ -597,10 +590,9 @@ export class GameAudio {
     this.spatial("mag-in", at, { gain: 0.4, ref: 2, rolloff: 1.5, when: this.time() + 0.17 });
   }
 
-  // A bullet striking a body: knife cuts add a slice over the blow.
-  bodyHit(at: Vec3, knife: boolean): void {
+  // A bullet striking a body.
+  bodyHit(at: Vec3): void {
     this.spatial("body-hit", at, { gain: 0.75, ref: 3, rolloff: 1.3, priority: "high" });
-    if (knife) this.spatial("knife-hit", at, { gain: 0.55, ref: 3, rolloff: 1.3, priority: "high" });
   }
 
   bodyFall(at: Vec3): void {
@@ -656,25 +648,6 @@ export class GameAudio {
       oscillator.connect(gain).connect(out);
       oscillator.start(now);
       oscillator.stop(now + 0.15);
-    }
-  }
-
-  // A blade turned by something hard: a dull knock and a short metallic ring from the steel.
-  blade(at: Vec3, hard: boolean): void {
-    const context = this.live();
-    if (!context || this.distanceTo(at) > 30) return;
-    this.spatial(hard ? "impact-metal" : "impact-wood", at, { gain: 0.32, ref: 2, rolloff: 1.4, rate: hard ? 1.35 : 1.1, priority: "high" });
-    if (!hard) return;
-    const now = context.currentTime, out = new GainNode(context, { gain: 1 });
-    out.connect(this.panner(at, 2, 1.4)).connect(this.mix);
-    for (const [frequency, level, decay] of [[2240, 0.05, 0.22], [3810, 0.035, 0.16], [5930, 0.02, 0.1]]) {
-      const oscillator = new OscillatorNode(context, { type: "sine", frequency: frequency * (0.97 + Math.random() * 0.06) });
-      const gain = new GainNode(context, { gain: 0 });
-      gain.gain.setValueAtTime(level, now + 0.005);
-      gain.gain.exponentialRampToValueAtTime(0.0005, now + decay);
-      oscillator.connect(gain).connect(out);
-      oscillator.start(now);
-      oscillator.stop(now + decay + 0.02);
     }
   }
 
@@ -773,13 +746,6 @@ export class GameAudio {
   tear(at: Vec3): void {
     this.spatial("cloth", at, { gain: 0.7, ref: 3, rolloff: 1.2, rate: 0.6 });
     this.spatial("wood-break", at, { gain: 0.35, ref: 3, rolloff: 1.2, rate: 1.3 });
-  }
-
-  // A door kicked open: a boot against wood and the leaf slamming back.
-  kick(at: Vec3): void {
-    const now = this.time();
-    this.spatial("land", at, { gain: 0.8, ref: 3, rolloff: 1.2, rate: 0.7, priority: "high" });
-    this.spatial("impact-soft", at, { gain: 0.6, ref: 3, rolloff: 1.2, rate: 0.55, when: now + 0.25 });
   }
 
   // Doors and the serving hatch: a latch and the swing; shutting ends with a knock.
@@ -1090,34 +1056,6 @@ export class GameAudio {
     source.start(now, Math.random() * 0.5);
     source.stop(now + 1.35);
     return { source, gain };
-  }
-
-  // Knife swing: band-passed noise swept up then down, moving right to left for the
-  // player's own slash and positioned for other players. A stab is a shorter, lower rush
-  // that peaks as the arm drives forward, after the draw-back.
-  private swing(at?: Vec3, stab = false): void {
-    const context = this.live();
-    if (!context || !this.noise) return;
-    // Other players' strokes are heard when the blade lands; the player's own as the arm moves.
-    const now = context.currentTime + (at ? 0 : stab ? 0.15 : 0.04);
-    const length = stab ? 0.18 : 0.26;
-    const source = this.noiseSource(now, length);
-    const filter = new BiquadFilterNode(context, { type: "bandpass", frequency: 500, Q: stab ? 0.9 : 1.3 });
-    filter.frequency.setValueAtTime(stab ? 380 : 500, now);
-    filter.frequency.exponentialRampToValueAtTime(stab ? 1400 : 2300, now + (stab ? 0.07 : 0.09));
-    filter.frequency.exponentialRampToValueAtTime(stab ? 420 : 650, now + length);
-    const gain = new GainNode(context, { gain: 0 });
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(at ? 0.5 : 0.55, now + (stab ? 0.06 : 0.07));
-    gain.gain.exponentialRampToValueAtTime(0.001, now + length);
-    source.connect(filter).connect(gain);
-    if (at) gain.connect(this.panner(at, 2, 1.5)).connect(this.mix);
-    else {
-      const pan = new StereoPannerNode(context, { pan: stab ? 0.12 : 0.35 });
-      pan.pan.setValueAtTime(stab ? 0.12 : 0.35, now);
-      pan.pan.linearRampToValueAtTime(stab ? 0 : -0.3, now + length);
-      gain.connect(pan).connect(this.mix);
-    }
   }
 }
 

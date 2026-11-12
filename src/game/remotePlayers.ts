@@ -86,9 +86,8 @@ export class RemotePlayers {
   }
 
   // Characters hold the same weapon models the player sees in first person, whose grip is at
-  // their origin with the barrel along -Z. The knife sits on the hand socket and follows the
-  // arm; a gun hangs from the character's root and is held to the shoulder with both hands
-  // (PlayerModelInstance.holdGun). Each is hidden until the next pose shows the one the
+  // their origin with the barrel along -Z. A gun hangs from the character's root and is held to
+  // the shoulder with both hands (PlayerModelInstance.holdGun). Each is hidden until the next pose shows the one the
   // player has out.
   setWeaponModels(models: Map<WeaponKind, Object3D>): void {
     this.weaponModels = models;
@@ -103,7 +102,7 @@ export class RemotePlayers {
       copy.visible = false;
       // Cloning turns userData into plain JSON, and the grip holds real vectors and matrices.
       copy.userData.grip = source.userData.grip;
-      (kind === "knife" ? avatar.model.weaponSocket : avatar.model.root).add(copy);
+      avatar.model.root.add(copy);
       avatar.weapons.set(kind, copy);
     }
   }
@@ -119,7 +118,7 @@ export class RemotePlayers {
       this.scene.add(avatar.root);
     }
     avatar.root.visible = avatar.model !== null || !this.dead.has(peerId);
-    this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
+    this.setWeapon(peerId, this.equipped.get(peerId) ?? "pistol");
     const now = Date.now(), observed = now - sentAt;
     avatar.offset = avatar.offset === null ? observed : Math.min(observed, avatar.offset + (now - avatar.offsetAt) * 0.02);
     avatar.offsetAt = now;
@@ -207,9 +206,8 @@ export class RemotePlayers {
     // Both hands on something else, the weapon is away.
     const out = !this.dead.has(peerId) && !avatar.carrying;
     for (const [kind, model] of avatar.weapons) model.visible = kind === weapon && out;
-    avatar.model?.holdGun(weapon !== "knife" && out ? avatar.weapons.get(weapon) ?? null : null);
+    avatar.model?.holdGun(out ? avatar.weapons.get(weapon) ?? null : null);
     avatar.model?.setCarrying(avatar.carrying && !this.dead.has(peerId));
-    avatar.model?.setKnife(weapon === "knife" && out);
   }
 
   // Where this player's hands belong on what they carry: their extinguisher, hung from the right
@@ -229,9 +227,9 @@ export class RemotePlayers {
     return propHold(held, new Vector3(-Math.cos(yaw), 0, Math.sin(yaw)), new Vector3(Math.sin(yaw), 0, Math.cos(yaw)));
   }
 
-  // Another player's knife stroke or shot, on their character's arm.
-  attack(peerId: string, weapon: WeaponKind, stroke?: "slash" | "stab"): void {
-    this.avatars.get(peerId)?.model?.attack(weapon === "knife" ? stroke ?? "slash" : "shot");
+  // Another player's shot, on their character's arm.
+  attack(peerId: string): void {
+    this.avatars.get(peerId)?.model?.attack();
   }
 
   // Where another player's gun's muzzle is, for the tracer and the flash's light, or null.
@@ -256,7 +254,7 @@ export class RemotePlayers {
     if (health <= 0) this.dead.add(peerId);
     else this.dead.delete(peerId);
     if (!avatar) return;
-    this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
+    this.setWeapon(peerId, this.equipped.get(peerId) ?? "pistol");
     // The character falls as a ragdoll (or plays its death clip without physics) and stays
     // down until respawn.
     avatar.root.visible = avatar.model !== null || health > 0;
@@ -346,7 +344,7 @@ export class RemotePlayers {
       const pose = this.interpolated(avatar);
       if ((pose.carrying === true) !== avatar.carrying) {
         avatar.carrying = pose.carrying === true;
-        this.setWeapon(peerId, this.equipped.get(peerId) ?? "knife");
+        this.setWeapon(peerId, this.equipped.get(peerId) ?? "pistol");
       }
       root.position.set(pose.east, terrainHeight(this.data, pose.east, pose.north) + pose.jumpHeight, pose.north);
       if (delta > 0) avatar.velocity.lerp(root.position.clone().sub(avatar.previous).divideScalar(delta), 0.3);

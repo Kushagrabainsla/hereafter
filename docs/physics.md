@@ -50,7 +50,7 @@ A stall takes 8 pistol hits or 12 carbine hits, or one grenade landing close by.
 
 Wooden crates, oil drums, trash cans, cardboard boxes and plastic crates are CC0 Poly Haven models (see [data sources](data-sources.md)), placed at fixed spots along the alley walls, in the cut-through, in the bar's upper room and in the restaurant kitchen. The furniture is loose too: dining chairs (5 kg), dining tables (18 kg), folding tables (9 kg), steel bar stools (9 kg) and plastic stools (1.2 kg), 54 pieces in the restaurant, the bar, the shops and the market alley. All 81 are Rapier rigid bodies with real masses, up to 95 kg for a part-filled drum (`src/world/nightMarket.ts`, `src/world/props.ts`).
 
-**Each prop has one owner at a time** (`src/world/physics.ts`). A prop at rest has no owner and is held still on every peer, at no cost to anyone. The first peer to touch it owns it: its body becomes dynamic there and that peer simulates it, so the push responds at once with no wait on the network. A player's walk claims a prop through the character controller, which shoves it with the mass of the player's body and everything they carry. A shot, knife stroke or blast is resolved by the coordinating peer, which claims a free prop it hits; if someone else owns the prop, it forwards the impulse to the owner.
+**Each prop has one owner at a time** (`src/world/physics.ts`). A prop at rest has no owner and is held still on every peer, at no cost to anyone. The first peer to touch it owns it: its body becomes dynamic there and that peer simulates it, so the push responds at once with no wait on the network. A player's walk claims a prop through the character controller, which shoves it with the mass of the player's body and everything they carry. A shot or blast is resolved by the coordinating peer, which claims a free prop it hits; if someone else owns the prop, it forwards the impulse to the owner.
 
 A moving prop takes over the free props it is about to touch, so a crate hits the next one with its full momentum and a stack comes down together. The owner shares each moving prop 15 times a second. Other peers glide their copy to each reported place over 80 ms, a packet behind, so it moves smoothly between packets. Once a prop has been nearly still for half a second (under 6 cm/s and 0.12 rad/s), the owner sends where it came to rest and lets it go. Every two seconds the coordinating peer also shares any resting prop that has changed since it last did, and all of them after a player joins.
 
@@ -84,7 +84,7 @@ Being hit leaves more than a lower health number (`wound` in `src/game/matchStat
 
 **Arms.** `targetHit` counts a hit on the outer edge of the torso, more than 20 cm from the middle of the body, as a hit on the arm, for the same damage as the torso. A full wound is 50 damage. It widens the spread by up to 2.5 times, on the coordinator and on the crosshair, makes the weapon shake and wander, takes up to half as long again to reload, weakens a throw by up to 30% and halves what can be lifted. A pistol round to the arm (0.5) opened the crosshair from 3.0 to 4.9 px and took a pistol reload from 1.2 s to 1.5 s.
 
-**Bleeding.** A blade, round or blast doing 15 damage or more opens a wound that loses a point of health every 1.2 s for 9 s, and further wounds add 9 s, up to 24 s. Falls and thrown objects bruise and do not bleed. Blood falls from a bleeding player where others can see it. A bleed is not a blow: it flashes nothing and credits nobody until the last point, which counts as a kill for whoever opened it.
+**Bleeding.** A round or blast doing 15 damage or more opens a wound that loses a point of health every 1.2 s for 9 s, and further wounds add 9 s, up to 24 s. Falls and thrown objects bruise and do not bleed. Blood falls from a bleeding player where others can see it. A bleed is not a blow: it flashes nothing and credits nobody until the last point, which counts as a kill for whoever opened it.
 
 **Bandages.** Each life has two. B ties one: 2.5 s with the hands busy, after which the bleeding stops and leg and arm wounds halve. A fresh wound while tying it undoes the attempt, without using the bandage. Food restores health but does not treat wounds. The HUD lists the player's wounds and bandages.
 
@@ -136,13 +136,11 @@ The wall around a section is three colliders, either side and above, so nothing 
 
 ## Weight
 
-Everything a player carries has its real mass (`MASS` in `src/game/combatRules.ts`): the knife 0.25 kg, a grenade 0.4 kg, a smoke grenade 0.54 kg, the pistol 0.72 kg with a 70 g magazine and 12 g cartridges, and the carbine 3.1 kg with a 330 g steel magazine and 16.3 g cartridges. A loaded pistol and magazine weigh 0.94 kg; a full carbine magazine 0.82 kg. Beyond the basic kit of knife and four grenades (2.1 kg), each kilogram costs 1.2% of walking speed and 1.8% of sprinting speed, to at most a fifth. The same legs launch more mass, so a jump starts slower in proportion to the square root of the total mass, and the body's inertia grows with it, so starting, stopping and climbing take longer. A carbine with six spare magazines, a pistol with four and the four grenades weigh 12.8 kg: walking drops to 87%, sprinting to 81% (6.6 m/s), the jump to 94%. Heavier landings also hurt more, in proportion to the mass coming down. The HUD shows the load and turns amber above 7 kg.
+Everything a player carries has its real mass (`MASS` in `src/game/combatRules.ts`): a grenade 0.4 kg, a smoke grenade 0.54 kg, the pistol 0.72 kg with a 70 g magazine and 12 g cartridges, and the carbine 3.1 kg with a 330 g steel magazine and 16.3 g cartridges. A loaded pistol and magazine weigh 0.94 kg; a full carbine magazine 0.82 kg. The basic kit is the loaded pistol, two grenades and two smoke grenades (2.8 kg), so the kit at the start of a life costs no speed. Beyond the basic kit, each kilogram costs 1.2% of walking speed and 1.8% of sprinting speed, to at most a fifth. The same legs launch more mass, so a jump starts slower in proportion to the square root of the total mass, and the body's inertia grows with it, so starting, stopping and climbing take longer. A carbine with six spare magazines, a pistol with four and the four grenades weigh 12.5 kg: walking drops to 88%, sprinting to 83% (6.7 m/s), the jump to 94%. Heavier landings also hurt more, in proportion to the mass coming down. The HUD shows the load and turns amber above 7 kg.
 
-## The knife
+## Starting kit
 
-The knife's two strokes are swept, not single rays (`resolveKnife` in `src/game/matchState.ts`). A slash fans nine rays 1.7 m long across a 70° arc, from upper right to lower left and 22° high to low, in the order the arm moves the blade. A stab sends three rays 2.05 m straight ahead, reaching further because the player lunges into it. The blade stops at the first thing it meets along that order. A body takes the cut by zone: a slash does 45 to the head, 30 to the torso and 22 to the legs; a stab 100, 55 and 35. From more than 60° behind the target's facing, a stab is fatal and a slash does a quarter more. Anything else turns the blade: glass breaks, wood and cardboard take damage, a loose prop is shoved, and the stroke ends there with the material's impact.
-
-The client sends the stroke when the blade reaches its target, 0.13 s into a slash and 0.24 s into a stab, aimed wherever the player is looking by then, and the coordinator spaces strokes by each one's recovery: 0.52 s after a slash and 0.9 s after a stab. A stab pushes the player forward at 2.8 m/s, which their footing bleeds off within a few tenths of a second. The first-person stroke pauses for 75 ms when it bites into a body, and a blade turned by something hard jolts the hand back. A cut or a carbine round knocks the victim back a little, a stab most.
+The game has no knife and no melee attack. Every life starts with the 9 mm pistol loaded with one full magazine of 12 rounds. It also starts with two grenades, two smoke grenades and the bandages. The carbine and the spare magazines lie on the map. A dead player drops their guns and magazines, and the next life starts with a new pistol. Key 1 selects the pistol and key 2 the carbine. A carbine round knocks the victim back a little.
 
 ## Spent cases, empty magazines and dropped guns
 
@@ -156,7 +154,6 @@ Each leaf of the market's 21 door leaves is a real body hung on a hinge (`hang` 
 
 - **The latch.** A shut leaf nobody is moving is latched. Walking into it stops the player, and rounds and other small pushes do nothing to it. A leaf that comes to rest within 3° of shut clicks shut onto its latch.
 - **A hand on the handle.** E at a doorway swings its leaves, as the coordinating peer sees them: open if they are less than half open, otherwise shut. The swing is a push that sets each leaf turning at 2.6 rad/s, worked out from its mass and width, which carries a free door to its stop in about 0.6 s. It goes only as far as nothing stops it.
-- **A kick.** A knife stroke that meets a leaf first is a kick: 70 N·s at the spot struck, along the stroke, about a 12 kg leg arriving at 6 m/s. That bursts the latch. With nothing behind it, the leaf flies open to its stop; with something behind it, the leaf hits it, and the blow moves it by the two masses.
 - **Pushing.** An unlatched leaf is pushed by a body walking into it, by blasts and by props that hit it, like any loose prop.
 - **Barricades.** Since doors open inward, whatever stands inside in a leaf's arc stops it. Loose props piled there hold a door by their own weight and friction.
 - **Hard stops.** A body leaning into a door pushes harder than the joint's own limits hold against, so after every step a leaf that went past a stop or was pulled off its hinge line is put back, turning no further that way.
@@ -174,11 +171,7 @@ In scripted runs at the restaurant's south door and the record shop's front door
 | E with an 18 kg dining table inside, against the door | stopped 44% open; the table slid 10 cm |
 | Walking on into that door for 1.5 s | the leaves pushed to their stops and the table shoved aside; a light table does not hold against a body |
 | E with a 95 kg fuel drum inside | stopped 11% open; the drum moved 2 cm |
-| Four kicks at that door | one leaf at 23%, the drum moved 18 cm in all |
-| One kick at the latched door with nothing behind it | the leaf kicked burst open to its stop |
 | Two tabs, the player who is not the coordinator opens and shuts the bar door with E | both screens open, then both shut and latched |
-| Two tabs, that player kicks the drum-barricaded door three times | both screens agree on each leaf and on the drum to the centimetre |
-| Two tabs, that player kicks the latched restaurant door | the same leaf burst open on both screens |
 
 ## Doors and hatches
 
@@ -221,11 +214,6 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 | Two spare magazines, reload empty, fire 5, reload | 12 rounds, then 13 (one chambered) with a 6-round magazine kept |
 | Fire escape magazines from the alley below | refused |
 | Sprint with 11.7 kg against 1.1 kg (before smoke grenades added 1.1 kg to both) | 0.81 of the speed |
-| Slash at a player 1.3 m ahead | head for 45; aimed at the chest, torso for 30 |
-| Stab from the front, from behind | 55; fatal (100) |
-| Slash 2.4 m away | miss |
-| Slash at shop glass, at a brick wall | glass broken; stopped on brick |
-| Two tabs, stab in the back of a player with a carbine | carbine dropped at the same spot on both, taken by the other player |
 | Two tabs, the non-coordinator walks into the large crate | moved 1.5 m on both screens |
 | Walk into the truck's shut doors, open them, walk in | stopped at the bumper, then up the step and in to the floor at 0.46 m |
 | One pistol round at the serving glass, two at a front tyre | glass broken; tyre flat |
@@ -234,7 +222,6 @@ Headless Chrome runs drove the game through these paths; a real two-tab room cov
 | One pistol round each at three lanterns of one row | all three dark; the row's real light fell from full to off |
 | Three pistol rounds at the breaker box | 25 service-alley lamps went out, on WebGPU and WebGL |
 | E at the record shop's shut front door | opened; a ray through the doorway was clear |
-| A knife slash into the bar's shut north door | kicked open |
 | Pistol rounds at the restaurant's shut south door | one leaf off its hinges after 4; a ray through it was clear |
 | Pistol rounds at the record shop's boarded window | gone after 5; a ray through the window was clear |
 | One pistol round at the service alley's steam pipe | burst, and the cloud filled the alley around it |
