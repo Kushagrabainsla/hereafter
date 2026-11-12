@@ -1,4 +1,5 @@
 import { MAPS } from "./maps";
+import { QUALITY_CHOICES, QUALITY_LEVELS, type QualityChoice, type QualityLevel } from "./world/quality";
 
 // The player's choices for a match, chosen on the setup screen and kept in this browser; the
 // match dialog changes them during play. Storage can be unavailable, as in some private
@@ -28,6 +29,8 @@ export interface Settings {
   adult: boolean;
   // Whether this player hears meme lines and sound effects.
   memes: boolean;
+  // A graphics preset, or Auto (see src/world/quality.ts).
+  graphics: QualityChoice;
 }
 
 export const NAME_LENGTH = 16;
@@ -48,7 +51,7 @@ export function cleanName(name: string): string {
   return Array.from(name.normalize("NFC").replace(/[\p{C}]/gu, "").replace(/\s+/g, " ").trim()).slice(0, NAME_LENGTH).join("").trim();
 }
 
-const KEYS = { name: "hereafter.name", language: "hereafter.language", lines: "hereafter.lines", oldVoice: "hereafter.voice", adult: "hereafter.adult", memes: "hereafter.memes", mode: "hereafter.mode", map: "hereafter.map" };
+const KEYS = { name: "hereafter.name", language: "hereafter.language", lines: "hereafter.lines", oldVoice: "hereafter.voice", adult: "hereafter.adult", memes: "hereafter.memes", mode: "hereafter.mode", map: "hereafter.map", graphics: "hereafter.graphics", measured: "hereafter.graphicsMeasured" };
 const read = (key: string): string | null => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string): void => { try { window.localStorage.setItem(key, value); } catch { /* unavailable */ } };
 
@@ -78,8 +81,20 @@ export function loadSettings(): Settings {
     lines: (read(KEYS.lines) ?? (read(KEYS.oldVoice) === "grunts" ? "0" : "1")) !== "0",
     adult: read(KEYS.adult) === "1",
     memes: read(KEYS.memes) !== "0",
+    graphics: QUALITY_CHOICES.find((choice) => choice === read(KEYS.graphics)) ?? "auto",
   };
 }
+
+// The preset Auto settled on in an earlier match on this device, with how many pixels the world
+// drew then. It holds only for a screen at least nearly that size: a laptop that ran slowly on a
+// big external display starts afresh on its own screen.
+export function measuredQuality(pixels: number): QualityLevel | null {
+  const [name, at] = (read(KEYS.measured) ?? "").split("@");
+  const level = QUALITY_LEVELS.find((entry) => entry === name);
+  const measuredAt = Number(at);
+  return level && measuredAt > 0 && pixels >= 0.8 * measuredAt ? level : null;
+}
+export function saveMeasuredQuality(level: QualityLevel, pixels: number): void { write(KEYS.measured, `${level}@${Math.round(pixels)}`); }
 
 export function saveSettings(settings: Settings): void {
   write(KEYS.name, settings.name);
@@ -89,4 +104,5 @@ export function saveSettings(settings: Settings): void {
   write(KEYS.memes, settings.memes ? "1" : "0");
   write(KEYS.mode, settings.mode);
   write(KEYS.map, settings.map);
+  write(KEYS.graphics, settings.graphics);
 }

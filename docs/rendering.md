@@ -47,6 +47,27 @@ WebGPU render bundles (`BundleGroup`) were tried for the static scenery and made
 
 These runs shared the machine with other applications, so single runs varied up to threefold; the new build was faster in ten of twelve paired runs. Most of the remaining cost with everyone firing is the effects of each shot.
 
+**Graphics presets.** `src/world/quality.ts` defines three presets, and the setup screen offers Auto, High, Medium and Low. No preset lowers the drawing resolution. Each preset trims the cost of every pixel instead:
+
+| Preset | What it turns off | Mean FPS, 2560 × 1440 at 2× |
+|---|---|---|
+| High | Nothing | about 26 |
+| Medium | Ambient occlusion | 31 (16% faster) |
+| Low | Ambient occlusion, the sun's shadows, and half the multisampling of the hands | 34 (29% faster) |
+
+These figures are means of three spots in alternating runs, measured against High before and after each one. The machine slowed during the runs, so only runs next to each other can be compared. Turned off one at a time, the costs were:
+
+- The lamps as real lights: 4 FPS.
+- Ambient occlusion: 4.5 FPS. Half its samples saved nothing.
+- Edge smoothing: 1.7 FPS.
+- The sun's shadows: 1.5 FPS.
+- Multisampling of the hands: 1 FPS.
+- Glow and grain: nothing.
+
+Every preset keeps the lamps and the edge smoothing. Without the lamps the stalls and the service alley go dark: the six key lights of WebGL 2 ran 52% faster but lost the market's light. Without edge smoothing the edges stair-step. With everything off, the frame rate reached only 43.5 FPS. The rest of the frame is the lit world itself.
+
+**Auto.** Auto picks High when the world draws 3 million pixels or fewer, and Medium on a larger or high-density screen. After ten seconds of play, Auto measures the frame rate for fifteen seconds. If the mean is under 45 FPS, Auto saves the next cheaper preset for the next match and tells the player in a toast. A change during a match would rebuild every shader and stall the game. The saved preset applies only to screens with at least 80% of the pixels it was measured on. Thus a laptop that ran slowly on a large external display starts again on its own screen. The FPS label in the game shows the preset in use.
+
 ## Approach
 
 Each player renders the same bundled map locally and sends pose and combat data over WebRTC; peers do not stream geometry or animation bones. [Rapier 3D](https://rapier.rs/docs/user_guides/javascript/getting_started_js/) runs character physics and scene queries in WebAssembly. Before claiming 2–8 player performance, test several real MacBooks and Windows GPUs in a live room, record frame-time percentiles and memory use, and inspect worst-case views with other players and weapon effects visible.

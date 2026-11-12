@@ -264,6 +264,7 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .setup-label em { margin-left: auto; font: normal 11px var(--t-mono); letter-spacing: .06em; color: #5d6467; }
 .seg { display: grid; gap: 6px; }
 .seg-two { grid-template-columns: 1fr 1fr; }
+.seg-four { grid-template-columns: repeat(4, 1fr); }
 .opt, .chip, .map-card, .check { position: relative; cursor: pointer; }
 .opt input, .chip input, .map-card input, .check input { position: absolute; opacity: 0; pointer-events: none; }
 .opt span { display: block; height: 100%; padding: 10px 14px; border: 1px solid var(--t-line); background: rgba(255, 255, 255, .025); font: 700 19px var(--t-head); letter-spacing: .06em; color: #c9c7c1; text-transform: uppercase; }

@@ -163,6 +163,15 @@
             <label class="check"><input type="checkbox" name="adult" /><span><b>18+ lines</b><small>Gaalis and swearing. Off plays a clean line instead.</small></span></label>
             <label class="check"><input type="checkbox" name="memes" /><span><b>Meme sounds</b><small>Meme voice lines and sound effects.</small></span></label>
           </fieldset>
+          <fieldset class="setup-section">
+            <legend class="setup-label"><i>06</i>Graphics<em id="setup-graphics-note"></em></legend>
+            <div class="seg seg-four">
+              <label class="opt opt-center"><input type="radio" name="graphics" value="auto" /><span>Auto</span></label>
+              <label class="opt opt-center"><input type="radio" name="graphics" value="high" /><span>High</span></label>
+              <label class="opt opt-center"><input type="radio" name="graphics" value="medium" /><span>Medium</span></label>
+              <label class="opt opt-center"><input type="radio" name="graphics" value="low" /><span>Low</span></label>
+            </div>
+          </fieldset>
           <p id="setup-error" class="setup-error" role="alert"></p>
           <button id="deploy" class="deploy" type="submit">Deploy <kbd>Enter</kbd></button>
         </form>

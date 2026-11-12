@@ -8,6 +8,7 @@ import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { film } from "three/addons/tsl/display/FilmNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { FixedGridLighting } from "./fixedClusters";
+import { QUALITY, type GraphicsQuality } from "./quality";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
@@ -174,7 +175,7 @@ const WARM_SLICES = 16;
 
 export type BuildStep = "textures" | "buildings" | "props" | "renderer" | "physics" | "shaders";
 
-export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents): Promise<MapViewer> {
+export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents, quality: GraphicsQuality = QUALITY.high): Promise<MapViewer> {
   // Each step is reported as it starts, with the files that finish during it (Three.js loaders
   // report them to the default manager), so the loading screen can show how far it is.
   let current: BuildStep = "textures";
@@ -204,7 +205,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.add(fill);
   const sun = new DirectionalLight(MARKET_SUN.color, MARKET_SUN.intensity);
   sun.position.copy(sunOffset);
-  sun.castShadow = true;
+  sun.castShadow = quality.shadows;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -55;
   sun.shadow.camera.right = 55;
@@ -289,8 +290,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   const isWebGPU = (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend === true;
   // On WebGPU, clustered lighting lets every lamp, bulb string and sign be a real light at a
-  // fixed shading cost; WebGL 2 keeps a handful of lights and painted pools of light instead.
-  const clustered = isWebGPU;
+  // fixed shading cost; WebGL 2 and the low preset keep a handful of lights and painted pools of
+  // light instead.
+  const clustered = isWebGPU && quality.manyLights;
   // A fixed 40 × 24 grid of tiles and 16 depth slices (fixedClusters.ts), so resizing never
   // rebuilds shaders; ninety lights fit 48 to a cluster.
   if (clustered) renderer.lighting = new FixedGridLighting(1024, 64, 16, 48);
@@ -360,25 +362,28 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const worldPass = pass(scene, camera);
   const world = worldPass.getTextureNode("output");
   // Without a normal buffer GTAO rebuilds normals from depth, which saves writing one.
-  const occlusionPass = ao(worldPass.getTextureNode("depth"), null as unknown as Node, camera);
-  occlusionPass.resolutionScale = 0.5;
-  occlusionPass.radius.value = 0.8;
-  occlusionPass.samples.value = 12;
-  const occlusion = mix(float(1), occlusionPass.getTextureNode().r, 0.85);
+  let occlusion: Node<"float"> = float(1);
+  if (quality.occlusion) {
+    const occlusionPass = ao(worldPass.getTextureNode("depth"), null as unknown as Node, camera);
+    occlusionPass.resolutionScale = quality.occlusion.scale;
+    occlusionPass.radius.value = 0.8;
+    occlusionPass.samples.value = quality.occlusion.samples;
+    occlusion = mix(float(1), occlusionPass.getTextureNode().r, 0.85);
+  }
   // SMAA finds edges by differences in colour, and in linear light the night market is so dark
   // that a dim door frame against a dark wall differs by less than its threshold, so most edges
   // went unsmoothed. It sees the world at the game's exposure and gamma-encoded, as the eye
   // does, and the result is decoded back to linear light. (After tone mapping would be simpler,
   // but the passes it reads would then render inside SMAA's own pass and clear to black.)
-  const shaded = smaa(vec4(world.rgb.mul(occlusion).mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE);
+  const occluded = world.rgb.mul(occlusion);
+  const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
   const clouds = pass(cloudScene, camera).getTextureNode("output");
   const lit = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
-  const held = pass(viewScene, viewCamera, { samples: 4 }).getTextureNode("output");
+  const held = pass(viewScene, viewCamera, { samples: quality.viewSamples }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
   // A tight glow, so lit windows and signs keep their frames readable.
-  const glowPass = bloom(vec4(picture, 1), 0.45, 0.4, 0.9);
-  const glow = picture.add(glowPass.rgb);
+  const glow = quality.bloom ? picture.add(bloom(vec4(picture, 1), 0.45, 0.4, 0.9).rgb) : picture;
   const brightness = luminance(glow);
   const grade = mix(vec3(0.94, 1.0, 1.07), vec3(1.06, 1.0, 0.93), smoothstep(0.02, 0.5, brightness));
   // Colour a little below full strength: with so many warm lamps, full colour turns every
@@ -386,7 +391,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const graded = mix(vec3(brightness), glow, 0.82).mul(grade).max(0);
   const vignette = float(1).sub(smoothstep(0.32, 0.95, screenUV.sub(0.5).length()).mul(0.42));
   pipeline.outputColorTransform = false;
-  pipeline.outputNode = film(renderOutput(vec4(graded.mul(vignette), 1)), float(0.06));
+  const output = renderOutput(vec4(graded.mul(vignette), 1));
+  pipeline.outputNode = quality.grain ? film(output, float(0.06)) : output;
   const pickupData = makeWeaponPickups(data);
   const weaponVisuals = new WeaponVisuals(scene, data, pickupData, pieces);
   const authoredViewModel = new AuthoredViewModel(viewCamera);

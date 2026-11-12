@@ -8,7 +8,8 @@ import "@fontsource/jetbrains-mono/latin-600.css";
 import "./style.css";
 import { MAPS, SHARED_FILES, CHOSEN_FILES, mapById, type GameMap } from "./maps";
 import { bytesOf, filesUnder, prefetch } from "./assetStore";
-import { cleanName, loadSettings, normalizeRoomCode, saveSettings, validRoomCode, LANGUAGES, LANGUAGE_LABEL, voiceOf, type Settings } from "./settings";
+import { cleanName, loadSettings, measuredQuality, normalizeRoomCode, saveSettings, validRoomCode, LANGUAGES, LANGUAGE_LABEL, voiceOf, type Settings } from "./settings";
+import { drawnPixels, pickQuality, QUALITY_CHOICES, QUALITY_LABEL } from "./world/quality";
 import { Loading } from "./loading";
 import { fillScreen, lockMouse } from "./mouseLock";
 
@@ -79,6 +80,10 @@ function render(): void {
   checkbox("lines").checked = settings.lines;
   checkbox("adult").checked = settings.adult;
   checkbox("memes").checked = settings.memes;
+  for (const input of radios("graphics")) input.checked = input.value === settings.graphics;
+  // Auto names the preset it will use on this screen.
+  const pixels = drawnPixels(window.innerWidth, window.innerHeight, window.devicePixelRatio);
+  element("setup-graphics-note").textContent = settings.graphics === "auto" ? `Auto: ${QUALITY_LABEL[pickQuality("auto", measuredQuality(pixels), pixels)]}` : "";
   codeInput.value = settings.code;
   nameInput.value = settings.name;
   const solo = settings.mode === "solo";
@@ -96,6 +101,7 @@ form.addEventListener("change", (event) => {
   else if (input.name === "lines") settings.lines = input.checked;
   else if (input.name === "adult") settings.adult = input.checked;
   else if (input.name === "memes") settings.memes = input.checked;
+  else if (input.name === "graphics") settings.graphics = QUALITY_CHOICES.find((choice) => choice === input.value) ?? "auto";
   errorLine.textContent = "";
   saveSettings(settings);
   render();

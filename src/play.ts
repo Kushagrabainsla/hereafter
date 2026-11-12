@@ -7,12 +7,13 @@ import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type Com
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
 import { Memes, type MemeMoment } from "./game/memes";
-import { cleanName, LANGUAGES, saveSettings, VOICE_CHOICES, voiceOf, type Language, type Settings, type VoiceChoice } from "./settings";
+import { cleanName, LANGUAGES, measuredQuality, saveMeasuredQuality, saveSettings, VOICE_CHOICES, voiceOf, type Language, type Settings, type VoiceChoice } from "./settings";
 import { type Loading, type StepId } from "./loading";
 import { assetUrl, releaseAssets } from "./assetStore";
 import { mapById } from "./maps";
 import { DefaultLoadingManager } from "three/webgpu";
 import { fillScreen } from "./mouseLock";
+import { cheaper, drawnPixels, FPS_FLOOR, pickQuality, QUALITY, QUALITY_LABEL, type QualityLevel } from "./world/quality";
 
 // The game: the world, the match and everything on screen during play. main.ts loads this
 // module while the player sets up a match, and calls launch() on Deploy; until then nothing
@@ -992,7 +993,31 @@ export async function launch(chosen: Settings, loading: Loading): Promise<void> 
 
 const STEP_OF: Record<string, StepId> = { textures: "world", buildings: "world", props: "props", renderer: "renderer", physics: "physics", shaders: "shaders" };
 
+// The graphics preset for this match, and the frame rates Auto watches to choose the next one.
+let qualityLevel: QualityLevel = "high";
+let qualityPixels = 0;
+const qualityWatch = { skip: 20, samples: [] as number[], done: false };
+const QUALITY_SAMPLES = 30;
+
+// Auto moves one preset down for the next match when a match runs slowly: after the first ten
+// seconds of play (shader builds), fifteen seconds of frame rate under FPS_FLOOR.
+function watchQuality(fps: number): void {
+  if (settings?.graphics !== "auto" || qualityWatch.done || !launched || document.hidden || dialogOpen()) return;
+  if (qualityWatch.skip > 0) { qualityWatch.skip -= 1; return; }
+  qualityWatch.samples.push(fps);
+  if (qualityWatch.samples.length < QUALITY_SAMPLES) return;
+  qualityWatch.done = true;
+  const mean = qualityWatch.samples.reduce((sum, value) => sum + value, 0) / qualityWatch.samples.length;
+  const next = mean < FPS_FLOOR ? cheaper(qualityLevel) : null;
+  if (!next) return;
+  saveMeasuredQuality(next, qualityPixels);
+  toast(`Low frame rate: graphics will use ${QUALITY_LABEL[next]} from the next match. Change it on the setup screen`);
+}
+
 function buildWorld(loading: Loading): Promise<MapViewer> {
+  const map = element("map");
+  qualityPixels = drawnPixels(map.clientWidth || window.innerWidth, map.clientHeight || window.innerHeight, window.devicePixelRatio);
+  qualityLevel = pickQuality(settings?.graphics ?? "auto", measuredQuality(qualityPixels), qualityPixels);
   let ready: (viewer: MapViewer) => void = () => undefined, failed: (error: unknown) => void = () => undefined;
   const done = new Promise<MapViewer>((resolve, reject) => { ready = resolve; failed = reject; });
   // The first frames can come before the viewer is handed over, or after.
@@ -1010,10 +1035,11 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
       crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
     },
     onMetrics(metrics) {
-      performanceLabel.textContent = `${metrics.renderer} · ${metrics.fps} FPS`;
+      performanceLabel.textContent = `${metrics.renderer} · ${QUALITY_LABEL[qualityLevel]} · ${metrics.fps} FPS`;
+      watchQuality(metrics.fps);
       performanceLabel.title = `${metrics.drawCalls} draw calls · ${metrics.triangles.toLocaleString()} triangles · ${metrics.pixelRatio.toFixed(2)}× resolution`;
     },
-  }).then((created) => {
+  }, QUALITY[qualityLevel]).then((created) => {
     viewer = created;
     syncPause();
     match = new MatchState(created.arenaData(), onMatchChange, created.combatWorld());
