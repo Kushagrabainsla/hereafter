@@ -177,6 +177,10 @@ function paint(): Promise<void> {
 
 // The tone mapping's exposure, which SMAA's edge detection also uses.
 const EXPOSURE = 1.0;
+// The grade's tint for the shadows and for the highlights (mixed by brightness): cool, blue-grey
+// shadows and only a little warmth in the light, as in Saltline's frames. The lamps' sodium orange
+// is warm enough; warmer highlights and shadows turned whole walls orange in a blind test.
+export const GRADE = { shadows: uniform(new Vector3(0.86, 0.97, 1.16)), lights: uniform(new Vector3(1.03, 1.0, 0.96)) };
 // The first frames reveal the market in this many slices, building each slice's shaders.
 const WARM_SLICES = 16;
 // The sun's shadow map is redrawn once in this many frames.
@@ -454,7 +458,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // the sun and the brightest haze round it reach, as light spreads in a real lens.
   const glow = quality.bloom ? picture.add(bloom(vec4(picture, 1), 0.45, 0.4, 0.9).rgb).add(bloom(vec4(picture, 1), 0.5, 1, 2.2).rgb) : picture;
   const brightness = luminance(glow);
-  const grade = mix(vec3(0.94, 1.0, 1.07), vec3(1.06, 1.0, 0.93), smoothstep(0.02, 0.5, brightness));
+  const grade = mix(GRADE.shadows, GRADE.lights, smoothstep(0.02, 0.5, brightness));
   // Colour a little below full strength: with so many warm lamps, full colour turns every
   // surface the same orange.
   const graded = mix(vec3(brightness), glow, 0.82).mul(grade).max(0);

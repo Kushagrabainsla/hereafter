@@ -346,8 +346,9 @@ export const NIGHT_MARKET: MapLayout = {
 
 // The late-afternoon sun, low in the north-northwest, so it shines down the main alley and rakes
 // across the cross alleys: where it lies from the market (any length), its colour and strength.
-// The baked bounce light uses it too.
-export const MARKET_SUN = { offset: [-90, 110, 200] as [number, number, number], color: 0xffc690, intensity: 3.2 };
+// The baked bounce light uses it too (the current bake was made at 3.2). At 4.4 it is the one
+// strong key light over the many lamps, which won a blind test against 3.2.
+export const MARKET_SUN = { offset: [-90, 110, 200] as [number, number, number], color: 0xffc690, intensity: 4.4 };
 // The lamps burn at this share of their night strength: by day the sun and sky outshine them.
 export const LAMP_LEVEL = 0.5;
 // The even light from the grey sky above and the dark paving below. It fills what neither the sun
