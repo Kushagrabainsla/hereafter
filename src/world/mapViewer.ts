@@ -224,6 +224,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   scene.environmentIntensity = look.environment;
   ATMOSPHERE.toSun.value.copy(sunOffset).normalize();
   ATMOSPHERE.density.value = look.haze.density;
+  ATMOSPHERE.clear.value = look.haze.clear;
   ATMOSPHERE.haze.value.set(...look.haze.color);
   ATMOSPHERE.glow.value = look.haze.glow;
   ATMOSPHERE.tight.value = look.haze.tight;

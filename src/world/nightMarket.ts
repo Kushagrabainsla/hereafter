@@ -4,10 +4,11 @@ import {
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture3D, vec3 } from "three/tsl";
-import { dampNode, outdoorAt, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
+import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, vec2, vec3 } from "three/tsl";
+import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
 import { noiseVolume } from "./noiseVolume";
 import { SHOP_GLASS } from "./shopGlass";
+import { WEAR } from "./wearTextures";
 import { LOOKS } from "./timeOfDay";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
@@ -592,7 +593,21 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const patches = clamp(mx_fractal_noise_float(P.mul(vec3(0.21, 0.08, 0.21))).mul(0.5).add(0.5), 0, 1);
   const footing = smoothstep(0.05, 2.9, P.y.add(mx_noise_float(P.mul(0.75)).mul(0.5)));
   const grime = mix(float(0.46), float(1), footing).mul(mix(float(0.72), float(1.08), patches));
-  const wall = (options: NodeOptions): MeshStandardNodeMaterial => { const material = new MeshStandardNodeMaterial(options); material.colorNode = materialColor.mul(grime); return material; };
+  // Rain runs down every outside wall: the grime streaks the kit pieces carry (wearTextures.ts),
+  // laid along the wall 2.4 m to a picture, stronger in the dirty patches. In the rain the foot of a
+  // wall is splashed dark and the runs stay wet, both a little glossier. Walls inside stay clean.
+  const outside = smoothstep(0.5, 1, outdoorNode(P));
+  const streaks = texture(WEAR.streaks.texture, vec2(P.x.add(P.z).div(2.4), P.y.div(2.4)));
+  // The picture's grime is faint (0.1 to 0.4); its runs are stretched to full strength.
+  const wallRuns = smoothstep(0.12, 0.42, streaks.r).mul(mix(float(0.45), float(1), patches)).mul(outside);
+  const wallWet = clamp(smoothstep(0.7, 0.0, P.y).mul(0.8).add(smoothstep(0.2, 0.45, streaks.r).mul(0.6)), 0, 1).mul(outside).mul(WEATHER.wet);
+  const weathered = grime.mul(mix(float(1), float(0.55), wallRuns)).mul(float(1).add(streaks.g.mul(outside).mul(0.1))).mul(float(1).sub(wallWet.mul(0.25)));
+  const wall = (options: NodeOptions): MeshStandardNodeMaterial => {
+    const material = new MeshStandardNodeMaterial(options);
+    material.colorNode = materialColor.mul(weathered);
+    material.roughnessNode = materialRoughness.mul(float(1).sub(wallWet.mul(0.45)));
+    return material;
+  };
   // In the rain (dusk) the whole street is wet: darker and glossy, its texture's relief softened so the
   // lamps do not glitter in it. Where water stands (wetness.ts) it is smooth, flat but for the
   // rings the rain makes, and only a little darker: a puddle at night shows mostly what it

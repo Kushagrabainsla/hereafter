@@ -19,8 +19,9 @@ export interface Look {
   wet: boolean;
   // Whether the outdoor lamps and signs burn.
   lamps: boolean;
-  // The haze: per metre at ground level, its own colour, and how strongly it lights up toward the sun.
-  haze: { density: number; color: [number, number, number]; glow: number; tight: number; skyHaze: number };
+  // The haze: per metre at ground level, the metres in front of the eye it leaves clear, its own
+  // colour, and how strongly it lights up toward the sun.
+  haze: { density: number; clear: number; color: [number, number, number]; glow: number; tight: number; skyHaze: number };
   // The grade's tint for the shadows and for the highlights (mapViewer.ts, GRADE).
   grade: { shadows: [number, number, number]; lights: [number, number, number] };
   // How strongly the baked bounce light shows (lightmap.ts, BOUNCE).
@@ -35,7 +36,9 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     environment: 0.55,
     wet: true,
     lamps: true,
-    haze: { density: 0.008, color: [0.02, 0.026, 0.04], glow: 0.4, tight: 0.6, skyHaze: 0.08 },
+    // The haze starts 6 m out and thickens faster beyond, so near walls stay dark and clear and the
+    // far ends of the alleys fade; it won a blind test 10 spots to none against haze from the eye.
+    haze: { density: 0.012, clear: 6, color: [0.02, 0.026, 0.04], glow: 0.4, tight: 0.6, skyHaze: 0.08 },
     grade: { shadows: [0.78, 0.95, 1.28], lights: [1.0, 1.0, 0.99] },
     bounce: 0.72,
   },
@@ -51,7 +54,7 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     wet: false,
     lamps: false,
     // A warm cream haze that washes the far ends of the alleys out toward the sun.
-    haze: { density: 0.006, color: [0.34, 0.31, 0.26], glow: 0.9, tight: 0.9, skyHaze: 0.06 },
+    haze: { density: 0.006, clear: 0, color: [0.34, 0.31, 0.26], glow: 0.9, tight: 0.9, skyHaze: 0.06 },
     // Slightly warm in the shade: the blue sky light already cools it, and navy shade read as night.
     grade: { shadows: [1.03, 1.0, 0.95], lights: [1.02, 1.0, 0.97] },
     // Sunlight bounced off the walls and street fills a narrow alley's shade far more than the

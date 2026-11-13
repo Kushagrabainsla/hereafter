@@ -12,6 +12,9 @@ export const ATMOSPHERE = {
   // Haze per metre at ground level, and the height over which it thins to a third.
   density: uniform(0.008),
   height: uniform(9),
+  // Metres in front of the eye with no haze: near things stay clear and dark, and the haze
+  // gathers only further down an alley.
+  clear: uniform(0),
   // The haze's own colour (sky light scattered in it) and the sun's colour in it.
   haze: uniform(new Vector3(0.02, 0.026, 0.04)),
   sun: uniform(new Vector3(1.0, 0.72, 0.45)),
@@ -54,7 +57,7 @@ export function atmosphere(color: Node<"vec3">, distance: Node<"float">, directi
   const a = ATMOSPHERE;
   // Haze thins with height; the ray's middle height stands for the whole ray.
   const middle = max(eyeY.add(direction.y.mul(distance).mul(0.5)), 0);
-  const thickness = distance.mul(a.density).mul(exp(middle.div(a.height).negate()));
+  const thickness = max(distance.sub(a.clear), 0).mul(a.density).mul(exp(middle.div(a.height).negate()));
   const amount = mix(float(1).sub(exp(thickness.negate())), a.skyHaze, sky);
   const facing = max(dot(direction, a.toSun), 0);
   const phase = float(0.18).add(pow(facing, 4).mul(a.glow)).add(pow(facing, 48).mul(a.tight));
