@@ -180,7 +180,7 @@ const EXPOSURE = 1.0;
 // The grade's tint for the shadows and for the highlights (mixed by brightness): cool, blue-grey
 // shadows and only a little warmth in the light, as in Saltline's frames. The lamps' sodium orange
 // is warm enough; warmer highlights and shadows turned whole walls orange in a blind test.
-export const GRADE = { shadows: uniform(new Vector3(0.86, 0.97, 1.16)), lights: uniform(new Vector3(1.03, 1.0, 0.96)) };
+export const GRADE = { shadows: uniform(new Vector3(0.78, 0.95, 1.28)), lights: uniform(new Vector3(1.0, 1.0, 0.99)) };
 // The first frames reveal the market in this many slices, building each slice's shaders.
 const WARM_SLICES = 16;
 // The sun's shadow map is redrawn once in this many frames.
