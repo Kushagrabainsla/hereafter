@@ -1,6 +1,7 @@
-import type { Node } from "three/webgpu";
-import { abs, bumpMap, clamp, float, mix, normalWorld, positionLocal, smoothstep, step, texture3D, vec3 } from "three/tsl";
+import type { Node, Texture } from "three/webgpu";
+import { abs, bumpMap, clamp, float, mix, normalLocal, normalWorld, positionLocal, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
 import { noiseVolume } from "./noiseVolume";
+import { WEAR, WEAR_TILE } from "./wearTextures";
 
 // Layered surfaces for the modelled pieces, worked out per pixel instead of painted as images,
 // the way real materials are built up: a base colour that varies across the surface, paint worn
@@ -9,7 +10,9 @@ import { noiseVolume } from "./noiseVolume";
 // changes with all of these, and a little relief so the lamps pick out the surface. The
 // patterns follow the piece's own position (for still copies that is where they stand in the
 // world), so moving parts such as doors carry their pattern with them and no texture
-// coordinates are needed. The noise is read from a block made once at load (noiseVolume.ts).
+// coordinates are needed. The noise is read from a block made once at load (noiseVolume.ts). Rain
+// streaks come from a picture the graphics card draws once at load
+// (wearTextures.ts), read from three sides in the same coordinates.
 //
 // Each material is given a kind from its name in the model files (docs/asset-pipeline.md).
 // Signs stay clean: they are lit and kept up.
@@ -65,6 +68,18 @@ export interface Layered { color: ColorNode; roughness: FloatNode; metalness: Fl
 
 const signed = (value: FloatNode): FloatNode => value.mul(2).sub(1);
 
+// Samples the wear picture from the three sides of a piece, blended by which way the surface faces,
+// in the piece's own coordinates.
+function triplanar(map: Texture): Node<"vec4"> {
+  const P = positionLocal.div(WEAR_TILE);
+  const n = abs(normalLocal);
+  const w = n.mul(n).mul(n).mul(n);
+  const weights = w.div(w.x.add(w.y).add(w.z));
+  return texture(map, vec2(P.z, P.y)).mul(weights.x)
+    .add(texture(map, vec2(P.x, P.z)).mul(weights.y))
+    .add(texture(map, vec2(P.x, P.y)).mul(weights.z));
+}
+
 // The layered surface over a base colour, roughness and metalness.
 export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatNode, kind: FloatNode): Layered {
   const P = positionLocal;
@@ -97,8 +112,11 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   color = mix(color, mix(RUST_DARK, RUST_LIGHT, fine.mul(0.5).add(0.5)), rusty);
   // Dust on what faces up, grime near the ground and in broad patches.
   const up = smoothstep(0.5, 0.95, normalWorld.y);
-  const dirty = clamp(up.mul(0.55).add(low.mul(0.6)).add(smoothstep(0.05, 0.7, coarse).mul(0.45)), 0, 1).mul(dirt);
+  // Rain streaks: grime washed down in fine and broad runs, and paler runs where rain ran clean.
+  const wear = triplanar(WEAR.streaks.texture);
+  const dirty = clamp(up.mul(0.55).add(low.mul(0.6)).add(smoothstep(0.05, 0.7, coarse).mul(0.45)).add(wear.r.mul(0.7)), 0, 1).mul(dirt);
   color = mix(color, color.mul(GRIME), dirty);
+  color = color.mul(float(1).add(wear.g.mul(dirt).mul(0.12)));
 
   const surface = clamp(roughness.mul(float(1).add(fine.mul(rough.mul(0.5))).add(coarse.mul(rough.mul(0.4))))
     .add(chipped.mul(0.25)).add(rusty.mul(0.45)).add(dirty.mul(0.15)), 0.04, 1);

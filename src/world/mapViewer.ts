@@ -15,6 +15,7 @@ import { QUALITY, type GraphicsQuality } from "./quality";
 import { puddleNode, rainTime } from "./wetness";
 import { Rain } from "./rain";
 import { LampHaze } from "./lampHaze";
+import { drawWearTextures } from "./wearTextures";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
@@ -291,6 +292,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   renderer.shadowMap.type = PCFShadowMap;
   renderer.shadowMap.enabled = true;
   await renderer.init();
+  // The picture of rain streaks the modelled pieces read (wearTextures.ts), drawn once.
+  const wearMs = drawWearTextures(renderer);
+  console.info(`[wear] rain streaks drawn in ${wearMs.toFixed(0)} ms`);
   // If the graphics device gives up, say so rather than leave the last frame frozen on screen.
   renderer.onDeviceLost = (info) => {
     console.error(`Graphics device lost: ${info.message}`);
