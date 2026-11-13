@@ -43,7 +43,7 @@ import { loadSurfaceTextures } from "./surfaceTextures";
 import { PhysicsWorld, type GrenadePath, type ShotRay, type Strike, type StrikeTarget } from "./physics";
 import { EntityRegistry } from "./entities";
 import { WorldEffects, type FlameSpot } from "./worldEffects";
-import { FUEL_DRUM, FURNITURE, loadPropModels, PROP_LABEL, PropViews } from "./props";
+import { FUEL_DRUM, FURNITURE, loadPropModels, PALLET, PROP_LABEL, PropViews } from "./props";
 import { aroundBreach, BreachViews } from "./breaches";
 import { type PropPush, type PropState } from "../network/peerRoom";
 
@@ -255,7 +255,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   for (const [id, objects] of truck.groups) groups.set(id, objects);
   await step("props");
   await propViews.load(propModels);
-  for (const { name } of [FUEL_DRUM, ...FURNITURE]) propViews.addModel(name, pieces.get(name)?.parts ?? []);
+  for (const { name } of [FUEL_DRUM, PALLET, ...FURNITURE]) propViews.addModel(name, pieces.get(name)?.parts ?? []);
   for (const prop of props) { entities.add(prop); propViews.add(prop); }
   propViews.build(props);
 

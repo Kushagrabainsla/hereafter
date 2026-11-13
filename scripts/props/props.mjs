@@ -69,6 +69,62 @@ export const PROPS = [
     material: 'plastic', mass: 1.6, // empty polypropylene stacking crate
     source_url: ph('plastic_crate_02'), author: 'Fabi_G', license: PH_LICENSE,
   },
+  // Street clutter along the alleys' edges (all of it can be shoved, kicked or shot about).
+  {
+    name: 'tyre', source: 'old_tyre/old_tyre_1k.gltf', ratio: 0.5, error: 0.01, texture: 512,
+    keep: ['old_tyre'],
+    pose: { old_tyre: { rotation: [0.7071068, 0, 0, 0.7071068] } }, // lying flat, so tyres stack
+    material: 'rubber', mass: 9, // worn car tyre with no rim
+    source_url: ph('old_tyre'), author: 'MP', license: PH_LICENSE,
+  },
+  {
+    name: 'cement_sack', source: 'cement_bag/cement_bag_1k.gltf', ratio: 1, texture: 512,
+    keep: ['cement_bag'],
+    material: 'cardboard', mass: 25, // paper sack of cement: the standard 25 kg bag
+    source_url: ph('cement_bag'), author: 'PierreB3D', license: PH_LICENSE,
+  },
+  {
+    name: 'rubbish_bag', source: 'compost_bag_02/compost_bag_02_1k.gltf', ratio: 0.12, error: 0.02, texture: 512,
+    keep: ['compost_bag_02'],
+    material: 'plastic', mass: 8, // a full plastic sack
+    source_url: ph('compost_bag_02'), author: 'Satyaki Mandal', license: PH_LICENSE,
+  },
+  {
+    name: 'jerrycan', source: 'plastic_jerrycan/plastic_jerrycan_1k.gltf', ratio: 0.3, error: 0.01, texture: 512,
+    keep: ['plastic_jerrycan'],
+    material: 'plastic', mass: 11, // 20 L plastic can, half full of water
+    source_url: ph('plastic_jerrycan'), author: 'Ulan Cabanilla', license: PH_LICENSE,
+  },
+  {
+    name: 'jerrycan_steel', source: 'metal_jerrycan_green/metal_jerrycan_green_1k.gltf', ratio: 0.3, error: 0.01, texture: 512,
+    keep: ['metal_jerrycan_green_body', 'metal_jerrycan_green_cap', 'metal_jerrycan_green_latch', 'metal_jerrycan_green_pin', 'metal_jerrycan_green_fastener'],
+    material: 'metal-thin', mass: 14, // 4 kg steel can with 10 L of fuel left in it
+    source_url: ph('metal_jerrycan_green'), author: 'Ulan Cabanilla', license: PH_LICENSE,
+  },
+  {
+    name: 'water_bottle', source: 'plastic_bottle_gallon/plastic_bottle_gallon_1k.gltf', ratio: 0.15, error: 0.01, texture: 512,
+    keep: ['plastic_bottle_gallon'],
+    material: 'plastic', mass: 3.9, // a full US gallon of water
+    source_url: ph('plastic_bottle_gallon'), author: 'Rahul Chaudhary', license: PH_LICENSE,
+  },
+  {
+    name: 'wet_floor_sign', source: 'WetFloorSign_01/WetFloorSign_01_1k.gltf', ratio: 1, texture: 512,
+    keep: ['WetFloorSign_01'],
+    material: 'plastic', mass: 1.1, // folding polypropylene A-frame
+    source_url: ph('WetFloorSign_01'), author: 'Fran Calvente', license: PH_LICENSE,
+  },
+  {
+    name: 'monobloc_chair', source: 'plastic_monobloc_chair_01/plastic_monobloc_chair_01_1k.gltf', ratio: 0.6, error: 0.01, texture: 512,
+    keep: ['plastic_monobloc_chair_01'],
+    material: 'plastic', mass: 2.4, // moulded garden chair
+    source_url: ph('plastic_monobloc_chair_01'), author: 'Kuutti Siitonen', license: PH_LICENSE,
+  },
+  {
+    name: 'clay_pot', source: 'planter_pot_clay/planter_pot_clay_1k.gltf', ratio: 0.4, error: 0.01, texture: 512,
+    keep: ['planter_pot_clay'],
+    material: 'masonry', mass: 9, // terracotta pot with damp soil
+    source_url: ph('planter_pot_clay'), author: 'Amal Kumar', license: PH_LICENSE,
+  },
 ];
 
 const io = () => new NodeIO().registerExtensions(ALL_EXTENSIONS);

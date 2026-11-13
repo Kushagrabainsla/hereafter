@@ -11,7 +11,7 @@ import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./ar
 import { type Material } from "./materials";
 import { type InstanceRef, type WorldEntity } from "./entities";
 import { type SurfaceTextures } from "./surfaceTextures";
-import { FUEL_DRUM, FURNITURE, propEntity, type PropModel } from "./props";
+import { FUEL_DRUM, FURNITURE, PALLET, propEntity, type PropModel } from "./props";
 import { BREACH_ENTITIES } from "./breaches";
 import { addClimbing, STAIR_RISE, STAIR_RUN, type Ladder, type Stair } from "./climbing";
 import { TRUCK_SOLIDS, TRUCK_TOGGLES } from "./foodTruck";
@@ -235,6 +235,31 @@ const propSpots: [string, number, number, number, number][] = [
   // Red fuel drums: shot open, they vent fire and burst.
   ["fuel_drum", -7.6, 13.0, 0, 0], ["fuel_drum", 16.3, -3.0, 0, 0.6],
   ["fuel_drum", -7.8, -5.2, 0, 0.3], ["fuel_drum", 0.0, 4.6, 0, 1.1], ["fuel_drum", 9.0, 21.8, 0, 0.4], ["fuel_drum", 16.4, 11.6, 0, 2.0],
+  // Street clutter heaped against the walls, clear of doors, stalls, spawns and pickups: pallets
+  // stacked with sacks of cement, tyres and jerrycans; rubbish bags and boxes round a bin; crates and
+  // bottles of a shop's stock; a chair with plant pots by the restaurant's window and a wet floor sign
+  // by the dumpling shop. Each heap is one recipe laid against its wall, checked clear of the rest.
+  // All of it can be shoved, knocked over or shot; tyres roll off their stacks.
+  ["trash_can", -8.16, 23.35, 0, -1.659], ["rubbish_bag", -8.2, 24, 0, -1.487], ["rubbish_bag", -8.2, 24.57, 0, -1.507], ["rubbish_bag", -7.68, 24.28, 0, -1.63], ["cardboard_box", -8.2, 25.16, 0, -0.001],
+  ["cardboard_box", -8.2, 25.16, 0.341, -0.012], ["cardboard_box", -7.65, 24.9, 0, -1.534], ["water_bottle", -7.28, 24.4, 0, -1.502], ["pallet", -7.94, -16.5, 0, -1.534], ["pallet", -7.94, -16.5, 0.144, -1.535],
+  ["cement_sack", -7.94, -16.24, 0.288, -1.677], ["cement_sack", -7.94, -16.76, 0.288, -1.67], ["cement_sack", -7.94, -16.5, 0.468, 0.081], ["tyre", -8.14, -17.55, 0, -1.514], ["tyre", -8.14, -17.55, 0.165, -1.53],
+  ["tyre", -8.14, -17.55, 0.33, -1.617], ["jerrycan_steel", -8.38, -15.55, 0, -1.545], ["jerrycan_steel", -8.18, -15.55, 0, -1.545], ["crate_wood_large", -8.14, 1, 0, -1.634], ["crate_wood_large", -8.14, 1.05, 0.464, -1.56],
+  ["crate_wood", -8.2, 0.95, 0.928, -1.602], ["plastic_crate", -8.24, 2, 0, -1.546], ["plastic_crate", -8.24, 2, 0.254, -1.541], ["plastic_crate", -8.24, 2, 0.508, -1.675], ["plastic_crate", -8.24, 2, 0.762, -1.688],
+  ["cardboard_box", -7.55, 0.7, 0, -1.49], ["rubbish_bag", -7.6, 1.55, 0, -1.629], ["crate_wood_large", 0.14, 22.8, 0, -1.634], ["crate_wood_large", 0.14, 22.75, 0.464, -1.666], ["crate_wood", 0.2, 22.85, 0.928, -1.596],
+  ["plastic_crate", 0.24, 21.8, 0, -1.654], ["plastic_crate", 0.24, 21.8, 0.254, -1.675], ["plastic_crate", 0.24, 21.8, 0.508, -1.594], ["plastic_crate", 0.24, 21.8, 0.762, -1.47], ["cardboard_box", -0.45, 23.1, 0, -1.499],
+  ["rubbish_bag", -0.4, 22.25, 0, -1.507], ["plastic_crate", 0.24, -13.35, 0, -1.541], ["plastic_crate", 0.24, -13.35, 0.254, -1.513], ["plastic_crate", 0.24, -13.35, 0.508, -1.5], ["crate_wood", 0.24, -12.45, 0, -1.465],
+  ["crate_wood", 0.24, -12.45, 0.347, -1.513], ["cardboard_box", 0.2, -11.75, 0, 0.101], ["water_bottle", -0.15, -12.85, 0, -1.684], ["water_bottle", -0.2, -12.65, 0, -1.579], ["jerrycan", -0.25, -12.1, 0, -1.464],
+  ["trash_can", 0.16, -22.65, 0, -1.5], ["rubbish_bag", 0.2, -23.3, 0, -1.494], ["rubbish_bag", 0.2, -23.87, 0, -1.574], ["rubbish_bag", -0.32, -23.58, 0, -1.628], ["cardboard_box", 0.2, -24.46, 0, -0.12],
+  ["cardboard_box", 0.2, -24.46, 0.341, 0.039], ["cardboard_box", -0.35, -24.2, 0, -1.578], ["water_bottle", -0.72, -23.7, 0, -1.508], ["pallet", 9.06, 24.6, 0, -1.585], ["pallet", 9.06, 24.6, 0.144, -1.599],
+  ["cement_sack", 9.06, 24.34, 0.288, -1.535], ["cement_sack", 9.06, 24.86, 0.288, -1.673], ["cement_sack", 9.06, 24.6, 0.468, 0.009], ["tyre", 8.86, 25.65, 0, -1.603], ["tyre", 8.86, 25.65, 0.165, -1.677],
+  ["tyre", 8.86, 25.65, 0.33, -1.569], ["jerrycan_steel", 8.62, 23.65, 0, -1.682], ["jerrycan_steel", 8.82, 23.65, 0, -1.587], ["pallet", 9.06, -5.4, 0, -1.593], ["pallet", 9.06, -5.4, 0.144, -1.534],
+  ["pallet", 9.06, -5.4, 0.288, -1.601], ["tyre", 8.86, -6.4, 0, -1.522], ["tyre", 8.86, -6.4, 0.165, -1.67], ["trash_can", 8.84, -26.25, 0, -1.58], ["rubbish_bag", 8.8, -25.6, 0, -1.601],
+  ["rubbish_bag", 8.8, -25.03, 0, -1.658], ["rubbish_bag", 9.32, -25.32, 0, -1.483], ["cardboard_box", 8.8, -24.44, 0, -0.118], ["cardboard_box", 8.8, -24.44, 0.341, 0.001], ["cardboard_box", 9.35, -24.7, 0, -1.475],
+  ["water_bottle", 9.72, -25.2, 0, -1.671], ["oil_drum", 16.64, 25.5, 0, -1.554], ["oil_drum", 16.64, 24.8, 0, -1.588], ["pallet", 16.44, 23.5, 0, -1.565], ["jerrycan", 16.05, 25.15, 0, -1.641],
+  ["jerrycan_steel", 16.1, 24.35, 0, -1.496], ["tyre", 16.64, 26.2, 0, -1.493], ["tyre", 16.64, 26.2, 0.165, -1.534], ["plastic_crate", 16.74, -18.55, 0, -1.582], ["plastic_crate", 16.74, -18.55, 0.254, -1.556],
+  ["plastic_crate", 16.74, -18.55, 0.508, -1.469], ["crate_wood", 16.74, -17.65, 0, -1.579], ["crate_wood", 16.74, -17.65, 0.347, -1.569], ["cardboard_box", 16.7, -16.95, 0, 0.021], ["water_bottle", 16.35, -18.05, 0, -1.646],
+  ["water_bottle", 16.3, -17.85, 0, -1.568], ["jerrycan", 16.25, -17.3, 0, -1.54], ["monobloc_chair", -7.9, 5, 0, 1.4], ["clay_pot", -8.2, 4.2, 0, 0], ["clay_pot", -8.2, 5.85, 0, 1.1],
+  ["water_bottle", -7.6, 4.45, 0, 0.6], ["wet_floor_sign", -0.5, 20.4, 0, 0.6], ["pallet", 15.8, 18, 0, 0], ["pallet", 15.8, 18.1, 0.144, 0.07],
 ];
 // Furniture is loose too: [model, x, z, yaw, tint for the plastic stools].
 const furnitureSpots: [string, number, number, number, number?][] = [];
@@ -954,8 +979,6 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   // ---------- service alley dressing ----------
   // Two pallets stacked by the door, the top one askew, and a manhole cover.
-  placer.place("pallet", new Matrix4().makeTranslation(15.8, 0, 18));
-  placer.place("pallet", new Matrix4().compose(new Vector3(15.8, 0.144, 18.1), new Quaternion().setFromAxisAngle(UP, 0.07), new Vector3(1, 1, 1)));
   placer.place("manhole", new Matrix4().makeTranslation(12.75, 0, -6));
   // Barn lamps on the service alley walls, their shades 0.36 m out: lit and dark glass, so a
   // broken one goes dark on its own.
@@ -1105,7 +1128,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   statics.build(root, (look) => !["pavement", "asphalt", "floor", "photoCafe", "photoStone", "sconce", "lampGlow", "bottle"].includes(look), surfaces);
 
   // Movable props, numbered in a fixed order so ids match on every client.
-  const models = new Map([...propModels, FUEL_DRUM].map((model) => [model.name, model]));
+  const models = new Map([...propModels, FUEL_DRUM, PALLET].map((model) => [model.name, model]));
   const props: WorldEntity[] = [];
   for (const [name, x, z, base, yaw] of propSpots) {
     const model = models.get(name);

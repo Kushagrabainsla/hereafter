@@ -111,6 +111,8 @@ The market is lit at the end of a wet afternoon by a painted sky, a low sun that
 
 The physics world adds every solid as a box collider. Spawns and pickups come straight from the layout, and footsteps are always on a hard surface.
 
+**Street clutter.** Eleven heaps line the alleys' walls, about 100 loose props in all: pallets stacked with sacks of cement, tyres and jerrycans; rubbish bags and boxes round a bin; plastic crates, wooden crates and bottled water of a shop's stock. Some heaps stand head high. A chair with two plant pots stands by the restaurant's window, and a wet floor sign by the dumpling shop's door. Each heap is one of six recipes laid against its wall in wall coordinates, mirrored and turned a little at random so the heaps do not repeat, and checked clear of doors, stalls, spawns, pickups, solids and the other props. The models are free Poly Haven scans (`scripts/props/SOURCES.md`); the pallet is the street family's own. Everything can be shoved, knocked over, carried or shot: tyres roll off their stacks, and bags, pots, crates and the sign break. A prop that lies still sends nothing over the network, so the heaps cost nothing in a match until someone moves them. A blind judge preferred the market with the heaps at 8 spots of 12 and scored its set dressing 4 against 2.5. The heaps cost no measurable frame rate at 2560 × 1440 at 2×.
+
 The same module draws everything from that definition. Static geometry is merged per material, so the map draws in a few dozen calls. Windows are instanced. Stalls, glass storefronts, windows and props become world entities with fixed ids, built in the same order on every client, so their health travels in the coordinator's snapshots without extra messages.
 
 ## Checks
@@ -120,7 +122,7 @@ A scripted headless Chrome session on an Apple M4 played the market at 1440 × 8
 | Check | Result |
 |---|---|
 | Frame rate at the south spawn | 60 FPS, about 224,000 triangles |
-| Entities | 247 windows, 7 stalls, 7 glass storefronts, 21 door leaves, 4 steam pipes, 6 extinguishers, 2 boarded windows, 109 lamps and 81 props |
+| Entities | 247 windows, 7 stalls, 7 glass storefronts, 21 door leaves, 4 steam pipes, 6 extinguishers, 2 boarded windows, 109 lamps and about 180 props |
 | All 8 spawns | the player stands on the ground at each |
 | Walking into the restaurant glass | stopped at the sill |
 | One pistol round at the glass | shattered, and a running jump carried the player inside |

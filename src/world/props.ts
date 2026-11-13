@@ -7,13 +7,17 @@ import { assetFetch } from "../assetStore";
 export interface PropModel { name: string; file: string; size: [number, number, number]; material: Material; mass: number }
 
 // Durability of breakable props; the rest dent and get thrown around but stay whole.
-const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16, dining_chair: 40, dining_table: 120, cafe_table: 70, plastic_stool: 20 };
-const ROUND = new Set(["trash_can", "oil_drum", "fuel_drum"]);
+const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16, dining_chair: 40, dining_table: 120, cafe_table: 70, plastic_stool: 20,
+  rubbish_bag: 30, pallet: 90, jerrycan: 40, water_bottle: 8, wet_floor_sign: 20, monobloc_chair: 35, clay_pot: 15, cement_sack: 60 };
+// Tyres lie flat and roll off a stack; pots are round too.
+const ROUND = new Set(["trash_can", "oil_drum", "fuel_drum", "tyre", "clay_pot"]);
 // Shot open, these vent burning fuel and then burst like a grenade.
 const EXPLOSIVE = new Set(["fuel_drum"]);
 
 // A red fuel drum, modelled in the market kit rather than taken from a photo scan.
 export const FUEL_DRUM: PropModel = { name: "fuel_drum", file: "", size: [0.62, 0.92, 0.62], material: "metal-thin", mass: 60 };
+// A timber pallet from the street family (scripts/assets/families/street.py), as found in alleys.
+export const PALLET: PropModel = { name: "pallet", file: "", size: [1.22, 0.144, 1.02], material: "wood", mass: 22 };
 // Furniture from the kit (scripts/assets/families/furniture.py), with what it really weighs. The
 // steel bar stools dent but do not break.
 export const FURNITURE: PropModel[] = [
@@ -27,8 +31,10 @@ export const FURNITURE: PropModel[] = [
 export const PROP_LABEL: Record<string, string> = {
   crate_wood: "the crate", crate_wood_large: "the big crate", trash_can: "the trash can", oil_drum: "the oil drum", cardboard_box: "the cardboard box", aircon_unit: "the air conditioner", plastic_crate: "the plastic crate",
   fuel_drum: "the fuel drum", dining_chair: "the chair", dining_table: "the table", cafe_table: "the folding table", bar_stool: "the bar stool", plastic_stool: "the stool",
+  tyre: "the tyre", cement_sack: "the cement sack", rubbish_bag: "the rubbish bag", jerrycan: "the water can", jerrycan_steel: "the jerrycan", water_bottle: "the water bottle",
+  wet_floor_sign: "the wet floor sign", pallet: "the pallet", monobloc_chair: "the plastic chair", clay_pot: "the plant pot",
 };
-const SHADOWLESS = new Set(["cardboard_box", "plastic_crate", ...FURNITURE.map((model) => model.name)]);
+const SHADOWLESS = new Set(["cardboard_box", "plastic_crate", "water_bottle", "clay_pot", "wet_floor_sign", ...FURNITURE.map((model) => model.name)]);
 
 export async function loadPropModels(): Promise<PropModel[]> {
   try {

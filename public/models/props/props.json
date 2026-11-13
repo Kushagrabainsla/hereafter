@@ -110,5 +110,149 @@
     "source": "https://polyhaven.com/a/plastic_crate_02",
     "author": "Fabi_G",
     "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "tyre",
+    "file": "models/props/tyre.glb",
+    "size": [
+      0.6,
+      0.165,
+      0.6
+    ],
+    "material": "rubber",
+    "mass": 9,
+    "triangles": 1440,
+    "bytes": 135452,
+    "source": "https://polyhaven.com/a/old_tyre",
+    "author": "MP",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "cement_sack",
+    "file": "models/props/cement_sack.glb",
+    "size": [
+      0.462,
+      0.18,
+      0.7
+    ],
+    "material": "cardboard",
+    "mass": 25,
+    "triangles": 844,
+    "bytes": 64824,
+    "source": "https://polyhaven.com/a/cement_bag",
+    "author": "PierreB3D",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "rubbish_bag",
+    "file": "models/props/rubbish_bag.glb",
+    "size": [
+      0.538,
+      0.434,
+      0.471
+    ],
+    "material": "plastic",
+    "mass": 8,
+    "triangles": 1451,
+    "bytes": 141120,
+    "source": "https://polyhaven.com/a/compost_bag_02",
+    "author": "Satyaki Mandal",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "jerrycan",
+    "file": "models/props/jerrycan.glb",
+    "size": [
+      0.268,
+      0.318,
+      0.341
+    ],
+    "material": "plastic",
+    "mass": 11,
+    "triangles": 2204,
+    "bytes": 181620,
+    "source": "https://polyhaven.com/a/plastic_jerrycan",
+    "author": "Ulan Cabanilla",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "jerrycan_steel",
+    "file": "models/props/jerrycan_steel.glb",
+    "size": [
+      0.36,
+      0.5,
+      0.171
+    ],
+    "material": "metal-thin",
+    "mass": 14,
+    "triangles": 2889,
+    "bytes": 217704,
+    "source": "https://polyhaven.com/a/metal_jerrycan_green",
+    "author": "Ulan Cabanilla",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "water_bottle",
+    "file": "models/props/water_bottle.glb",
+    "size": [
+      0.166,
+      0.274,
+      0.126
+    ],
+    "material": "plastic",
+    "mass": 3.9,
+    "triangles": 2058,
+    "bytes": 78908,
+    "source": "https://polyhaven.com/a/plastic_bottle_gallon",
+    "author": "Rahul Chaudhary",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "wet_floor_sign",
+    "file": "models/props/wet_floor_sign.glb",
+    "size": [
+      0.3,
+      0.63,
+      0.359
+    ],
+    "material": "plastic",
+    "mass": 1.1,
+    "triangles": 228,
+    "bytes": 54080,
+    "source": "https://polyhaven.com/a/WetFloorSign_01",
+    "author": "Fran Calvente",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "monobloc_chair",
+    "file": "models/props/monobloc_chair.glb",
+    "size": [
+      0.642,
+      0.88,
+      0.628
+    ],
+    "material": "plastic",
+    "mass": 2.4,
+    "triangles": 2012,
+    "bytes": 181040,
+    "source": "https://polyhaven.com/a/plastic_monobloc_chair_01",
+    "author": "Kuutti Siitonen",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
+  },
+  {
+    "name": "clay_pot",
+    "file": "models/props/clay_pot.glb",
+    "size": [
+      0.266,
+      0.222,
+      0.263
+    ],
+    "material": "masonry",
+    "mass": 9,
+    "triangles": 1232,
+    "bytes": 88420,
+    "source": "https://polyhaven.com/a/planter_pot_clay",
+    "author": "Amal Kumar",
+    "license": "CC0-1.0 (https://polyhaven.com/license)"
   }
 ]
