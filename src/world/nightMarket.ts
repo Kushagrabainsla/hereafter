@@ -655,9 +655,12 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const archLight = light([-4, 5.0, 28.6, 0xffcf5a, 4, 6]);
   const bannerLight = light([-4, 5.6, -22.8, 0xffd0a8, 3, 5]);
   const pendantLights = [-2, 2.4, 6.8].map((z) => light([-10.3, 2.6, z, 0xffc887, 4.5, 6]));
-  const recordsLights = [3.0, 6.0].map((x) => light([x, 3.0, -10.5, 0xffd6a0, 4.5, 6.5]));
-  const shopLights = new Map(SHOP_ROOMS.map((room) => [room.id, light([4.5, 3.0, (room.z0 + room.z1) / 2, 0xffd6a0, 8, 5.5])]));
-  const sideLights = new Map(SIDE_ROOMS.map((room) => [room.id, light([roomX(room, 3.0), 3.0, (room.z0 + room.z1) / 2, room.tint, 8, 5.5])]));
+  // The shops are lit the way a shop open at night is, brighter than the street outside, so they
+  // glow from the alley. A stronger light costs nothing more; a wider one costs every pixel it reaches.
+  const SHOP_LIGHT = 40;
+  const recordsLights = [3.0, 6.0].map((x) => light([x, 3.0, -10.5, 0xffd6a0, SHOP_LIGHT * 0.56, 6.5]));
+  const shopLights = new Map(SHOP_ROOMS.map((room) => [room.id, light([4.5, 3.0, (room.z0 + room.z1) / 2, 0xffd6a0, SHOP_LIGHT, 5.5])]));
+  const sideLights = new Map(SIDE_ROOMS.map((room) => [room.id, light([roomX(room, 3.0), 3.0, (room.z0 + room.z1) / 2, room.tint, SHOP_LIGHT, 5.5])]));
   light([-13.4, 3.1, -2, 0xfff0dd, 4, 6]);
   light([-13.4, 3.1, 9, 0xfff0dd, 4, 6]);
   const barLight = light([20.1, 3.4, 8.5, 0xff9ab0, 5, 7]);
