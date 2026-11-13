@@ -1,7 +1,8 @@
 import type { Node, Texture } from "three/webgpu";
-import { abs, attribute, bumpMap, clamp, float, fwidth, min, mix, normalLocal, normalWorld, positionLocal, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
+import { abs, attribute, bumpMap, clamp, float, fwidth, min, mix, normalLocal, normalWorld, positionLocal, positionWorld, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
 import { noiseVolume } from "./noiseVolume";
 import { WEAR, WEAR_TILE } from "./wearTextures";
+import { outdoorNode } from "./wetness";
 
 // Layered surfaces for the modelled pieces, worked out per pixel instead of painted as images,
 // the way real materials are built up: a base colour that varies across the surface, paint worn
@@ -34,15 +35,16 @@ export function surfaceKind(name: string): number {
 //   mottle  colour variation        chips  paint worn through      rust  rust patches
 //   grain   wood grain              dirt   dust and grime          relief  surface relief
 //   rough   roughness variation     edge   wear on outside edges  cavity  dirt in inside corners
-const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity"] as const;
+//   soak    how much darker the surface turns when wet (porous ones most)
+const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity", "soak"] as const;
 const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
-  [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6 },
-  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.6, relief: 0.6, rough: 0.4, edge: 1, cavity: 1 },
-  [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1 },
-  [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1 },
-  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9 },
-  [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1 },
-  [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8 },
+  [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6, soak: 0.15 },
+  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.6, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
+  [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1, soak: 0.45 },
+  [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1, soak: 0.4 },
+  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1 },
+  [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1, soak: 0.3 },
+  [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8, soak: 0.5 },
 };
 
 type FloatNode = Node<"float">;
@@ -103,14 +105,18 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   // Paint worn through: small chips gathered low down and in a few worn zones, with grey primer
   // at the edge of each and dark old material in the middle.
   const low = float(1).sub(smoothstep(0.05, 1.3, P.y));
-  const worn = smoothstep(0.3, 0.8, coarse.mul(0.6).add(low.mul(0.8)));
+  // Chips gather in a few worn zones, more of them low down, never as an even sprinkle along the
+  // bottom of a panel (which read as a row of polka dots); their outlines are ragged.
+  const worn = smoothstep(0.4, 0.9, coarse.mul(0.75).add(low.mul(0.45)));
+  const flake = flecks.mul(0.75).add(medium.mul(0.25)).add(fine.mul(0.12));
   const edge = float(0.75).sub(chips.mul(0.4).mul(worn));
-  const chipped = smoothstep(edge, edge.add(0.05), flecks).mul(step(float(0.01), chips)).mul(worn);
-  const deep = smoothstep(edge.add(0.08), edge.add(0.16), flecks);
+  const chipped = smoothstep(edge, edge.add(0.08), flake).mul(step(float(0.01), chips)).mul(worn);
+  const deep = smoothstep(edge.add(0.1), edge.add(0.2), flake);
   color = mix(color, mix(PRIMER, UNDER, deep), chipped);
   // Rust grows from the bottom of a piece and in patches.
   const rustEdge = float(1.0).sub(rust.mul(0.85));
-  const rusty = smoothstep(rustEdge, rustEdge.add(0.15), medium.mul(0.7).add(low.mul(0.6)).add(coarse.mul(0.3))).mul(step(float(0.01), rust));
+  // A grainy, stringy edge, drawn out up and down by the stretched noise, not a cut-out shape.
+  const rusty = smoothstep(rustEdge, rustEdge.add(0.3), medium.mul(0.6).add(low.mul(0.6)).add(coarse.mul(0.3)).add(fine.mul(0.25)).add(flecks.mul(0.15))).mul(step(float(0.01), rust));
   color = mix(color, mix(RUST_DARK, RUST_LIGHT, fine.mul(0.5).add(0.5)), rusty);
   // Dust on what faces up, grime near the ground and in broad patches.
   const up = smoothstep(0.5, 0.95, normalWorld.y);
@@ -143,8 +149,24 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   const crease = smoothstep(0.05, 0.0, insideCorner.add(medium.mul(0.02))).mul(cavityAmount);
   color = mix(color, color.mul(CREASE), crease.mul(0.5));
 
-  const surface = clamp(roughness.mul(float(1).add(fine.mul(rough.mul(0.5))).add(coarse.mul(rough.mul(0.4))))
+  // Rain: what faces up stays wet, runs of water follow the grime streaks down the sides, and a band
+  // near the ground is splashed; a wet surface darkens (porous ones most) and turns glossy. Broad
+  // patches stay drier, and indoors nothing is wet. Smudges vary the gloss of dry metal and paint,
+  // where one even sheen read as plastic.
+  const soak = amount(kind, "soak");
+  const splash = smoothstep(0.45, 0.0, P.y).mul(float(1).sub(up));
+  const runs = smoothstep(0.3, 0.7, wear.r).mul(float(1).sub(up));
+  const wet = clamp(up.mul(0.6).add(runs.mul(0.75)).add(splash.mul(0.6)), 0, 1)
+    .mul(smoothstep(-0.45, 0.15, coarse.add(medium.mul(0.4)))).mul(smoothstep(0.97, 1, outdoorNode(positionWorld)));
+  color = color.mul(float(1).sub(wet.mul(soak)));
+  const smudge = signed(near.g).mul(rough.mul(0.35));
+
+  const dry = clamp(roughness.mul(float(1).add(fine.mul(rough.mul(0.5))).add(coarse.mul(rough.mul(0.4))).add(smudge))
     .add(chipped.mul(0.25)).add(rusty.mul(0.45)).add(dirty.mul(0.15)).add(crease.mul(0.25)).add(throughPaint.mul(0.25)), 0.04, 1);
+  // Wet gloss is broken up: beads and drier spots between them, not one even sheen (that read as
+  // plastic across a whole lid).
+  const beaded = float(0.16).add(smoothstep(-0.35, 0.55, flecks.add(fine.mul(0.3))).mul(0.3));
+  const surface = mix(dry, min(dry, beaded), wet.mul(0.8));
   const metal = metalness.mul(float(1).sub(rusty)).mul(float(1).sub(chipped.mul(deep).mul(0.5))).mul(float(1).sub(throughPaint.mul(0.7)));
   // Relief in metres: chips sink below the paint, rust and grain stand up a little.
   const height = medium.mul(0.25).add(fine.mul(grain.mul(0.6).add(0.15))).sub(chipped.mul(0.8)).add(rusty.mul(0.5)).mul(relief).mul(0.0012);
