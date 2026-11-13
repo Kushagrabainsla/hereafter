@@ -13,6 +13,9 @@ import { outdoorAt } from "./wetness";
 export const LAMP_HAZE = {
   // How much light the air scatters toward the eye, per unit of the lamp's strength.
   strength: uniform(0.012),
+  // Metres in front of the eye where the glow begins: the air right at the eye is too thin to show,
+  // and counting it veiled the whole view in orange whenever the player stood near a lamp.
+  clear: uniform(1.5),
 };
 
 // How far round a lamp its glow reaches, in metres (at most): a bare bulb's halo stays tight, as
@@ -85,7 +88,7 @@ export class LampHaze {
     const middle = dot(toLight, direction);
     const miss = dot(toLight, toLight).sub(middle.mul(middle));
     const half = sqrt(max(reach.mul(reach).sub(miss), 0));
-    const near = max(middle.sub(half), 0);
+    const near = max(middle.sub(half), LAMP_HAZE.clear);
     const far = min(middle.add(half), surface);
     const span = max(far.sub(near), 0);
     // A different offset at each pixel hides the steps; the film grain covers the rest.
