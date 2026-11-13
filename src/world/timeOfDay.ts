@@ -43,8 +43,8 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     sun: { offset: [-80, 190, 180], color: 0xffe9cf, intensity: 5.4 },
     // Plenty of neutral sky light into the shade, as a clear afternoon gives, and warm light bounced
     // off the dry street: shade at a quarter to a third of the sunlit brightness, never navy.
-    fill: { sky: 0x9aa6b5, ground: 0x8a7a66, intensity: 1.5 },
-    environment: 0.85,
+    fill: { sky: 0x9aa6b5, ground: 0x8a7a66, intensity: 2.3 },
+    environment: 1.0,
     wet: false,
     lamps: false,
     // A warm cream haze that washes the far ends of the alleys out toward the sun.

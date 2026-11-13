@@ -110,6 +110,8 @@ export class Lamps {
       lamp.day = true;
       lamp.flicker = 0;
       this.show(lamp, 0);
+      // An unlit neon tube or sign face is dull glass and paint, not its glowing colour.
+      for (const part of lamp.parts) if (part.kind === "material") part.material.color.multiplyScalar(0.35);
     }
     this.apply();
   }

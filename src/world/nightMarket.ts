@@ -765,7 +765,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
       windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit && !day ? 1 + Math.floor(r() * 8) : 0 });
     }
   });
-  upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: 1 + index }));
+  upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: day ? 0 : 1 + index }));
   // Each window is a modelled unit (frame, reveal, sash bars, sill and lintel) with its glass
   // a card in front of the reveal, drawn in one of these looks.
   const windowGeometry = cardGeometry(kit, "card_window");
