@@ -23,10 +23,10 @@ export function surfaceKind(name: string): number {
   const n = name.toLowerCase();
   if (n.startsWith("glow_") || n.startsWith("card_") || n.startsWith("sign_")) return SurfaceKind.plain;
   if (n.includes("rust")) return SurfaceKind.rusted;
-  if (/paint|enamel|lacquer|dumpster|bld_frame|bld_sash|bld_shutter|bld_shop|extinguisher|fuel_red|hazard|street_lid|valve|teal|propane|^trim$|^red$|stencil/.test(n)) return SurfaceKind.painted;
+  if (/paint|enamel|lacquer|dumpster|bld_frame|bld_sash|bld_shop|extinguisher|fuel_red|hazard|street_lid|valve|teal|propane|^trim$|^red$|stencil/.test(n)) return SurfaceKind.painted;
   if (/stone|bld_trim|concrete|mortar|fx_brick|insulation/.test(n)) return SurfaceKind.stone;
   if (/wood|plywood|pallet|cedar|walnut|oak|bamboo|panel|butcher|wicker|cue|stall/.test(n)) return SurfaceKind.wood;
-  if (/steel|galv|chrome|iron|grille|brass|copper|alu|grating|rail|checker|conduit|cage|bracket|hoop|lock/.test(n)) return SurfaceKind.metal;
+  if (/bld_shutter|steel|galv|chrome|iron|grille|brass|copper|alu|grating|rail|checker|conduit|cage|bracket|hoop|lock/.test(n)) return SurfaceKind.metal;
   if (/fabric|awning|sack|felt|paper|poster|tassel|cushion|seat|leather|sleeve/.test(n)) return SurfaceKind.fabric;
   return SurfaceKind.plain;
 }
@@ -42,7 +42,7 @@ const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
   [SurfaceKind.painted]: { mottle: 0.1, chips: 0.38, rust: 0.05, grain: 0, dirt: 1, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
   [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1, soak: 0.45 },
   [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1, soak: 0.4 },
-  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1 },
+  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.55, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1 },
   [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1, soak: 0.3 },
   [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8, soak: 0.5 },
 };

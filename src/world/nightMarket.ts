@@ -4,7 +4,7 @@ import {
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, vec2, vec3 } from "three/tsl";
+import { abs, bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, vec2, vec3 } from "three/tsl";
 import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
 import { noiseVolume } from "./noiseVolume";
 import { SHOP_GLASS } from "./shopGlass";
@@ -601,7 +601,15 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // The picture's grime is faint (0.1 to 0.4); its runs are stretched to full strength.
   const wallRuns = smoothstep(0.12, 0.42, streaks.r).mul(mix(float(0.45), float(1), patches)).mul(outside);
   const wallWet = clamp(smoothstep(0.7, 0.0, P.y).mul(0.8).add(smoothstep(0.2, 0.45, streaks.r).mul(0.6)), 0, 1).mul(outside).mul(WEATHER.wet);
-  const weathered = grime.mul(mix(float(1), float(0.55), wallRuns)).mul(float(1).add(streaks.g.mul(outside).mul(0.1))).mul(float(1).sub(wallWet.mul(0.25)));
+  // Rising damp: below a ragged line 0.5 to 1.1 m up, the foot of an outside wall is darker, and a
+  // thin pale rim of salt marks the line, the hard tide line damp leaves as it dries. Kept faint:
+  // stronger, the band read as a painted stripe (and mended patches as shading errors) and lost.
+  const along = P.x.add(P.z);
+  const tide = float(0.8).add(mx_noise_float(vec3(along.mul(0.35), 0.5, 1.7)).mul(0.28)).add(mx_noise_float(vec3(along.mul(2.6), 3.1, 0.2)).mul(0.05));
+  const risen = smoothstep(tide.add(0.015), tide.sub(0.015), P.y).mul(outside);
+  const salt = smoothstep(0.05, 0.0, abs(P.y.sub(tide).sub(0.025))).mul(outside);
+  const aged = mix(float(1), float(0.72), risen).mul(mix(float(1), float(1.22), salt.mul(0.6)));
+  const weathered = aged.mul(grime).mul(mix(float(1), float(0.55), wallRuns)).mul(float(1).add(streaks.g.mul(outside).mul(0.1))).mul(float(1).sub(wallWet.mul(0.25)));
   const wall = (options: NodeOptions): MeshStandardNodeMaterial => {
     const material = new MeshStandardNodeMaterial(options);
     material.colorNode = materialColor.mul(weathered);
