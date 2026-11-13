@@ -4,8 +4,9 @@ import {
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
-import { outdoorAt, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
+import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture3D, vec3 } from "three/tsl";
+import { dampNode, outdoorAt, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
+import { noiseVolume } from "./noiseVolume";
 import { LOOKS } from "./timeOfDay";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
@@ -565,13 +566,19 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // rings the rain makes, and only a little darker: a puddle at night shows mostly what it
   // mirrors, and painted too dark it reads as a hole. Not perfectly smooth, so each lamp draws
   // a long streak of light down the water instead of a pinpoint.
+  // Round each puddle the ground is damp: darker and glossier than the rest of the wet street,
+  // so the water fades out through a dark rim and does not end at a stamped line. And the wet
+  // street is not one even gloss: broad patches (7 m across) of it shed the water sooner.
   const wet = puddleNode(P);
+  const damp = dampNode(P);
+  const sheen = mix(float(0.42), float(0.8), smoothstep(0.35, 0.65, texture3D(noiseVolume(), vec3(P.x.div(7), float(0.55), P.z.div(7))).g));
   const street = (options: NodeOptions): MeshStandardNodeMaterial => {
     const material = new MeshStandardNodeMaterial(options);
     material.normalScale.set(0.5, 0.5);
     // Dry by day (WEATHER.wet 0): the street keeps its own colour and roughness.
-    material.colorNode = materialColor.mul(mix(mix(float(1), float(0.78), WEATHER.wet), float(0.72), wet));
-    material.roughnessNode = mix(materialRoughness.mul(mix(float(1), float(0.58), WEATHER.wet)), float(0.14), wet);
+    material.colorNode = materialColor.mul(mix(mix(mix(float(1), float(0.78), WEATHER.wet), float(0.64), damp), float(0.72), wet));
+    const wetRough = materialRoughness.mul(mix(float(1), sheen, WEATHER.wet));
+    material.roughnessNode = mix(mix(wetRough, wetRough.mul(0.55), damp), float(0.14), wet);
     material.normalNode = mix(materialNormal, bumpMap(rippleHeight(P)) as unknown as typeof materialNormal, wet);
     return material;
   };
@@ -769,8 +776,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // Each window is a modelled unit (frame, reveal, sash bars, sill and lintel) with its glass
   // a card in front of the reveal, drawn in one of these looks.
   const windowGeometry = cardGeometry(kit, "card_window");
-  // Unlit panes are dark glass reflecting the dusk; lit ones show a room.
-  const intensities = [0.8, 0.75, 0.8, 0.75, 0.8, 0.75, 0.75, 0.85];
+  // Unlit panes are dark glass reflecting the dusk; lit ones show a room, dim enough that its
+  // pale walls and curtains keep their colour instead of burning out to white.
+  const intensities = [0.45, 0.42, 0.45, 0.42, 0.45, 0.42, 0.42, 0.47];
   const glassLooks = [std({ color: 0x0e1318, roughness: 0.04, metalness: 0.9 }), ...intensities.map((intensity, kind) => {
     const room = own(windowInterior(kind));
     return std({ map: room, emissive: 0xffffff, emissiveMap: room, emissiveIntensity: intensity, roughness: 0.08, metalness: 0.2 });

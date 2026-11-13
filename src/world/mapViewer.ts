@@ -374,7 +374,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const viewLighting = new ViewLighting(viewScene, built.lightSources, sunOffset.clone().normalize(), sun.intensity, (from, to) => {
     const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, distance = Math.hypot(dx, dy, dz);
     return distance < 0.4 || physics.clearShot({ origin: from, direction: { x: dx / distance, y: dy / distance, z: dz / distance }, distance: distance - 0.3 });
-  });
+  }, sun.color);
   // On WebGPU a muzzle flash lights the alley around the shooter for a moment.
   const muzzleLight = clustered ? new PointLight(0xffb45a, 0, 9, 2) : null;
   if (muzzleLight) scene.add(muzzleLight);
@@ -472,7 +472,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
   // A tight glow, so lit windows and signs keep their frames readable, and a wide halo that only
   // the sun and the brightest haze round it reach, as light spreads in a real lens.
-  const glow = quality.bloom ? picture.add(bloom(vec4(picture, 1), 0.45, 0.4, 0.9).rgb).add(bloom(vec4(picture, 1), 0.5, 1, 2.2).rgb) : picture;
+  const tightBloom = quality.bloom ? bloom(vec4(picture, 1), 0.45, 0.4, 0.9) : null;
+  const wideBloom = quality.bloom ? bloom(vec4(picture, 1), 0.5, 1, 2.2) : null;
+  const glow = tightBloom && wideBloom ? picture.add(tightBloom.rgb).add(wideBloom.rgb) : picture;
   const brightness = luminance(glow);
   const grade = mix(GRADE.shadows, GRADE.lights, smoothstep(0.02, 0.5, brightness));
   // Colour a little below full strength: with so many warm lamps, full colour turns every

@@ -21,7 +21,7 @@ const CHECK_SECONDS = 0.12;
 export class ViewLighting {
   private slots: PointLight[] = [];
   private key = new DirectionalLight(0xffffff, 0);
-  private sun = new DirectionalLight(0xff9452, 0);
+  private sun = new DirectionalLight(0xffffff, 0);
   private ambient = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
   // The fill light's strength, before the lamps that are not slots join it.
   fill = MARKET_FILL.intensity;
@@ -37,7 +37,9 @@ export class ViewLighting {
   private color = new Color();
   private extra = new Color();
 
-  constructor(scene: Scene, private sources: LightSource[], private sunDirection: Vector3, private sunIntensity: number, private clear: LineOfSight) {
+  constructor(scene: Scene, private sources: LightSource[], private sunDirection: Vector3, private sunIntensity: number, private clear: LineOfSight, sunColor: Color) {
+    // The same colour as the world's sun, so the hands do not turn orange under a white day sun.
+    this.sun.color.copy(sunColor);
     this.visibility = sources.map(() => 1);
     this.visible = sources.map(() => 1);
     for (let index = 0; index < SLOTS; index += 1) {
