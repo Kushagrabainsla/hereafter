@@ -2,12 +2,12 @@
  "family": "buildings",
  "pieces": {
   "window_unit": {
-   "triangles": 196,
-   "budget": 260,
+   "triangles": 488,
+   "budget": 500,
    "size": [
-    1.8,
-    0.2,
-    2.46
+    1.86,
+    0.21,
+    2.473
    ],
    "materials": [
     "bld_frame",
@@ -209,6 +209,6 @@
    "notes": "The market fire escape's walkway, a metre at a time."
   }
  },
- "triangles": 1500,
- "bytes": 91600
+ "triangles": 1792,
+ "bytes": 99764
 }

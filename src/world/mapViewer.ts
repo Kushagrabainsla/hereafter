@@ -14,6 +14,7 @@ import { FixedGridLighting } from "./fixedClusters";
 import { QUALITY, type GraphicsQuality } from "./quality";
 import { puddleNode, rainTime } from "./wetness";
 import { Rain } from "./rain";
+import { LampHaze } from "./lampHaze";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
 import { AuthoredViewModel } from "../game/authoredViewModel";
@@ -412,6 +413,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
   // Rain round the player (rain.ts), in the clouds' scene too; how many drops depends on the preset.
   const rain = new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth"));
+  // The outdoor lamps' glow and beams in the damp air (lampHaze.ts), in the clouds' scene too.
+  const lampHaze = new LampHaze(cloudScene, built.lightSources, built.lightCones, worldPass.getTextureNode("depth"));
   const clouds = pass(cloudScene, camera).getTextureNode("output");
   const smoked = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
   // The haze, the light shafts and the sun (atmosphere.ts). Each pixel's distance and direction
@@ -684,6 +687,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     built.update(time / 1000);
     rainTime.value = time / 1000;
     rain.follow(camera.position);
+    lampHaze.update();
     reflectFrom.inverseProjection.value.copy(camera.projectionMatrixInverse);
     reflectFrom.world.value.copy(camera.matrixWorld);
     eyeHeight.value = camera.position.y;

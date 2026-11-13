@@ -24,6 +24,7 @@ import { SHOP_BACK, SHOP_CEILING, SHOP_FOOD, SHOP_FRONT, SHOP_LAMPS, SHOP_ROOMS,
 import { dressFacades, wallMatrix } from "./facades";
 import { PIPE_ENTITIES, placeSteamPipes, POWDER, SteamPipes } from "./steamPipes";
 import { Stalls, type Goods } from "./stalls";
+import type { LampCone } from "./lampHaze";
 
 // The SoFA night market: a 60 m square back-alley block at dusk with three lanes. The market
 // alley (x -8.5..0.5) is lined with wooden stalls; the service alley (x 8.5..17) runs behind
@@ -509,6 +510,8 @@ export interface BuiltMap {
   // Every lamp, bulb string, lantern and sign as [x, y, z, colour, intensity, distance],
   // whichever renderer draws them, so the first-person view can be lit like the spot it is in.
   lightSources: [number, number, number, number, number, number][];
+  // The shaded lamps' beams, by light source, for their glow in the air (lampHaze.ts).
+  lightCones: Map<number, LampCone>;
   // Lanterns sway, a neon sign flickers and steam rises.
   update: (seconds: number) => void;
   dispose: () => void;
@@ -589,6 +592,12 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   light([-3.6, 1.9, -24.0, 0xffdca8, 4, 5]);
   light([-4.6, 2.7, -26.0, 0xfff1dc, 1.6, 2.4]);
   const lamps = new Lamps(many);
+  // The stalls' cage lamps light down and out from under their awnings, softly (a strong glow
+  // fills the stall like fog); the barn lamps' shades send a bright, narrower beam down the wall.
+  const lightCones = new Map<number, LampCone>([
+    ...stallLights.map((index) => [index, { aim: [0, -1, 0], cos: -0.25, gain: 1.5 }] as [number, LampCone]),
+    ...sconces.map((sconce) => [sconce.light, { aim: [0, -1, 0], cos: 0.3, gain: 6 }] as [number, LampCone]),
+  ]);
   const darkGlass = std({ color: 0x2a2622, roughness: 0.25, metalness: 0.1 });
   // Kit pieces placed around the market: wall dressing, lamps and their fittings.
   const placer = new KitPlacer(kit);
@@ -1109,7 +1118,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
 
   let last = 0;
   return {
-    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES, ...BREACH_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, doors, pipes, stalls: stallViews, wrecks,
+    refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES, ...BREACH_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, lightCones, doors, pipes, stalls: stallViews, wrecks,
     light(manyLights) {
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity * LAMP_LEVEL, 16] as [number, number, number, number, number, number]);
       const points = list.map(([x, y, z, color, intensity, distance]) => {

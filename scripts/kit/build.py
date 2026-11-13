@@ -207,13 +207,17 @@ def frame_steel():
         box("head", -w / 2 - 0.07, w / 2 + 0.07, -0.05, 0.3, h, h + 0.07, "dark_steel", bev=0.004),
         box("sill", -w / 2 - 0.05, w / 2 + 0.05, -0.12, 0.0, 0, 0.025, "steel", bev=0.004),
     ]
-    # A sheet-steel canopy on two tie rods.
+    # A canopy of corrugated galvanized sheet on two tie rods, sloping out to shed the rain: its
+    # ribs catch the light in lines, where a flat painted slab read as white plastic.
     z = h + 0.42
-    parts.append(prism("canopy", [(-0.75, z), (0.75, z), (0.75, z + 0.05), (-0.75, z + 0.05)], -0.62, 0.0, "paint_door", bev=0.004))
+    rib, depth, thick = 0.075, 0.022, 0.006
+    top = [(-0.75 + k * rib / 2, z + (depth if k % 2 else 0.0)) for k in range(int(1.5 / (rib / 2)) + 1)]
+    profile = top + [(x, zz - thick) for x, zz in reversed(top)]
+    parts.append(prism("canopy", profile, -0.62, 0.0, "galvanized"))
     canopy = parts[-1]
     for v in canopy.data.vertices:
         v.co.z += (v.co.y) * 0.25
-    parts.append(box("lip", -0.76, 0.76, -0.64, -0.6, z - 0.2, z - 0.105, "paint_door"))
+    parts.append(box("lip", -0.76, 0.76, -0.64, -0.6, z - 0.2, z - 0.135, "dark_steel", bev=0.004))
     for x in (-0.68, 0.68):
         parts.append(tube("rod", [(x, -0.01, z + 0.55), (x, -0.6, z - 0.1)], 0.008, "dark_steel", verts=8))
         parts.append(box("plate", x - 0.04, x + 0.04, -0.012, 0, z + 0.5, z + 0.6, "dark_steel"))

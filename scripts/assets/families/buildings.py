@@ -64,33 +64,56 @@ def moulding(name, profile, mat, length=1.0):
 # windows
 
 
+# The window's architrave in section, from its outer edge (0) in toward the opening, as
+# (inward, out) pairs: a bead at the wall, a step, a broad face sloping up to a raised inner lip,
+# and the return into the opening. Each change of slope catches the light differently, so the
+# frame reads as moulded from the street where flat boards read as cut card.
+ARCHITRAVE = [(0.0, 0.0), (0.0, -0.05), (0.008, -0.064), (0.022, -0.07), (0.03, -0.072), (0.034, -0.094),
+              (0.05, -0.104), (0.096, -0.118), (0.104, -0.136), (0.114, -0.14), (0.12, -0.134), (0.12, -0.085)]
+
+
+def frame_sweep(name, width, height, profile, mat):
+    """A moulding swept round a rectangle centred on the origin in the XZ plane, mitred at the
+    corners: `profile` gives (inward, out) points from the outer edge."""
+    bm = bmesh.new()
+    corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+    rows = [[bm.verts.new((sx * (width / 2 - d), out, sz * (height / 2 - d))) for sx, sz in corners] for d, out in profile]
+    for a, b in zip(rows, rows[1:]):
+        for k in range(4):
+            j = (k + 1) % 4
+            bm.faces.new((a[k], a[j], b[j], b[k]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    # The sweep is open at the back and inside; its faces must look out and down the opening.
+    for face in bm.faces:
+        if face.normal.y > 0.5:
+            face.normal_flip()
+    return mesh_object(name, bm, mat)
+
+
 def window_unit():
-    """A sash window set in the wall: a deep painted frame with an inner casing, a dark reveal
-    behind the glass, sash bars crossing in front of it, a stone sill on corbels and a lintel
-    with a keystone over it. The glass is the card_window card, set 6 cm out, so it sits 8 cm
-    back inside the frame and the frame's inner faces read as the window's depth."""
+    """A sash window set in the wall: a moulded architrave round a deep opening, an inner casing,
+    a dark reveal behind the glass, sash bars crossing in front of it, a chamfered stone sill on
+    corbels and a lintel with a keystone over it. The glass is the card_window card, set 6 cm out,
+    so it sits 8 cm back inside the frame and the frame's inner faces read as the window's depth."""
     W, H, w, h = 1.62, 2.0, 1.38, 1.76
-    D = 0.14
-    parts = []
-    # The frame: four boards round the opening, standing D out from the wall, and a narrower
-    # casing inside them, set back near the glass.
-    for i, (x0, x1, z0, z1) in enumerate(((-W / 2, W / 2, h / 2, H / 2), (-W / 2, W / 2, -H / 2, -h / 2), (-W / 2, -w / 2, -h / 2, h / 2), (w / 2, W / 2, -h / 2, h / 2))):
-        parts.append(box(f"frame{i}", x0, x1, -D, 0.0, z0, z1, "bld_frame"))
+    parts = [frame_sweep("architrave", W, H, ARCHITRAVE, "bld_frame")]
     c = 0.035
     for i, (x0, x1, z0, z1) in enumerate(((-w / 2, w / 2, h / 2 - c, h / 2), (-w / 2, w / 2, -h / 2, -h / 2 + c), (-w / 2, -w / 2 + c, -h / 2 + c, h / 2 - c), (w / 2 - c, w / 2, -h / 2 + c, h / 2 - c))):
         parts.append(box(f"casing{i}", x0, x1, -0.085, -0.055, z0, z1, "bld_frame"))
     parts.append(box("reveal", -w / 2, w / 2, -0.032, -0.03, -h / 2, h / 2, "bld_recess"))
-    # Sash bars in front of the glass: a muntin up the middle and the meeting rail.
-    parts.append(box("muntin", -0.025, 0.025, -0.105, -0.065, -h / 2 + c, h / 2 - c, "bld_sash"))
-    parts.append(box("rail", -w / 2 + c, w / 2 - c, -0.105, -0.065, 0.275, 0.325, "bld_sash"))
+    # Sash bars in front of the glass: a muntin up the middle and the meeting rail, their edges
+    # eased so they catch a thin line of light.
+    parts.append(box("muntin", -0.025, 0.025, -0.105, -0.065, -h / 2 + c, h / 2 - c, "bld_sash", bev=0.006, segments=1))
+    parts.append(box("rail", -w / 2 + c, w / 2 - c, -0.105, -0.065, 0.275, 0.325, "bld_sash", bev=0.006, segments=1))
     parts.append(box("sash_bottom", -w / 2 + c, w / 2 - c, -0.09, -0.065, -h / 2 + c, -h / 2 + c + 0.04, "bld_sash"))
-    # Stone sill sloping out to shed rain, on two small corbels.
-    parts.append(hull("sill", [(x, y, z) for x in (-0.9, 0.9) for y, z in ((0.0, -1.095), (0.0, -1.005), (-0.2, -1.095), (-0.2, -1.03))], "bld_stone"))
+    # Stone sill sloping out to shed rain, its front edges chamfered, on two small corbels.
+    parts.append(hull("sill", [(x, y, z) for x in (-0.9, 0.9) for y, z in ((0.0, -1.095), (0.0, -1.005), (-0.2, -1.095), (-0.2, -1.03))], "bld_stone", bev=0.012, segments=1))
     for i, x in enumerate((-0.72, 0.72)):
-        parts.append(hull(f"corbel{i}", [(x + dx, y, z) for dx in (-0.06, 0.06) for y, z in ((0.0, -1.095), (-0.15, -1.095), (0.0, -1.24))], "bld_stone"))
-    # Lintel and keystone.
-    parts.append(box("lintel", -0.9, 0.9, -0.16, 0.0, 1.0, 1.16, "bld_trim"))
-    parts.append(hull("keystone", [(x, y, z) for y in (0.0, -0.19) for x, z in ((-0.09, 0.98), (0.09, 0.98), (-0.12, 1.22), (0.12, 1.22))], "bld_trim"))
+        parts.append(hull(f"corbel{i}", [(x + dx, y, z) for dx in (-0.06, 0.06) for y, z in ((0.0, -1.095), (-0.15, -1.095), (0.0, -1.24))], "bld_stone", bev=0.008, segments=1))
+    # Lintel, a small cap moulding on it, and the keystone.
+    parts.append(box("lintel", -0.9, 0.9, -0.16, 0.0, 1.0, 1.16, "bld_trim", bev=0.012, segments=1))
+    parts.append(box("cap", -0.93, 0.93, -0.19, 0.0, 1.16, 1.2, "bld_trim", bev=0.01, segments=1))
+    parts.append(hull("keystone", [(x, y, z) for y in (0.0, -0.21) for x, z in ((-0.09, 0.98), (0.09, 0.98), (-0.12, 1.24), (0.12, 1.24))], "bld_trim", bev=0.01, segments=1))
     return join(parts, "window_unit")
 
 
@@ -241,7 +264,7 @@ def grating_deck():
 
 
 PIECES = [
-    Piece("window_unit", window_unit, 260, (1.8, 0.2, 2.465), None, "Every upper-floor window, centred on its glass, set on the wall face."),
+    Piece("window_unit", window_unit, 500, (1.8, 0.2, 2.465), None, "Every upper-floor window, centred on its glass, set on the wall face."),
     Piece("card_window", card_window, 2, (1.38, 0.0, 1.76), "center", "Window glass, drawn by the game as a dark pane or a lit room."),
     Piece("card_unit", card_unit, 2, (1.0, 0.0, 1.0), "center", "Shop glass and storefront photographs, stretched."),
     Piece("cornice", cornice, 60, (1.0, 0.29, 0.45), "wall", "The roofline cornice, stretched along each facade."),
