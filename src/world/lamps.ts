@@ -17,7 +17,7 @@ export type LampPart =
 interface LightShare { index: number; lamps: string[] }
 
 // A lamp is out when it is broken or the circuit feeding it is.
-interface Lamp { parts: LampPart[]; broken: boolean; unpowered: boolean; switchedOff: boolean; flicker: number; circuit: string[] }
+interface Lamp { parts: LampPart[]; broken: boolean; unpowered: boolean; switchedOff: boolean; flicker: number; circuit: string[]; day?: boolean }
 
 const HIDDEN = new Matrix4().makeScale(0, 0, 0);
 const scratch = new Matrix4();
@@ -91,7 +91,7 @@ export class Lamps {
     this.apply();
   }
 
-  private out(lamp: Lamp): boolean { return lamp.broken || lamp.unpowered; }
+  private out(lamp: Lamp): boolean { return lamp.broken || lamp.unpowered || !!lamp.day; }
 
   // A lamp that just went out sputters first; one that came back shows at once.
   private changed(lamp: Lamp, wasOut: boolean): void {
@@ -99,6 +99,19 @@ export class Lamps {
     if (out === wasOut) return;
     lamp.flicker = out ? 0.45 : 0;
     if (!out) this.show(lamp, 1);
+  }
+
+  // By day the lamps that pass `test` (by id: the outdoor ones) are simply off, at once and for
+  // the match.
+  daylight(test: (id: string) => boolean): void {
+    for (const entity of this.entities) {
+      const lamp = this.lamps.get(entity.id);
+      if (!lamp || !test(entity.id)) continue;
+      lamp.day = true;
+      lamp.flicker = 0;
+      this.show(lamp, 0);
+    }
+    this.apply();
   }
 
   broken(id: string): boolean { const lamp = this.lamps.get(id); return !!lamp && this.out(lamp); }
@@ -137,6 +150,13 @@ export class Lamps {
       const lit = key.near.reduce((sum, index) => sum + (this.base[index] ? this.sources[index][4] / this.base[index] : 1), 0) / key.near.length;
       key.point.intensity = key.base * lit;
     }
+  }
+
+  // Whether a lamp is shot out and done sputtering: a lantern then hangs scorched and torn (an
+  // unlit lantern by day is still whole).
+  torn(id: string): boolean {
+    const lamp = this.lamps.get(id);
+    return !!lamp && lamp.broken && lamp.flicker <= 0;
   }
 
   // Whether a lamp is dark now, for instanced glows that redraw every frame (lanterns).

@@ -132,6 +132,8 @@ def main():
     parser.add_argument("--samples", type=int, default=384)
     parser.add_argument("--encode-only", action="store_true", help="re-encode the last raw bakes in assets-src/lightmaps")
     parser.add_argument("--drip-only", action="store_true", help="bake only the drip mask; reuse the last sky and bounce bakes")
+    parser.add_argument("--day", action="store_true", help="bake only the day's bounce light, from the sun alone (--sun), into <name>-day-bounce")
+    parser.add_argument("--sun", default="-80,190,180,ffe9cf,5.4", help="with --day: the sun's direction x,y,z (three.js axes), colour and strength")
     args = parser.parse_args(argv)
     with open(os.path.join(SRC, f"{NAME}-scene.json")) as handle:
         setup = json.load(handle)
@@ -166,6 +168,35 @@ def main():
     scene.render.bake.margin = MARGIN
     scene.render.bake.margin_type = "EXTEND"
     scene.render.bake.use_clear = True
+
+    if args.day:
+        # By day the lamps are off: the bounce comes from the sun alone. Sky occlusion and the drip
+        # mask do not change with the time of day, so the dusk bake's are shared.
+        x, y, z, color, intensity = args.sun.split(",")
+        sun_data = bpy.data.lights.new("sun", "SUN")
+        sun_data.energy = float(intensity)
+        sun_data.color = hex_color(int(color, 16))
+        sun_data.angle = math.radians(1.0)
+        sun = bpy.data.objects.new("sun", sun_data)
+        direction = three_to_blender(float(x), float(y), float(z)).normalized()
+        sun.rotation_euler = direction.to_track_quat("Z", "Y").to_euler()
+        scene.collection.objects.link(sun)
+        world = bpy.data.worlds.new("bake")
+        world.use_nodes = True
+        world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.0
+        scene.world = world
+        scene.cycles.samples = args.samples
+        scene.cycles.max_bounces = 4
+        scene.cycles.diffuse_bounces = 4
+        for node in nodes:
+            node.image = bounce
+        log(f"baking the day's bounce light from the sun at {args.samples} samples")
+        bpy.ops.object.bake(type="DIFFUSE", pass_filter={"INDIRECT"}, margin=MARGIN)
+        path = os.path.join(SRC, f"{NAME}-day-bounce.exr")
+        bounce.file_format = "OPEN_EXR"
+        bounce.save(filepath=path)
+        encode_bounce(bpy.data.images.load(path), "day-bounce", "dayBounceScale")
+        return
 
     if args.drip_only:
         drip = bake_drip(scene, nodes, size)
@@ -296,26 +327,37 @@ def encode(sky, bounce, drip=None):
         streaks = smooth(image_pixels(drip)[..., :1], rects, 1, passes=1).repeat(3, axis=2)
         save(f"{NAME}-drip", streaks)
     sky_pixels = smooth(image_pixels(sky)[..., :3].mean(axis=2, keepdims=True), rects, 1).repeat(3, axis=2)
-    light = smooth(image_pixels(bounce)[..., :3], rects, 3)
-    # Scale so the brightest texels (ignoring the top half-percent of hot spots) use the
-    # full range, then encode as sRGB so dim bounce keeps its precision.
     # Unseen faces all point at the last texel of the atlas, which no chart uses: full sky, no
     # bounce. It is the bottom-right corner of the image, the first rows in Blender's order.
     sky_pixels[:4, -4:] = 1.0
+    os.makedirs(OUT, exist_ok=True)
+    save(f"{NAME}-sky", sky_pixels)
+    encode_bounce(bounce, "bounce", "bounceScale")
+    log("sky mean", float(sky_pixels.mean()))
+
+
+def encode_bounce(bounce, stem, key):
+    """Smooth, scale and sRGB-encode a bounce bake into <name>-<stem>.webp, and store its scale
+    in the atlas data under `key`."""
+    with open(os.path.join(SRC, f"{NAME}-scene.json")) as handle:
+        layout = json.load(handle)
+    rects = [(x, layout["size"] - y - h, w, h) for x, y, w, h in layout["rects"]]
+    light = smooth(image_pixels(bounce)[..., :3], rects, 3)
     light[:4, -4:] = 0.0
+    # Scale so the brightest texels (ignoring the top half-percent of hot spots) use the
+    # full range, then encode as sRGB so dim bounce keeps its precision.
     peak = float(np.percentile(light.max(axis=2), 99.5)) or 1.0
     scaled = np.clip(light / peak, 0, 1)
     encoded = np.where(scaled <= 0.0031308, scaled * 12.92, 1.055 * np.power(scaled, 1 / 2.4) - 0.055)
     os.makedirs(OUT, exist_ok=True)
-    save(f"{NAME}-sky", sky_pixels)
-    save(f"{NAME}-bounce", encoded)
+    save(f"{NAME}-{stem}", encoded)
     path = os.path.join(OUT, f"{NAME}.json")
     with open(path) as handle:
         data = json.load(handle)
-    data["bounceScale"] = round(peak, 6)
+    data[key] = round(peak, 6)
     with open(path, "w") as handle:
         json.dump(data, handle, separators=(",", ":"))
-    log("bounce peak", peak, "sky mean", float(sky_pixels.mean()))
+    log(stem, "peak", peak)
 
 
 if __name__ == "__main__":

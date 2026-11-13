@@ -2,7 +2,7 @@ import type { Node, Texture } from "three/webgpu";
 import { abs, attribute, bumpMap, clamp, float, fwidth, min, mix, normalLocal, normalWorld, positionLocal, positionWorld, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
 import { noiseVolume } from "./noiseVolume";
 import { WEAR, WEAR_TILE } from "./wearTextures";
-import { outdoorNode } from "./wetness";
+import { outdoorNode, WEATHER } from "./wetness";
 
 // Layered surfaces for the modelled pieces, worked out per pixel instead of painted as images,
 // the way real materials are built up: a base colour that varies across the surface, paint worn
@@ -162,7 +162,7 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   const splash = smoothstep(0.45, 0.0, P.y).mul(float(1).sub(up));
   const runs = smoothstep(0.3, 0.7, wear.r).mul(float(1).sub(up));
   const wet = clamp(up.mul(0.6).add(runs.mul(0.75)).add(splash.mul(0.6)), 0, 1)
-    .mul(smoothstep(-0.45, 0.15, coarse.add(medium.mul(0.4)))).mul(smoothstep(0.97, 1, outdoorNode(positionWorld)));
+    .mul(smoothstep(-0.45, 0.15, coarse.add(medium.mul(0.4)))).mul(smoothstep(0.97, 1, outdoorNode(positionWorld))).mul(WEATHER.wet);
   color = color.mul(float(1).sub(wet.mul(soak)));
   const smudge = signed(near.g).mul(rough.mul(0.35));
 

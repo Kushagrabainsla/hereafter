@@ -1,5 +1,6 @@
 import { MAPS } from "./maps";
 import { QUALITY_CHOICES, QUALITY_LEVELS, type QualityChoice, type QualityLevel } from "./world/quality";
+import { TIMES_OF_DAY, type TimeOfDay } from "./world/timeOfDay";
 
 // The player's choices for a match, chosen on the setup screen and kept in this browser; the
 // match dialog changes them during play. Storage can be unavailable, as in some private
@@ -31,6 +32,9 @@ export interface Settings {
   memes: boolean;
   // A graphics preset, or Auto (see src/world/quality.ts).
   graphics: QualityChoice;
+  // The light the market is seen in: the end of a wet afternoon with its lamps lit, or a dry day
+  // lit by the sun alone (src/world/timeOfDay.ts). It changes only how this player sees the market.
+  time: TimeOfDay;
 }
 
 export const NAME_LENGTH = 16;
@@ -51,7 +55,7 @@ export function cleanName(name: string): string {
   return Array.from(name.normalize("NFC").replace(/[\p{C}]/gu, "").replace(/\s+/g, " ").trim()).slice(0, NAME_LENGTH).join("").trim();
 }
 
-const KEYS = { name: "hereafter.name", language: "hereafter.language", lines: "hereafter.lines", oldVoice: "hereafter.voice", adult: "hereafter.adult", memes: "hereafter.memes", mode: "hereafter.mode", map: "hereafter.map", graphics: "hereafter.graphics", measured: "hereafter.graphicsMeasured" };
+const KEYS = { name: "hereafter.name", language: "hereafter.language", lines: "hereafter.lines", oldVoice: "hereafter.voice", adult: "hereafter.adult", memes: "hereafter.memes", mode: "hereafter.mode", map: "hereafter.map", graphics: "hereafter.graphics", time: "hereafter.time", measured: "hereafter.graphicsMeasured" };
 const read = (key: string): string | null => { try { return window.localStorage.getItem(key); } catch { return null; } };
 const write = (key: string, value: string): void => { try { window.localStorage.setItem(key, value); } catch { /* unavailable */ } };
 
@@ -82,6 +86,7 @@ export function loadSettings(): Settings {
     adult: read(KEYS.adult) === "1",
     memes: read(KEYS.memes) !== "0",
     graphics: QUALITY_CHOICES.find((choice) => choice === read(KEYS.graphics)) ?? "auto",
+    time: TIMES_OF_DAY.find((time) => time === read(KEYS.time)) ?? "dusk",
   };
 }
 
@@ -105,4 +110,5 @@ export function saveSettings(settings: Settings): void {
   write(KEYS.mode, settings.mode);
   write(KEYS.map, settings.map);
   write(KEYS.graphics, settings.graphics);
+  write(KEYS.time, settings.time);
 }

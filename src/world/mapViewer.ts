@@ -12,7 +12,8 @@ import { film } from "three/addons/tsl/display/FilmNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { FixedGridLighting } from "./fixedClusters";
 import { QUALITY, type GraphicsQuality } from "./quality";
-import { puddleNode, rainTime } from "./wetness";
+import { puddleNode, rainTime, setWet } from "./wetness";
+import { LOOKS, type TimeOfDay } from "./timeOfDay";
 import { Rain } from "./rain";
 import { LampHaze } from "./lampHaze";
 import { drawWearTextures } from "./wearTextures";
@@ -188,7 +189,14 @@ const SHADOW_EVERY = 4;
 
 export type BuildStep = "textures" | "buildings" | "props" | "renderer" | "physics" | "shaders";
 
-export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents, quality: GraphicsQuality = QUALITY.high): Promise<MapViewer> {
+export async function createMapViewer(container: HTMLElement, arena: Arena, events: MapViewerEvents, quality: GraphicsQuality = QUALITY.high, time: TimeOfDay = "dusk"): Promise<MapViewer> {
+  // The time of day (timeOfDay.ts) sets the sun, the sky light, the haze, the weather and the lamps.
+  const look = LOOKS[time];
+  Object.assign(MARKET_SUN, look.sun);
+  Object.assign(MARKET_FILL, look.fill);
+  setWet(look.wet);
+  // Without water to mirror, the reflection pass and its normal buffer are left out by day.
+  if (!look.wet) quality = { ...quality, reflections: false };
   // Each step is reported as it starts, with the files that finish during it (Three.js loaders
   // report them to the default manager), so the loading screen can show how far it is.
   let current: BuildStep = "textures";
@@ -201,7 +209,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const data = nightMarketData();
   events.onStatus("loading", `Loading the ${data.layout.name} and its materials…`);
   events.onStep?.("textures");
-  const [textures, lightmap] = await Promise.all([loadSurfaceTextures(), loadLightmap("night-market")]);
+  const [textures, lightmap] = await Promise.all([loadSurfaceTextures(), loadLightmap("night-market", time === "day")]);
   await step("buildings");
   const scene = new Scene();
   // The end of a wet afternoon: a low sun at the north end of the main alley shines down it
@@ -209,11 +217,18 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // grey sky and the market's lamps. The painted sky is also what surfaces reflect. The haze
   // itself is laid over the finished picture (atmosphere.ts), not drawn as fog.
   const sunOffset = new Vector3(...MARKET_SUN.offset);
-  const sky = duskSky(sunOffset.clone().normalize());
+  const sky = duskSky(sunOffset.clone().normalize(), look.time);
   scene.background = sky;
   scene.environment = sky;
-  scene.environmentIntensity = 0.55;
+  scene.environmentIntensity = look.environment;
   ATMOSPHERE.toSun.value.copy(sunOffset).normalize();
+  ATMOSPHERE.density.value = look.haze.density;
+  ATMOSPHERE.haze.value.set(...look.haze.color);
+  ATMOSPHERE.glow.value = look.haze.glow;
+  ATMOSPHERE.tight.value = look.haze.tight;
+  ATMOSPHERE.skyHaze.value = look.haze.skyHaze;
+  GRADE.shadows.value.set(...look.grade.shadows);
+  GRADE.lights.value.set(...look.grade.lights);
   const fill = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
   scene.add(fill);
   const sun = new DirectionalLight(MARKET_SUN.color, MARKET_SUN.intensity);
@@ -240,7 +255,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const [propModels, truckModel, kitModels] = await Promise.all([loadPropModels(), loadFoodTruck(), loadKits()]);
   const propViews = new PropViews(scene);
   const pieces = kitPieces(kitModels);
-  const built = buildNightMarket(scene, textures, propModels, pieces);
+  const built = buildNightMarket(scene, textures, propModels, pieces, !look.lamps);
   // Baked sky occlusion and bounce light on the static surfaces, when the bake matches.
   if (lightmap) applyLightmap(built.surfaces, lightmap);
   const refs = built.refs;
@@ -312,7 +327,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // A fixed 40 × 24 grid of tiles and 16 depth slices (fixedClusters.ts), so resizing never
   // rebuilds shaders; ninety lights fit 48 to a cluster.
   if (clustered) renderer.lighting = new FixedGridLighting(1024, 64, 16, 48);
-  built.light(clustered);
+  built.light(clustered, look.lamps);
   if (renderer.domElement.parentElement !== container) container.appendChild(renderer.domElement);
   await step("physics");
   const physics = new PhysicsWorld(data, arena);
@@ -435,9 +450,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
   // Rain round the player (rain.ts), in the clouds' scene too; how many drops depends on the preset.
-  const rain = new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth"));
+  const rain = look.wet ? new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth")) : null;
   // The outdoor lamps' glow and beams in the damp air (lampHaze.ts), in the clouds' scene too.
-  const lampHaze = new LampHaze(cloudScene, built.lightSources, built.lightCones, worldPass.getTextureNode("depth"));
+  const lampHaze = look.lamps ? new LampHaze(cloudScene, built.lightSources, built.lightCones, worldPass.getTextureNode("depth")) : null;
   const clouds = pass(cloudScene, camera).getTextureNode("output");
   const smoked = shaded.mul(float(1).sub(clouds.a)).add(clouds.rgb);
   // The haze, the light shafts and the sun (atmosphere.ts). Each pixel's distance and direction
@@ -709,8 +724,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
     built.update(time / 1000);
     rainTime.value = time / 1000;
-    rain.follow(camera.position);
-    lampHaze.update();
+    rain?.follow(camera.position);
+    lampHaze?.update();
     reflectFrom.inverseProjection.value.copy(camera.projectionMatrixInverse);
     reflectFrom.world.value.copy(camera.matrixWorld);
     eyeHeight.value = camera.position.y;

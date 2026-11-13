@@ -964,6 +964,7 @@ export async function launch(chosen: Settings, loading: Loading): Promise<void> 
   voiceLinesInput.checked = lines;
   adultVoiceInput.checked = chosen.adult;
   memeSoundsInput.checked = chosen.memes;
+  gameAudio.setRaining(chosen.time === "dusk");
   element("map").setAttribute("aria-label", `First-person view of the ${mapById(chosen.map).name}`);
   if (chosen.mode === "room") enterRoom(chosen.room === "join" ? chosen.code : newRoomCode());
   // Three.js loaders read the files downloaded during setup.
@@ -1039,7 +1040,7 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
       watchQuality(metrics.fps);
       performanceLabel.title = `${metrics.drawCalls} draw calls · ${metrics.triangles.toLocaleString()} triangles · ${metrics.pixelRatio.toFixed(2)}× resolution`;
     },
-  }, QUALITY[qualityLevel]).then((created) => {
+  }, QUALITY[qualityLevel], settings?.time ?? "dusk").then((created) => {
     viewer = created;
     syncPause();
     match = new MatchState(created.arenaData(), onMatchChange, created.combatWorld());

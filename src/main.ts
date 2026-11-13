@@ -81,6 +81,7 @@ function render(): void {
   checkbox("adult").checked = settings.adult;
   checkbox("memes").checked = settings.memes;
   for (const input of radios("graphics")) input.checked = input.value === settings.graphics;
+  for (const input of radios("time")) input.checked = input.value === settings.time;
   // Auto names the preset it will use on this screen.
   const pixels = drawnPixels(window.innerWidth, window.innerHeight, window.devicePixelRatio);
   element("setup-graphics-note").textContent = settings.graphics === "auto" ? `Auto: ${QUALITY_LABEL[pickQuality("auto", measuredQuality(pixels), pixels)]}` : "";
@@ -102,6 +103,7 @@ form.addEventListener("change", (event) => {
   else if (input.name === "adult") settings.adult = input.checked;
   else if (input.name === "memes") settings.memes = input.checked;
   else if (input.name === "graphics") settings.graphics = QUALITY_CHOICES.find((choice) => choice === input.value) ?? "auto";
+  else if (input.name === "time") settings.time = input.value === "day" ? "day" : "dusk";
   errorLine.textContent = "";
   saveSettings(settings);
   render();

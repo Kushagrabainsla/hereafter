@@ -5,7 +5,8 @@ import {
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
 import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
-import { puddleNode, rippleHeight, setIndoors } from "./wetness";
+import { outdoorAt, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
+import { LOOKS } from "./timeOfDay";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
 import { type Material } from "./materials";
@@ -344,17 +345,18 @@ export const NIGHT_MARKET: MapLayout = {
   ],
 };
 
-// The late-afternoon sun, low in the north-northwest, so it shines down the main alley and rakes
-// across the cross alleys: where it lies from the market (any length), its colour and strength.
-// The baked bounce light uses it too (the current bake was made at 3.2). At 4.4 it is the one
-// strong key light over the many lamps, which won a blind test against 3.2.
-export const MARKET_SUN = { offset: [-90, 110, 200] as [number, number, number], color: 0xffc690, intensity: 4.4 };
+// The sun: where it lies from the market (any length), its colour and strength. At dusk it is low in
+// the north-northwest, so it shines down the main alley and rakes across the cross alleys; at 4.4
+// it is the one strong key light over the many lamps, which won a blind test against 3.2. The
+// viewer sets it (and MARKET_FILL) to the chosen time of day before building (timeOfDay.ts); the
+// light bake reads it too.
+export const MARKET_SUN = { ...LOOKS.dusk.sun };
 // The lamps burn at this share of their night strength: by day the sun and sky outshine them.
 export const LAMP_LEVEL = 0.5;
 // The even light from the grey sky above and the dark paving below. It fills what neither the sun
 // nor a lamp reaches; the arms and weapon get the same, so they match the world around them. It
 // is cool and kept low, so the shade stays blue and deep against the warm sunlight.
-export const MARKET_FILL = { sky: 0x9aa8c8, ground: 0x2c2a2c, intensity: 0.38 };
+export const MARKET_FILL = { ...LOOKS.dusk.fill };
 
 // The playable square: 60 m across, centred on the origin.
 export const MARKET_ARENA: Arena = { sizeMeters: 60 };
@@ -531,8 +533,9 @@ export interface BuiltMap {
   // Every breakable lamp and sign, and the lights they feed.
   lamps: Lamps;
   // Adds the market's lights: every lamp, bulb string, sign and lit shop when the renderer
-  // can afford many lights, otherwise six key lights and painted pools of light.
-  light: (many: boolean) => void;
+  // can afford many lights, otherwise six key lights and painted pools of light. By day
+  // (lampsOn false) the outdoor lamps and signs are off and get no light; lit rooms keep theirs.
+  light: (many: boolean, lampsOn?: boolean) => void;
   // Every lamp, bulb string, lantern and sign as [x, y, z, colour, intensity, distance],
   // whichever renderer draws them, so the first-person view can be lit like the spot it is in.
   lightSources: [number, number, number, number, number, number][];
@@ -545,7 +548,8 @@ export interface BuiltMap {
 
 type NodeOptions = ConstructorParameters<typeof MeshStandardNodeMaterial>[0];
 
-export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[], kit = new Map<string, KitPiece>()): BuiltMap {
+// By `day` the windows of the upper floors show no lit rooms, only dark glass.
+export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[], kit = new Map<string, KitPiece>(), day = false): BuiltMap {
   const owned: CanvasTexture[] = [];
   const own = <T extends CanvasTexture>(texture: T): T => { owned.push(texture); return texture; };
   const std = (options: ConstructorParameters<typeof MeshStandardMaterial>[0]): MeshStandardMaterial => new MeshStandardMaterial(options);
@@ -556,7 +560,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const footing = smoothstep(0.05, 2.9, P.y.add(mx_noise_float(P.mul(0.75)).mul(0.5)));
   const grime = mix(float(0.46), float(1), footing).mul(mix(float(0.72), float(1.08), patches));
   const wall = (options: NodeOptions): MeshStandardNodeMaterial => { const material = new MeshStandardNodeMaterial(options); material.colorNode = materialColor.mul(grime); return material; };
-  // In the rain the whole street is wet: darker and glossy, its texture's relief softened so the
+  // In the rain (dusk) the whole street is wet: darker and glossy, its texture's relief softened so the
   // lamps do not glitter in it. Where water stands (wetness.ts) it is smooth, flat but for the
   // rings the rain makes, and only a little darker: a puddle at night shows mostly what it
   // mirrors, and painted too dark it reads as a hole. Not perfectly smooth, so each lamp draws
@@ -565,8 +569,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const street = (options: NodeOptions): MeshStandardNodeMaterial => {
     const material = new MeshStandardNodeMaterial(options);
     material.normalScale.set(0.5, 0.5);
-    material.colorNode = materialColor.mul(mix(float(0.78), float(0.72), wet));
-    material.roughnessNode = mix(materialRoughness.mul(0.58), float(0.14), wet);
+    // Dry by day (WEATHER.wet 0): the street keeps its own colour and roughness.
+    material.colorNode = materialColor.mul(mix(mix(float(1), float(0.78), WEATHER.wet), float(0.72), wet));
+    material.roughnessNode = mix(materialRoughness.mul(mix(float(1), float(0.58), WEATHER.wet)), float(0.14), wet);
     material.normalNode = mix(materialNormal, bumpMap(rippleHeight(P)) as unknown as typeof materialNormal, wet);
     return material;
   };
@@ -757,7 +762,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     const r = seeded(index * 131 + 7);
     for (let a = facade.from + 1.7; a <= facade.to - 1.6; a += 3.4) for (let y = facade.y0; y <= facade.y1; y += 3.3) {
       const [nx, nz] = FACE_NORMAL[facade.face];
-      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit ? 1 + Math.floor(r() * 8) : 0 });
+      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit && !day ? 1 + Math.floor(r() * 8) : 0 });
     }
   });
   upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: 1 + index }));
@@ -1053,7 +1058,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     const lit = instancedParts(kit.get("lantern"), spots.length, (material) => glowing(material) ? paper : material);
     const dark = instancedParts(kit.get("lantern_torn"), spots.length);
     root.add(...lit, ...dark);
-    return { lit, dark, spots };
+    return { lit, dark, spots, paper, hue: color ? 0xc8402c : 0xd88a3c };
   });
   // Lanterns sway; a broken one hangs scorched and torn.
   const ONE = new Vector3(1, 1, 1);
@@ -1065,7 +1070,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
         const angle = Math.sin(seconds * 1.15 + spot.phase) * 0.07;
         q.setFromAxisAngle(new Vector3(1, 0, 0), angle);
         matrix.compose(new Vector3(spot.at.x, spot.at.y - Math.abs(angle) * 0.05, spot.at.z + angle * 0.35), q, ONE);
-        if (lamps.dark(spot.id)) { for (const mesh of dark) mesh.setMatrixAt(torn, matrix); torn += 1; }
+        if (lamps.torn(spot.id)) { for (const mesh of dark) mesh.setMatrixAt(torn, matrix); torn += 1; }
         else { for (const mesh of lit) mesh.setMatrixAt(whole, matrix); whole += 1; }
       }
       for (const mesh of lit) { mesh.count = whole; mesh.instanceMatrix.needsUpdate = true; }
@@ -1143,17 +1148,28 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   let last = 0;
   return {
     refs, groups, entities: [...entities, ...lamps.entities, ...DOOR_ENTITIES, ...PIPE_ENTITIES, ...BREACH_ENTITIES], props, ladders, surfaces, lamps, lightSources: many, lightCones, doors, pipes, stalls: stallViews, wrecks,
-    light(manyLights) {
+    light(manyLights, lampsOn = true) {
+      const lit = ([x, , z]: [number, number, number, number, number, number]): boolean => lampsOn || !outdoorAt(x, z);
+      if (!lampsOn) {
+        // Off: every lamp and sign but those inside rooms (pendants, the pass, the record shop,
+        // the pool table and the shops' lamps). A sign's place can fall inside a room's floor plan,
+        // so lamps are told apart by name, not by place.
+        lamps.daylight((id) => !/^lamp:(pendant|pass|records|pool-table|boba|dumplings|pho)-?/.test(id));
+        // Unlit by day, a paper lantern is coloured paper with only the sky glowing through it.
+        for (const { paper, hue } of lanternMeshes) { (paper as MeshStandardMaterial).color.setHex(hue); (paper as MeshStandardMaterial).emissiveIntensity = 0.12; }
+      }
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity * LAMP_LEVEL, 16] as [number, number, number, number, number, number]);
-      const points = list.map(([x, y, z, color, intensity, distance]) => {
+      const points = list.map((source) => {
+        if (!lit(source)) return null;
+        const [x, y, z, color, intensity, distance] = source;
         const point = new PointLight(color, intensity, distance, 2);
         point.position.set(x, y, z);
         root.add(point);
         return point;
       });
       lamps.setLights(manyLights ? points : many.map(() => null));
-      if (!manyLights) lamps.setKeyLights(points);
-      poolMesh.visible = !manyLights;
+      if (!manyLights) lamps.setKeyLights(points.filter((point): point is PointLight => !!point));
+      poolMesh.visible = !manyLights && lampsOn;
     },
     update(seconds) {
       const dt = last ? Math.min(0.1, seconds - last) : 0;

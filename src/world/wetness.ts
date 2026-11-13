@@ -41,6 +41,11 @@ export function setIndoors(rects: [number, number, number, number][]): void {
 // Seconds since the rain started, for the ripples; the viewer advances it every frame.
 export const rainTime = uniform(0);
 
+// Whether it is raining (dusk) or dry (day): puddles, ripples and wet surfaces follow it. `now` is
+// the same for the CPU (footsteps). Set once, before the world is built (timeOfDay.ts).
+export const WEATHER = { wet: uniform(1), now: true };
+export function setWet(wet: boolean): void { WEATHER.wet.value = wet ? 1 : 0; WEATHER.now = wet; }
+
 // 1 outdoors, 0 over an indoor floor, at a world position.
 export function outdoorNode(position: Node<"vec3">): Node<"float"> {
   return texture(outdoors, vec2(position.x.sub(MAP.x0).div(MAP.x1 - MAP.x0), position.z.sub(MAP.z0).div(MAP.z1 - MAP.z0))).r;
@@ -51,7 +56,7 @@ export function outdoorNode(position: Node<"vec3">): Node<"float"> {
 export function puddleNode(position: Node<"vec3">): Node<"float"> {
   const broad = texture3D(noiseVolume(), vec3(position.x.div(PUDDLE_SCALE), float(SLICE), position.z.div(PUDDLE_SCALE))).b;
   const fine = texture3D(noiseVolume(), vec3(position.x.div(FINE_SCALE), float(FINE_SLICE), position.z.div(FINE_SCALE))).b;
-  return smoothstep(PUDDLE_FROM, PUDDLE_TO, broad.mul(1 - FINE_SHARE).add(fine.mul(FINE_SHARE))).mul(outdoorNode(position));
+  return smoothstep(PUDDLE_FROM, PUDDLE_TO, broad.mul(1 - FINE_SHARE).add(fine.mul(FINE_SHARE))).mul(outdoorNode(position)).mul(WEATHER.wet);
 }
 
 // Rain rings on standing water, as relief for bump mapping: the ground is split into 32 cm cells,
@@ -64,7 +69,7 @@ export function rippleHeight(position: Node<"vec3">): Node<"float"> {
   const phase = fract(rainTime.mul(1.15).add(seed));
   const centre = vec2(fract(seed.mul(7.31)), fract(seed.mul(3.17))).sub(0.5).mul(0.3);
   const d = length(fract(p).sub(0.5).sub(centre)).sub(phase.mul(0.42));
-  return sin(d.mul(60)).mul(exp(d.mul(d).mul(-180))).mul(float(1).sub(phase)).mul(0.0005);
+  return sin(d.mul(60)).mul(exp(d.mul(d).mul(-180))).mul(float(1).sub(phase)).mul(0.0005).mul(WEATHER.wet);
 }
 
 // Whether a point is outdoors, on the CPU: for the rain's sound under a roof.
@@ -86,6 +91,7 @@ function noiseAt(x: number, z: number, scale: number, slice: number): number {
 }
 
 export function puddleAt(x: number, z: number): number {
+  if (!WEATHER.now) return 0;
   const n = noiseAt(x, z, PUDDLE_SCALE, SLICE) * (1 - FINE_SHARE) + noiseAt(x, z, FINE_SCALE, FINE_SLICE) * FINE_SHARE;
   const u = Math.floor((x - MAP.x0) / (MAP.x1 - MAP.x0) * MASK), v = Math.floor((z - MAP.z0) / (MAP.z1 - MAP.z0) * MASK);
   const out = u >= 0 && v >= 0 && u < MASK && v < MASK ? outdoorData[v * MASK + u] / 255 : 1;

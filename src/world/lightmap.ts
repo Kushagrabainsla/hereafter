@@ -13,7 +13,7 @@ import { outdoorNode } from "./wetness";
 // The third, the drip mask, marks where rain runs off sills, ledges and fittings down the
 // wall below them, so the stains follow the facade's own shapes.
 export interface LightmapLook { look: string; vertices: number; checksum: number; uv: string }
-export interface LightmapData { version: 1; size: number; bounceScale: number; looks: LightmapLook[] }
+export interface LightmapData { version: 1; size: number; bounceScale: number; dayBounceScale?: number; looks: LightmapLook[] }
 export interface Lightmap { data: LightmapData; bounce: Texture; sky: Texture; drip: Texture | null }
 
 // How much the baked sky occlusion darkens sky light, from 0 (not at all) to 1 (fully).
@@ -35,15 +35,19 @@ export function checksum(geometry: BufferGeometry): number {
   return Math.round(sum * 10) / 10;
 }
 
-export async function loadLightmap(name: string): Promise<Lightmap | null> {
+// By day the bounce light is the sun's alone (baked with bake.py --day); the sky occlusion and the
+// drip mask are the same at any time.
+export async function loadLightmap(name: string, day = false): Promise<Lightmap | null> {
   try {
     const base = `${import.meta.env.BASE_URL}lightmaps/${name}`;
     const response = await assetFetch(`${base}.json`);
     if (!response.ok) return null;
     const data = await response.json() as LightmapData;
     if (data.version !== 1) return null;
+    if (day && !data.dayBounceScale) day = false;
+    if (day) data.bounceScale = data.dayBounceScale!;
     const loader = new TextureLoader();
-    const [bounce, sky, drip] = await Promise.all([loader.loadAsync(`${base}-bounce.webp`), loader.loadAsync(`${base}-sky.webp`), loader.loadAsync(`${base}-drip.webp`).catch(() => null)]);
+    const [bounce, sky, drip] = await Promise.all([loader.loadAsync(`${base}-${day ? "day-bounce" : "bounce"}.webp`), loader.loadAsync(`${base}-sky.webp`), loader.loadAsync(`${base}-drip.webp`).catch(() => null)]);
     bounce.colorSpace = SRGBColorSpace;
     // Blender writes the atlas with its first row at the top of the image, where the export's
     // texture coordinates start, so the images are read as stored, not flipped.

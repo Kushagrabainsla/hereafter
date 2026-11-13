@@ -91,6 +91,8 @@ export class GameAudio {
   private loading: Promise<void> | null = null;
   private noise: AudioBuffer | null = null;
   private rainShelter: { filter: BiquadFilterNode; level: GainNode } | null = null;
+  // Whether it rains (dusk) or is dry (day, timeOfDay.ts).
+  private raining = true;
   private sheltered = false;
   private master!: GainNode;
   private muffle!: BiquadFilterNode;
@@ -378,6 +380,7 @@ export class GameAudio {
   // Rain: a soft stereo hiss of rain on the street and a patter of nearer drops, each its own
   // loop so they do not beat together. Under a roof both dull and drop (rainShelter).
   private startRain(context: AudioContext): void {
+    if (!this.raining) return;
     const loop = (seconds: number, fill: (data: Float32Array, rate: number) => void): AudioBufferSourceNode => {
       const buffer = context.createBuffer(2, context.sampleRate * seconds, context.sampleRate);
       for (let channel = 0; channel < 2; channel += 1) {
@@ -413,10 +416,21 @@ export class GameAudio {
     this.rainShelter = { filter: shelter, level };
   }
 
+  // Rain or a dry day (timeOfDay.ts): the sound may already have started on the setup screen, so a
+  // dry day silences it, and rain starts it if it had been left out.
+  setRaining(on: boolean): void {
+    if (on === this.raining) return;
+    this.raining = on;
+    const context = this.context;
+    if (!context) return;
+    if (on && !this.rainShelter) this.startRain(context);
+    else if (this.rainShelter) this.rainShelter.level.gain.setTargetAtTime(on ? (this.sheltered ? 0.45 : 1) : 0, context.currentTime, 0.1);
+  }
+
   // Indoors the rain is heard through the roof: dull and quieter.
   setSheltered(sheltered: boolean): void {
     const context = this.live();
-    if (!context || !this.rainShelter || sheltered === this.sheltered) return;
+    if (!context || !this.rainShelter || !this.raining || sheltered === this.sheltered) return;
     this.sheltered = sheltered;
     const now = context.currentTime;
     this.rainShelter.filter.frequency.setTargetAtTime(sheltered ? 700 : 18000, now, 0.25);

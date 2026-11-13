@@ -98,7 +98,7 @@ Counters are cover: they are wood, so rounds pass through them weakened, and the
 
 ## Look
 
-The market is lit at the end of a wet afternoon by a painted sky, a low sun that shines down the main alley through haze, and 93 real lights from its lamps, strings, lanterns and signs at half strength, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`. See [rendering notes](rendering.md).
+At Dusk (the default) the market is lit at the end of a wet afternoon by a painted sky, a low sun that shines down the main alley through haze, and 93 real lights from its lamps, strings, lanterns and signs at half strength, with bloom on everything bright, wet paving and windows that show rooms. Bounce light and the shade in corners and alleys are baked into a lightmap from the same layout, so a change to the map needs `npm run build:lightmaps`, and then `bake.py -- --day` for Day. By Day it is dry and lit by the sun alone, with its outdoor lamps off. See [rendering notes](rendering.md).
 
 ## How it is built
 
