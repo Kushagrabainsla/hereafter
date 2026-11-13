@@ -35,7 +35,7 @@ import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, 
 import { type Arena, type ArenaData } from "./arena";
 import { buildNightMarket, nightMarketData, MARKET_FILL, MARKET_SUN, STOVES } from "./nightMarket";
 import { duskSky } from "./duskSky";
-import { applyLightmap, loadLightmap } from "./lightmap";
+import { applyLightmap, BOUNCE, loadLightmap } from "./lightmap";
 import { FoodTruck, loadFoodTruck, swingPose, TRUCK_ENTITIES, TRUCK_SWINGS } from "./foodTruck";
 import { DOOR_LEAVES } from "./doors";
 import { kitObject, kitPieces, loadKits } from "./kit";
@@ -229,6 +229,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   ATMOSPHERE.skyHaze.value = look.haze.skyHaze;
   GRADE.shadows.value.set(...look.grade.shadows);
   GRADE.lights.value.set(...look.grade.lights);
+  BOUNCE.gain.value = look.bounce;
   const fill = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
   scene.add(fill);
   const sun = new DirectionalLight(MARKET_SUN.color, MARKET_SUN.intensity);

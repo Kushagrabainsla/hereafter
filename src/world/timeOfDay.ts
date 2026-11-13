@@ -23,6 +23,8 @@ export interface Look {
   haze: { density: number; color: [number, number, number]; glow: number; tight: number; skyHaze: number };
   // The grade's tint for the shadows and for the highlights (mapViewer.ts, GRADE).
   grade: { shadows: [number, number, number]; lights: [number, number, number] };
+  // How strongly the baked bounce light shows (lightmap.ts, BOUNCE).
+  bounce: number;
 }
 
 export const LOOKS: Record<TimeOfDay, Look> = {
@@ -35,6 +37,7 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     lamps: true,
     haze: { density: 0.008, color: [0.02, 0.026, 0.04], glow: 0.4, tight: 0.6, skyHaze: 0.08 },
     grade: { shadows: [0.78, 0.95, 1.28], lights: [1.0, 1.0, 0.99] },
+    bounce: 0.72,
   },
   day: {
     time: "day",
@@ -48,8 +51,11 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     wet: false,
     lamps: false,
     // A warm cream haze that washes the far ends of the alleys out toward the sun.
-    haze: { density: 0.006, color: [0.34, 0.31, 0.26], glow: 0.5, tight: 0.5, skyHaze: 0.06 },
-    // Nearly neutral: the blue sky light already cools the shade.
-    grade: { shadows: [0.97, 1.0, 1.04], lights: [1.02, 1.0, 0.97] },
+    haze: { density: 0.006, color: [0.34, 0.31, 0.26], glow: 0.9, tight: 0.9, skyHaze: 0.06 },
+    // Slightly warm in the shade: the blue sky light already cools it, and navy shade read as night.
+    grade: { shadows: [1.03, 1.0, 0.95], lights: [1.02, 1.0, 0.97] },
+    // Sunlight bounced off the walls and street fills a narrow alley's shade far more than the
+    // little sky it sees; 2.6 times the dusk gain won a blind test.
+    bounce: 2.6,
   },
 };

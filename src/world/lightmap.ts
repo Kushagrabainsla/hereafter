@@ -1,5 +1,5 @@
 import { BufferAttribute, MeshStandardMaterial, MeshStandardNodeMaterial, SRGBColorSpace, TextureLoader, type BufferGeometry, type Mesh, type Node, type Texture } from "three/webgpu";
-import { diffuseColor, float, materialColor, materialRoughness, max, mix, positionWorld, smoothstep, texture, texture3D, uv, vec3 } from "three/tsl";
+import { diffuseColor, float, materialColor, materialRoughness, max, mix, positionWorld, smoothstep, texture, texture3D, uniform, uv, vec3 } from "three/tsl";
 import { assetFetch } from "../assetStore";
 import { noiseVolume } from "./noiseVolume";
 import { outdoorNode } from "./wetness";
@@ -22,6 +22,8 @@ const SKY_OCCLUSION = 0.9;
 // lanterns glow too and would bounce their light as well. More than this washes the whole
 // alley in one even orange and fills the dark gaps between the lamps.
 const BOUNCE_GAIN = 0.72;
+// The bounce gain as the shader reads it, set per time of day (timeOfDay.ts).
+export const BOUNCE = { gain: uniform(BOUNCE_GAIN) };
 // Rain stains below sills and ledges: how dark the stain makes the wall, and how much
 // smoother (wetter) it is.
 const STAIN = { dark: 0.45, gloss: 0.35 };
@@ -70,7 +72,7 @@ function decode(base64: string): Uint16Array {
 export function applyLightmap(surfaces: Mesh[], lightmap: Lightmap): number {
   const at = uv(1);
   const sky = mix(float(1), texture(lightmap.sky, at).r, SKY_OCCLUSION);
-  const bounce = texture(lightmap.bounce, at).rgb.mul(lightmap.data.bounceScale * BOUNCE_GAIN);
+  const bounce = texture(lightmap.bounce, at).rgb.mul(BOUNCE.gain.mul(lightmap.data.bounceScale));
   // The stain runs in streaks of different lengths: noise stretched tall (0.9 m across, 30 m up)
   // gives each narrow column of wall its own cut-off along the fade. The walls run north-south or
   // east-west, so x + z runs along every one of them.
