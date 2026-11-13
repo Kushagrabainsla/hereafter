@@ -212,8 +212,78 @@
     "shop_wood"
    ],
    "notes": "On the boba shop's wall."
+  },
+  "menu_noodles": {
+   "triangles": 694,
+   "budget": 5000,
+   "size": [
+    1.36,
+    0.03,
+    0.88
+   ],
+   "materials": [
+    "shop_board",
+    "shop_chalk",
+    "shop_chalk_warm",
+    "shop_wood"
+   ],
+   "notes": "On the noodle bar's wall."
+  },
+  "menu_tea": {
+   "triangles": 562,
+   "budget": 5000,
+   "size": [
+    1.36,
+    0.03,
+    0.88
+   ],
+   "materials": [
+    "shop_board",
+    "shop_chalk",
+    "shop_chalk_warm",
+    "shop_wood"
+   ],
+   "notes": "On the tea house's wall."
+  },
+  "tea_counter": {
+   "triangles": 1366,
+   "budget": 4000,
+   "size": [
+    2.4,
+    0.66,
+    1.308
+   ],
+   "materials": [
+    "shop_ceramic",
+    "shop_dark",
+    "shop_green",
+    "shop_mustard",
+    "shop_red",
+    "shop_steel",
+    "shop_teal",
+    "shop_tin_gold",
+    "shop_wood"
+   ],
+   "notes": "The tea house's counter and what stands on it."
+  },
+  "washer": {
+   "triangles": 724,
+   "budget": 1200,
+   "size": [
+    0.6,
+    0.635,
+    0.85
+   ],
+   "materials": [
+    "shop_dark",
+    "shop_enamel",
+    "shop_laminate",
+    "shop_porthole",
+    "shop_steel"
+   ],
+   "notes": "The laundry's washing machines and the dryers stacked on them."
   }
  },
- "triangles": 14672,
- "bytes": 475400
+ "triangles": 18018,
+ "bytes": 589736
 }

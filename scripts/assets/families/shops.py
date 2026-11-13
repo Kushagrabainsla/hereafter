@@ -1,6 +1,6 @@
-"""The walk-in shops of the middle block: the boba bar and its drinks fridge, the dumpling and
-pho counters, what stands on the cooking lines behind them, the menu boards and the food a
-player can take. Built into public/models/shops.glb by scripts/assets/build.py.
+"""The walk-in shops: the boba bar and its drinks fridge, the dumpling and pho counters, what
+stands on the cooking lines behind them, the tea house's counter, the laundry's washers, the menu
+boards and the food a player can take. Built into public/models/shops.glb by scripts/assets/build.py.
 
 Counters stand on the floor with their origin under their middle, run along X and face -Y (the
 game turns them to the room); the map gives them solid boxes for physics. Food stands on its
@@ -49,6 +49,9 @@ def materials():
     material("shop_chalk", 0xeae6d8, 0.0, 0.8)
     material("shop_chalk_warm", 0xf2b860, 0.0, 0.8)
     material("glow_fridge", 0xcfe2f5, 0.0, 0.3, emit=0xcfe2f5, strength=0.5)
+    material("shop_enamel", 0xe9e7e0, 0.0, 0.28)
+    material("shop_porthole", 0x101417, 0.2, 0.08)
+    material("shop_tin_gold", 0xb8913a, 0.8, 0.35)
 
 
 # --- counters ----------------------------------------------------------------------------------
@@ -219,6 +222,47 @@ def drink_fridge():
     return join(parts, "drink_fridge")
 
 
+def tea_counter():
+    """The tea house's counter: dark wood over green, with tea tins, a kettle and cups on top."""
+    length, depth, height = 2.4, 0.62, 1.05
+    parts = counter_body(length, depth, height, "shop_wood", "shop_green", "shop_mustard")
+    tins = ("shop_red", "shop_tin_gold", "shop_teal", "shop_red", "shop_tin_gold")
+    for i, mat in enumerate(tins):
+        x = 0.5 + i * 0.13
+        parts.append(cylinder(f"tin{i}", 0.05, 0.16, (x, 0.12, height + 0.08), "Z", mat, verts=12))
+        parts.append(cylinder(f"tinlid{i}", 0.052, 0.015, (x, 0.12, height + 0.167), "Z", "shop_dark", verts=12))
+    kettle = lathe("kettle", [(0.0, 0.0), (0.1, 0.0), (0.12, 0.05), (0.11, 0.14), (0.05, 0.19), (0.0, 0.2)], "shop_steel", verts=16)
+    move(kettle, (-0.6, 0.05, height))
+    spout = tube("spout", [(-0.5, 0.05, height + 0.07), (-0.43, 0.05, height + 0.16)], 0.012, "shop_steel", verts=6)
+    handle = tube("handle", [(-0.66, 0.05, height + 0.18), (-0.6, 0.05, height + 0.25), (-0.54, 0.05, height + 0.18)], 0.008, "shop_dark", verts=5)
+    parts += [kettle, spout, handle]
+    for i in range(4):
+        cup = lathe(f"cup{i}", [(0.0, 0.0), (0.03, 0.0), (0.038, 0.055), (0.034, 0.055), (0.026, 0.006), (0.0, 0.006)], "shop_ceramic", verts=12)
+        move(cup, (-0.15 + i * 0.11, -0.12, height))
+        parts.append(cup)
+    return join(parts, "tea_counter")
+
+
+# --- the laundry --------------------------------------------------------------------------------
+
+def washer():
+    """A front-loading washing machine: an enamelled cabinet, a control strip with a dial, a
+    round door of dark glass in a steel ring, and a soap drawer."""
+    w, d, h = 0.3, 0.3, 0.85
+    parts = [
+        box("body", -w, w, -d, d, 0.04, h, "shop_enamel", bev=0.02),
+        box("kick", -w + 0.02, w - 0.02, -d + 0.02, d - 0.02, 0.0, 0.04, "shop_dark"),
+        box("panel", -w + 0.015, w - 0.015, -d - 0.006, -d + 0.01, h - 0.12, h - 0.02, "shop_laminate", bev=0.004),
+        box("drawer", -w + 0.04, -w + 0.22, -d - 0.012, -d + 0.01, h - 0.11, h - 0.04, "shop_enamel", bev=0.004),
+        cylinder("dial", 0.028, 0.025, (w - 0.09, -d - 0.016, h - 0.07), "Y", "shop_steel", verts=14),
+        box("lamp", 0.02, 0.06, -d - 0.009, -d, h - 0.08, h - 0.06, "shop_dark"),
+    ]
+    parts.append(cylinder("ring", 0.2, 0.03, (0.0, -d - 0.012, 0.42), "Y", "shop_steel", verts=28))
+    parts.append(cylinder("glass", 0.16, 0.034, (0.0, -d - 0.016, 0.42), "Y", "shop_porthole", verts=28))
+    parts.append(box("latch", 0.15, 0.19, -d - 0.035, -d - 0.015, 0.39, 0.45, "shop_dark", bev=0.004))
+    return join(parts, "washer")
+
+
 # --- on the cooking lines -----------------------------------------------------------------------
 
 def steamer_stack():
@@ -336,6 +380,14 @@ def menu_pho():
     return menu("menu_pho", "PHO", [("RARE BEEF", "14"), ("BRISKET", "15"), ("CHICKEN", "13"), ("EXTRA NOODLES", "3")])
 
 
+def menu_noodles():
+    return menu("menu_noodles", "NOODLES", [("BEEF NOODLE SOUP", "13"), ("DAN DAN", "12"), ("WONTON", "11"), ("CHILI OIL", "1")])
+
+
+def menu_tea():
+    return menu("menu_tea", "TEA", [("OOLONG POT", "8"), ("JASMINE", "6"), ("PU-ERH", "9"), ("MOONCAKE", "4")])
+
+
 def menu_boba():
     return menu("menu_boba", "BOBA", [("MILK TEA", "6"), ("TARO", "7"), ("MATCHA", "7"), ("EXTRA PEARLS", "1")])
 
@@ -353,4 +405,8 @@ PIECES = [
     Piece("menu_dumplings", menu_dumplings, 5000, None, None, "Above the dumpling counter."),
     Piece("menu_pho", menu_pho, 5000, None, None, "Above the pho counter."),
     Piece("menu_boba", menu_boba, 5000, None, None, "On the boba shop's wall."),
+    Piece("menu_noodles", menu_noodles, 5000, None, None, "On the noodle bar's wall."),
+    Piece("menu_tea", menu_tea, 5000, None, None, "On the tea house's wall."),
+    Piece("tea_counter", tea_counter, 4000, None, "base", "The tea house's counter and what stands on it.", 60),
+    Piece("washer", washer, 1200, (0.6, 0.65, 0.85), "base", "The laundry's washing machines and the dryers stacked on them."),
 ]

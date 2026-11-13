@@ -71,4 +71,42 @@ export const SHOP_FOOD: { id: string; item: "food"; food: FoodKind; east: number
   { id: "food-boba", item: "food", food: "boba", east: 4.7, north: 10.72, y: COUNTER_TOP },
   { id: "food-dumplings", item: "food", food: "dumplings", east: 5.95, north: 21.9, y: COUNTER_TOP },
   { id: "food-pho", item: "food", food: "pho", east: 5.95, north: -22.9, y: COUNTER_TOP },
+  { id: "food-noodles", item: "food", food: "pho", east: -12.6, north: 26.0, y: COUNTER_TOP },
 ];
+
+// The three shops on the outer blocks' market faces: the noodle bar and the tea house in the west
+// buildings, the laundry in the east one. Their fronts were photographs, then shutters; now each is
+// a room cut into its building, 6 m deep, with a glass front, a pair of glass doors and one light.
+// They have no back way out, so the window is the second way: it shatters and can be climbed through.
+// `wall` is the front's outer face on the market alley, `deep` the room's back wall; the room runs
+// from z0 to z1.
+export interface SideRoom {
+  id: string;
+  label: string;
+  face: "px" | "nx";
+  wall: number;
+  deep: number;
+  z0: number;
+  z1: number;
+  door: [number, number];
+  doorOpen: boolean;
+  window: [number, number];
+  front: string;
+  inside: string;
+  // The pendants' colour, and their places along the room's depth (metres in from the front) and its length.
+  tint: number;
+  lamps: [number, number][];
+}
+
+export const SIDE_ROOMS: SideRoom[] = [
+  { id: "noodles", label: "noodle bar", face: "px", wall: -8.5, deep: -14.8, z0: 24.6, z1: 29.6, door: [24.95, 26.55], doorOpen: true, window: [26.9, 29.2], front: "noodlesFront", inside: "noodlesWall", tint: 0xffcf96, lamps: [[3.0, 26.4], [3.0, 28.0]] },
+  { id: "tea", label: "tea house", face: "px", wall: -8.5, deep: -14.8, z0: -29.4, z1: -24.6, door: [-26.45, -24.85], doorOpen: false, window: [-29.0, -26.8], front: "teaFront", inside: "teaWall", tint: 0xffc890, lamps: [[3.2, -28.0], [3.2, -26.2]] },
+  { id: "laundry", label: "laundry", face: "nx", wall: 17, deep: 23.3, z0: -22.4, z1: -17.6, door: [-22.15, -20.55], doorOpen: true, window: [-20.2, -17.95], front: "laundryFront", inside: "laundryWall", tint: 0xeef2ff, lamps: [[3.0, -20.8], [3.0, -19.2]] },
+];
+
+// Which way is into the room, along x: -1 for the west buildings, +1 for the east one.
+export const inward = (room: SideRoom): number => (room.face === "px" ? -1 : 1);
+// x a given distance in from the room's front face.
+export const roomX = (room: SideRoom, metres: number): number => room.wall + inward(room) * metres;
+export const sideFrontWall = (room: SideRoom): WallPiece[] => wall(room.z0, room.z1, [[...room.door, 0, DOOR_HEAD], [...room.window, WINDOW_SILL, WINDOW_HEAD]]);
+export const sidePane = (room: SideRoom): { x: number; z0: number; z1: number; y0: number; y1: number } => ({ x: roomX(room, 0.15), z0: room.window[0], z1: room.window[1], y0: WINDOW_SILL, y1: WINDOW_HEAD });

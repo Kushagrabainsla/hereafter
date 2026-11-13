@@ -3,7 +3,7 @@ import { type MapToggle } from "./arena";
 import { type Material } from "./materials";
 import { type Vec3, type WorldEntity } from "./entities";
 import { kitObject, type KitPiece } from "./kit";
-import { SHOP_ROOMS } from "./shops";
+import { roomX, SHOP_ROOMS, SIDE_ROOMS } from "./shops";
 
 // The market's doors: the restaurant's and the bar's double doors, the French doors onto the
 // bar's balcony, and the front and back doors of the record shop and the shops beside it. Each
@@ -44,6 +44,7 @@ export const DOORWAYS: Doorway[] = [
     { id: `door:${room.id}-front`, label: `the ${room.label} door`, at: { x: 0.65, y: 0, z: (room.door[0] + room.door[1]) / 2 }, face: "nx", model: "glass", leaves: 2, open: room.doorOpen },
     ...("door" in room.back ? [{ id: `door:${room.id}-back`, label: "the back door", at: { x: 8.35, y: 0, z: room.back.door }, face: "px" as Face, model: "steel" as const, leaves: 1 as const, open: false, tint: room.back.paint }] : []),
   ]),
+  ...SIDE_ROOMS.map((room): Doorway => ({ id: `door:${room.id}-front`, label: `the ${room.label} door`, at: { x: roomX(room, 0.15), y: 0, z: (room.door[0] + room.door[1]) / 2 }, face: room.face, model: "glass", leaves: 2, open: room.doorOpen })),
 ];
 
 export const DOOR_TOGGLES: MapToggle[] = DOORWAYS.map((door) => ({ id: door.id, label: door.label, at: { x: door.at.x, y: door.at.y + 1.3, z: door.at.z }, open: door.open }));

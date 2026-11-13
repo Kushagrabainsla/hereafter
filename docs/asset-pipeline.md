@@ -179,7 +179,7 @@ Phase 6 (effects and the last code shapes), at six spots: bullet holes on a wall
 
 Eight effect pieces (578 triangles, 18 KB), the kitchen's counter and range (1,456 triangles) and the fire escape's walkway (228). The first burst of debris after loading took no longer a frame than the screen did standing still.
 
-The shops (`scripts/assets/families/shops.py`): the counters, the boba shop's fridge, what stands on the cooking lines, the menus and the food a player takes. Twelve pieces, 14,700 triangles in all and 172 KB compressed. Measured at a MacBook Pro's Retina size (1728 × 1117 at 2×) with production builds in three alternating rounds over eight spots on both alleys, against the release before, on a busy machine:
+The shops (`scripts/assets/families/shops.py`): the counters, the boba shop's fridge, the tea house's counter, the laundry's washer, what stands on the cooking lines, the menus and the food a player takes. Sixteen pieces, 18,000 triangles in all and 208 KB compressed. Measured at a MacBook Pro's Retina size (1728 × 1117 at 2×) with production builds in three alternating rounds over eight spots on both alleys, against the release before, on a busy machine:
 
 | | Before | After |
 |---|---|---|
