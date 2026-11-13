@@ -33,11 +33,13 @@ export interface GraphicsQuality {
 // nothing), edge smoothing 1.7, the sun's shadows 1.5 and multisampling the hands 1; glow and grain
 // cost nothing. Medium ran 16% faster than High and Low 29% faster. Every preset keeps the lamps:
 // without them the stalls and the service alley go dark (the six key lights of WebGL 2 ran 52%
-// faster but lost the market's light). Edge smoothing stays too: without it edges stair-step.
+// faster but lost the market's light). Edge smoothing stays too: without it edges stair-step. The sun's
+// shadows stay on Low too: since the sun reaches the wet street, without them it lit the whole
+// street and the puddles blazed white toward it. They cost Low about 8% (34 to 31 FPS).
 export const QUALITY: Record<QualityLevel, GraphicsQuality> = {
   high: { level: "high", manyLights: true, occlusion: { samples: 12, scale: 0.5 }, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 4, reflections: true, raindrops: 14000 },
   medium: { level: "medium", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 4, reflections: true, raindrops: 10000 },
-  low: { level: "low", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: false, viewSamples: 2, reflections: false, raindrops: 6000 },
+  low: { level: "low", manyLights: true, occlusion: null, smaa: true, bloom: true, grain: true, shadows: true, viewSamples: 2, reflections: false, raindrops: 6000 },
 };
 
 // What the player chose on the setup screen: a preset, or Auto.

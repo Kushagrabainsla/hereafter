@@ -401,6 +401,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     mirror.quality.value = 0.5;
     mirror.maxDistance.value = 30;
     mirror.thickness.value = 0.25;
+    // Capped, so the bright haze round the sun does not mirror into a white blaze across the street.
+    mirror.maxLuminance.value = 1.2;
     // The pass fades a reflection with distance and grazing angle; standing water mirrors the
     // lamps and sunlit walls more strongly than that leaves, so it is lifted. A rough 0.32 blurs it
     // through the pass's mip chain, which hides the half-resolution pixels.

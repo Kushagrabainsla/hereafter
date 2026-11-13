@@ -61,7 +61,7 @@ These runs shared the machine with other applications, so single runs varied up 
 |---|---|---|
 | High | Nothing | about 26 |
 | Medium | Ambient occlusion | 31 (16% faster) |
-| Low | Ambient occlusion, the sun's shadows, and half the multisampling of the hands | 34 (29% faster) |
+| Low | Ambient occlusion, reflections in the puddles, and half the multisampling of the hands | 31 against High's 24 to 26 (in a later run) |
 
 These figures are means of three spots in alternating runs, measured against High before and after each one. The machine slowed during the runs, so only runs next to each other can be compared. Turned off one at a time, the costs were:
 
@@ -72,7 +72,7 @@ These figures are means of three spots in alternating runs, measured against Hig
 - Multisampling of the hands: 1 FPS.
 - Glow and grain: nothing.
 
-Every preset keeps the lamps and the edge smoothing. Without the lamps the stalls and the service alley go dark: the six key lights of WebGL 2 ran 52% faster but lost the market's light. Without edge smoothing the edges stair-step. With everything off, the frame rate reached only 43.5 FPS. The rest of the frame is the lit world itself.
+Every preset keeps the lamps and the edge smoothing. Without the lamps the stalls and the service alley go dark: the six key lights of WebGL 2 ran 52% faster but lost the market's light. Without edge smoothing the edges stair-step. Every preset also keeps the sun's shadows: the sun now reaches the wet street, and without its shadows on Low the whole street was sunlit and the puddles blazed white toward the sun. They cost Low about 8%. Puddle reflections stay off on Low, and a cap on their brightness keeps the haze round the sun from mirroring into a white glare on the others. With everything off, the frame rate reached only 43.5 FPS. The rest of the frame is the lit world itself.
 
 **Auto.** Auto picks High when the world draws 3 million pixels or fewer, and Medium on a larger or high-density screen. After ten seconds of play, Auto measures the frame rate for fifteen seconds. If the mean is under 45 FPS, Auto saves the next cheaper preset for the next match and tells the player in a toast. A change during a match would rebuild every shader and stall the game. The saved preset applies only to screens with at least 80% of the pixels it was measured on. Thus a laptop that ran slowly on a large external display starts again on its own screen. The FPS label in the game shows the preset in use.
 
