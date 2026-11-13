@@ -5,6 +5,7 @@ import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type InstanceRef } from "./entities";
+import { withEdges } from "./edges";
 
 // The models placed by name around the market, each built in Blender: the wall dressing of
 // public/models/market-kit.glb (scripts/kit/build.py) and the families built by the asset
@@ -118,12 +119,12 @@ export function kitPieces(gltfs: (GLTF | null)[]): Map<string, KitPiece> {
         if (!mesh.isMesh) return;
         const material = mesh.material as SurfaceMaterial;
         const geometry = unpacked(mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
-        if (plain(material)) { plainParts.push(painted(bare(geometry), material)); return; }
+        if (plain(material)) { plainParts.push(withEdges(painted(bare(geometry), material))); return; }
         // glTF counts texture rows from the top; the game's own pictures count from the bottom.
         const uv = geometry.getAttribute("uv");
         if (carded(material) && uv) for (let i = 0; i < uv.count; i += 1) uv.setY(i, 1 - uv.getY(i));
         const list = byMaterial.get(material) ?? [];
-        list.push(geometry);
+        list.push(glowing(material) || carded(material) ? geometry : withEdges(geometry));
         byMaterial.set(material, list);
       });
       const parts = [...byMaterial].map(([material, list]) => ({ geometry: list.length > 1 ? mergeGeometries(list, false)! : list[0], material: layeredCopy(material) }));

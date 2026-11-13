@@ -1,5 +1,5 @@
 import type { Node, Texture } from "three/webgpu";
-import { abs, bumpMap, clamp, float, mix, normalLocal, normalWorld, positionLocal, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
+import { abs, attribute, bumpMap, clamp, float, fwidth, min, mix, normalLocal, normalWorld, positionLocal, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
 import { noiseVolume } from "./noiseVolume";
 import { WEAR, WEAR_TILE } from "./wearTextures";
 
@@ -33,16 +33,16 @@ export function surfaceKind(name: string): number {
 // Per kind: how much each layer shows.
 //   mottle  colour variation        chips  paint worn through      rust  rust patches
 //   grain   wood grain              dirt   dust and grime          relief  surface relief
-//   rough   roughness variation
-const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough"] as const;
+//   rough   roughness variation     edge   wear on outside edges  cavity  dirt in inside corners
+const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity"] as const;
 const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
-  [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15 },
-  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.6, relief: 0.6, rough: 0.4 },
-  [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2 },
-  [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35 },
-  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7 },
-  [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3 },
-  [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15 },
+  [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6 },
+  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.6, relief: 0.6, rough: 0.4, edge: 1, cavity: 1 },
+  [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1 },
+  [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1 },
+  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9 },
+  [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1 },
+  [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8 },
 };
 
 type FloatNode = Node<"float">;
@@ -63,6 +63,8 @@ const UNDER = vec3(0.16, 0.11, 0.08);
 const RUST_DARK = vec3(0.17, 0.08, 0.04);
 const RUST_LIGHT = vec3(0.4, 0.17, 0.06);
 const GRIME = vec3(0.5, 0.45, 0.38);
+// The dark of dirt packed into a corner.
+const CREASE = vec3(0.32, 0.28, 0.24);
 
 export interface Layered { color: ColorNode; roughness: FloatNode; metalness: FloatNode; normal: ReturnType<typeof bumpMap> }
 
@@ -118,9 +120,32 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   color = mix(color, color.mul(GRIME), dirty);
   color = color.mul(float(1).add(wear.g.mul(dirt).mul(0.12)));
 
+  // Wear that follows the shape (edges.ts): within a few centimetres of an outside edge, in
+  // stretches broken up by noise, paint is rubbed through to dull primer and old dark metal, and
+  // stone, wood and bare metal are worn a little paler; within a few centimetres of an inside corner,
+  // dirt gathers dark and dull. Nothing at an edge is made shinier: polished steel caught the sky
+  // and drew bright silver outlines round every rim. The wear fades out where a pixel spans more
+  // than about a centimetre, as a band thinner than a pixel can only flicker as a line.
+  const toEdge = attribute("edgeOut", "vec3"), toCorner = attribute("edgeIn", "vec3");
+  const outsideEdge = min(toEdge.x, min(toEdge.y, toEdge.z)), insideCorner = min(toCorner.x, min(toCorner.y, toCorner.z));
+  const pixel = fwidth(outsideEdge).add(fwidth(insideCorner)).mul(0.5);
+  const close = float(1).sub(smoothstep(0.006, 0.016, pixel));
+  const edgeAmount = amount(kind, "edge").mul(close), cavityAmount = amount(kind, "cavity").mul(close);
+  const ragged = flecks.mul(0.6).add(medium.mul(0.4));
+  // Patchy: only stretches of an edge wear, more of them low down where they get knocked.
+  const rubbed = smoothstep(0.035, 0.004, outsideEdge.add(ragged.mul(0.014)).sub(low.mul(0.008))).mul(smoothstep(-0.15, 0.3, coarse.mul(0.5).add(ragged.mul(0.5)).add(low.mul(0.45)))).mul(edgeAmount);
+  const painted = step(float(0.01), chips);
+  const throughPaint = rubbed.mul(painted);
+  const deepEdge = smoothstep(0.45, 0.85, throughPaint).mul(smoothstep(0.012, 0.0, outsideEdge.add(ragged.mul(0.006))));
+  color = mix(color, PRIMER.mul(0.6), throughPaint.mul(0.8));
+  color = mix(color, UNDER, deepEdge);
+  color = color.mul(float(1).add(rubbed.mul(float(1).sub(painted)).mul(0.08)));
+  const crease = smoothstep(0.05, 0.0, insideCorner.add(medium.mul(0.02))).mul(cavityAmount);
+  color = mix(color, color.mul(CREASE), crease.mul(0.5));
+
   const surface = clamp(roughness.mul(float(1).add(fine.mul(rough.mul(0.5))).add(coarse.mul(rough.mul(0.4))))
-    .add(chipped.mul(0.25)).add(rusty.mul(0.45)).add(dirty.mul(0.15)), 0.04, 1);
-  const metal = metalness.mul(float(1).sub(rusty)).mul(float(1).sub(chipped.mul(deep).mul(0.5)));
+    .add(chipped.mul(0.25)).add(rusty.mul(0.45)).add(dirty.mul(0.15)).add(crease.mul(0.25)).add(throughPaint.mul(0.25)), 0.04, 1);
+  const metal = metalness.mul(float(1).sub(rusty)).mul(float(1).sub(chipped.mul(deep).mul(0.5))).mul(float(1).sub(throughPaint.mul(0.7)));
   // Relief in metres: chips sink below the paint, rust and grain stand up a little.
   const height = medium.mul(0.25).add(fine.mul(grain.mul(0.6).add(0.15))).sub(chipped.mul(0.8)).add(rusty.mul(0.5)).mul(relief).mul(0.0012);
   return { color, roughness: surface, metalness: metal, normal: bumpMap(height) };

@@ -4,6 +4,7 @@ import {
 } from "three/webgpu";
 import { float, materialColor, materialMetalness, materialRoughness, mix, mx_fractal_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
 import { layered, SurfaceKind, surfaceKind } from "./surfaces";
+import { withEdges } from "./edges";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type LayoutBox, type MapToggle } from "./arena";
@@ -169,6 +170,8 @@ export class FoodTruck {
         const materials = (Array.isArray(object.material) ? object.material : [object.material]) as MeshStandardMaterial[];
         const dressed = materials.map((material) => this.dress(material));
         object.material = Array.isArray(object.material) ? dressed : dressed[0];
+        // Edge wear and corner dirt read where the part's edges are (edges.ts).
+        if (!Array.isArray(object.material)) object.geometry = withEdges(object.geometry as BufferGeometry);
       });
     }
     this.merge();
