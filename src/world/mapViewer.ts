@@ -16,6 +16,7 @@ import { puddleNode, rainTime, setWet } from "./wetness";
 import { LOOKS, type TimeOfDay } from "./timeOfDay";
 import { Rain } from "./rain";
 import { LampHaze } from "./lampHaze";
+import { moveShopGlass } from "./shopGlass";
 import { drawWearTextures } from "./wearTextures";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
@@ -450,6 +451,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   }
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
+  moveShopGlass(scene, cloudScene, worldPass.getTextureNode("depth"));
   // Rain round the player (rain.ts), in the clouds' scene too; how many drops depends on the preset.
   const rain = look.wet ? new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth")) : null;
   // The outdoor lamps' glow and beams in the damp air (lampHaze.ts), in the clouds' scene too.

@@ -7,6 +7,7 @@ import {
 import { bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture3D, vec3 } from "three/tsl";
 import { dampNode, outdoorAt, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
 import { noiseVolume } from "./noiseVolume";
+import { SHOP_GLASS } from "./shopGlass";
 import { LOOKS } from "./timeOfDay";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
@@ -184,6 +185,10 @@ const facades: Facade[] = [
 ];
 // Upper bar room windows, either side of the balcony door.
 const upperWindows: { z: number }[] = [{ z: -0.6 }, { z: 2.6 }, { z: 8.4 }];
+
+// How far a closed shop's shutter stays up off the ground, and the bills pasted on it.
+const SHUTTER_GAP = 0.42;
+const SHUTTER_BILLS = [["live_dj", "lost_cat"], ["street_food", "noods"], ["art_walk", "crate_diggers"]];
 
 const shopfronts: Shopfront[] = [
   { face: "px", at: -8.5, along: 27, width: 5.2, photo: "cafe", sign: ["NOODLE BAR", "#18322f", "#ffd27a"] },
@@ -831,12 +836,26 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     return placeSign(id, new Matrix4().compose(new Vector3(x, y, z), new Quaternion().setFromAxisAngle(UP, FACE_YAW[face]), new Vector3(1, 1, 1)),
       { center: { x: x + nx * 0.06, y, z: z + nz * 0.06 }, half: [(entry?.width ?? 1) / 2, (entry?.height ?? 1) / 2, 0.08], yaw: FACE_YAW[face] }, lights);
   };
+  // The light on a shop's floor seen under its shutter: brightest at the floor, fading up.
+  const shutterGap = new MeshStandardNodeMaterial({ color: 0x000000, roughness: 1 });
+  shutterGap.emissiveNode = vec3(1.0, 0.62, 0.32).mul(float(0.2).mul(float(1).sub(smoothstep(0.0, SHUTTER_GAP + 0.1, positionWorld.y))));
+  let closed = 0;
   shopfronts.forEach((shop, index) => {
     const [nx, nz] = FACE_NORMAL[shop.face];
     const x = nx ? shop.at + nx * 0.04 : shop.along, z = nz ? shop.at + nz * 0.04 : shop.along;
     if (!shop.open) {
-      // The storefront photograph on a card, framed by pilasters and a ledge under the sign.
-      statics.add(shop.photo === "cafe" ? "photoCafe" : "photoStone", cardGeometry(kit, "card_unit").clone(), new Matrix4().compose(new Vector3(x, 1.6, z), new Quaternion().setFromAxisAngle(UP, FACE_YAW[shop.face]), new Vector3(shop.width, 3.1, 1)));
+      // Closing time: the alleys' roller shutter, cut down to the shopfront (6.6 m wide and 4 m tall
+      // as modelled), pulled most of the way down. Warm light from the shop floor glows in the gap
+      // under it, and the shutter carries a few pasted bills. A photograph of a lit storefront read
+      // as a picture; a bare closed shutter read as too new and dead.
+      const gap = new Mesh(cardGeometry(kit, "card_unit"), shutterGap);
+      gap.position.set(x, (SHUTTER_GAP + 0.1) / 2, z);
+      gap.rotation.y = FACE_YAW[shop.face];
+      gap.scale.set(shop.width, SHUTTER_GAP + 0.1, 1);
+      root.add(gap);
+      placer.place("shutter", wallMatrix(shop.face, shop.at, shop.along, SHUTTER_GAP, 0.05, (shop.width + 0.2) / 6.6).multiply(new Matrix4().makeScale(1, 0.66, 1)));
+      const bills = SHUTTER_BILLS[closed++ % SHUTTER_BILLS.length];
+      bills.forEach((bill, k) => placer.place(`poster_${bill}`, wallMatrix(shop.face, shop.at, shop.along + (k === 0 ? -0.28 : 0.42) * shop.width, k === 0 ? 1.55 : 1.25, 0.1)));
       for (const side of [-1, 1]) placer.place("shop_pilaster", wallMatrix(shop.face, shop.at, shop.along + side * shop.width / 2, 0));
       placer.place("shop_ledge", wallMatrix(shop.face, shop.at, shop.along, 3.16, 0, shop.width + 0.3));
     }
@@ -976,7 +995,9 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   });
 
   // ---------- glass storefronts that shatter and can be climbed through ----------
-  const paneMaterial = std({ color: 0xa9c4cf, roughness: 0.03, metalness: 0.4, transparent: true, opacity: 0.18, depthWrite: false, side: DoubleSide });
+  // Plate glass: drawn after the screen effects, in the clouds' pass (shopGlass.ts).
+  const paneMaterial = std({ color: 0x9fb0b6, transparent: true, opacity: 0.05, depthWrite: false, side: DoubleSide });
+  paneMaterial.name = SHOP_GLASS;
   panes.forEach((pane, index) => {
     const mesh = new Mesh(cardGeometry(kit, "card_unit"), paneMaterial);
     mesh.position.set(pane.x, (pane.y0 + pane.y1) / 2, (pane.z0 + pane.z1) / 2);

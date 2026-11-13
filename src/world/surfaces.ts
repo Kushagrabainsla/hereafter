@@ -39,7 +39,7 @@ export function surfaceKind(name: string): number {
 const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity", "soak"] as const;
 const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
   [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6, soak: 0.15 },
-  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.85, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
+  [SurfaceKind.painted]: { mottle: 0.1, chips: 0.38, rust: 0.05, grain: 0, dirt: 1, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
   [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1, soak: 0.45 },
   [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1, soak: 0.4 },
   [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1 },
@@ -65,6 +65,10 @@ const UNDER = vec3(0.16, 0.11, 0.08);
 const RUST_DARK = vec3(0.17, 0.08, 0.04);
 const RUST_LIGHT = vec3(0.4, 0.17, 0.06);
 const GRIME = vec3(0.5, 0.45, 0.38);
+// The dark brown at the edge of a rust patch.
+const RUST_RIM = vec3(0.11, 0.075, 0.05);
+// The brown a painted surface takes round rust, as a multiplier.
+const RUST_STAIN = vec3(0.72, 0.52, 0.38);
 // The dark of dirt packed into a corner.
 const CREASE = vec3(0.32, 0.28, 0.24);
 
@@ -113,15 +117,21 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   const chipped = smoothstep(edge, edge.add(0.08), flake).mul(step(float(0.01), chips)).mul(worn);
   const deep = smoothstep(edge.add(0.1), edge.add(0.2), flake);
   color = mix(color, mix(PRIMER, UNDER, deep), chipped);
+  // Rain streaks: grime washed down in fine and broad runs, and paler runs where rain ran clean.
+  const wear = triplanar(WEAR.streaks.texture);
   // Rust grows from the bottom of a piece and in patches.
   const rustEdge = float(1.0).sub(rust.mul(0.85));
   // A grainy, stringy edge, drawn out up and down by the stretched noise, not a cut-out shape.
-  const rusty = smoothstep(rustEdge, rustEdge.add(0.3), medium.mul(0.6).add(low.mul(0.6)).add(coarse.mul(0.3)).add(fine.mul(0.25)).add(flecks.mul(0.15))).mul(step(float(0.01), rust));
+  const rustField = medium.mul(0.6).add(low.mul(0.6)).add(coarse.mul(0.3)).add(fine.mul(0.25)).add(flecks.mul(0.15));
+  const rusty = smoothstep(rustEdge, rustEdge.add(0.3), rustField).mul(step(float(0.01), rust));
+  // Round each patch the rust bleeds into the paint as a brown stain that fades out, and runs down
+  // from it in streaks, so a patch never ends at a cut line against clean paint.
+  const bleed = smoothstep(rustEdge.sub(0.3), rustEdge.add(0.05), rustField.add(wear.r.mul(0.2))).mul(step(float(0.01), rust));
+  color = mix(color, color.mul(RUST_STAIN), bleed.mul(0.55));
   color = mix(color, mix(RUST_DARK, RUST_LIGHT, fine.mul(0.5).add(0.5)), rusty);
   // Dust on what faces up, grime near the ground and in broad patches.
   const up = smoothstep(0.5, 0.95, normalWorld.y);
-  // Rain streaks: grime washed down in fine and broad runs, and paler runs where rain ran clean.
-  const wear = triplanar(WEAR.streaks.texture);
+  // Rain streaks (read above): grime washed down in fine and broad runs, and paler runs where rain ran clean.
   const dirty = clamp(up.mul(0.55).add(low.mul(0.6)).add(smoothstep(0.05, 0.7, coarse).mul(0.45)).add(wear.r.mul(0.7)), 0, 1).mul(dirt);
   color = mix(color, color.mul(GRIME), dirty);
   color = color.mul(float(1).add(wear.g.mul(dirt).mul(0.12)));
@@ -153,6 +163,13 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   color = color.mul(float(1).add(rubbed.mul(float(1).sub(painted)).mul(0.08)));
   const crease = smoothstep(0.05, 0.0, insideCorner.add(medium.mul(0.02))).mul(cavityAmount);
   color = mix(color, color.mul(CREASE), crease.mul(0.5));
+  // Rust patches painted on a piece (street_rust, bld_rust) are flat shapes with cut outlines, and
+  // bright rust against clean paint read as a sticker. Toward its outline each patch turns to the
+  // dark, dull brown that rings real rust, ragged with fine noise, so it fades into the paint.
+  const rustPatch = step(abs(kind.sub(SurfaceKind.rusted)), float(0.5));
+  const finer = signed(texture3D(volume, P.mul(1 / 0.06)).r);
+  const rim = smoothstep(0.05, 0.0, outsideEdge.add(finer.mul(0.02)).add(flecks.mul(0.012))).mul(rustPatch);
+  color = mix(color, RUST_RIM, rim.mul(0.85));
 
   // Rain: what faces up stays wet, runs of water follow the grime streaks down the sides, and a band
   // near the ground is splashed; a wet surface darkens (porous ones most) and turns glossy. Broad

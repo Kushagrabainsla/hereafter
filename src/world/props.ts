@@ -1,5 +1,8 @@
-import { Color, InstancedMesh, Matrix4, Mesh, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
+import { Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
+import { clamp, float, materialColor, materialRoughness, mix, normalWorld, positionGeometry, positionWorld, smoothstep, texture3D, vec3 } from "three/tsl";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { noiseVolume } from "./noiseVolume";
+import { outdoorNode, WEATHER } from "./wetness";
 import { type WorldEntity } from "./entities";
 import { type Material } from "./materials";
 import { assetFetch } from "../assetStore";
@@ -35,6 +38,26 @@ export const PROP_LABEL: Record<string, string> = {
   wet_floor_sign: "the wet floor sign", pallet: "the pallet", monobloc_chair: "the plastic chair", clay_pot: "the plant pot",
 };
 const SHADOWLESS = new Set(["cardboard_box", "plastic_crate", "water_bottle", "clay_pot", "wet_floor_sign", ...FURNITURE.map((model) => model.name)]);
+
+// The photo-scanned props come clean from the studio. In the alley they take the same weather as
+// the modelled kit (surfaces.ts), lightly, over their own textures: grime splashed up from the
+// street on their lower 60 cm, dust on what faces up, broad dirty patches, and in the rain their
+// tops and lower sides darken and turn glossy. The patches follow each prop's own shape, so a prop
+// keeps them when it is knocked over; the splash band stays at the street, wherever the prop lies.
+const GRIME = vec3(0.55, 0.49, 0.41);
+function weathered(source: MeshStandardMaterial): MeshStandardNodeMaterial {
+  const material = new MeshStandardNodeMaterial();
+  material.copy(source);
+  const patches = texture3D(noiseVolume(), positionGeometry.mul(1 / 0.7)).g;
+  const speckle = texture3D(noiseVolume(), positionGeometry.mul(1 / 0.12)).b;
+  const low = float(1).sub(smoothstep(0.02, 0.6, positionWorld.y));
+  const up = smoothstep(0.5, 0.95, normalWorld.y);
+  const dirty = clamp(low.mul(0.6).add(up.mul(0.35)).add(smoothstep(0.45, 0.75, patches).mul(0.35)), 0, 1).mul(speckle.mul(0.5).add(0.5)).mul(0.7);
+  const wet = clamp(up.mul(0.7).add(low.mul(0.6)), 0, 1).mul(smoothstep(0.97, 1, outdoorNode(positionWorld))).mul(WEATHER.wet);
+  material.colorNode = materialColor.mul(mix(vec3(1), GRIME, dirty)).mul(float(1).sub(wet.mul(0.22)));
+  material.roughnessNode = clamp(materialRoughness.add(dirty.mul(0.15)).mul(float(1).sub(wet.mul(0.5))), 0.05, 1);
+  return material;
+}
 
 export async function loadPropModels(): Promise<PropModel[]> {
   try {
@@ -76,7 +99,12 @@ export class PropViews {
         const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}${model.file}`);
         gltf.scene.updateMatrixWorld(true);
         const parts: { geometry: BufferGeometry; material: SurfaceMaterial | SurfaceMaterial[]; matrix: Matrix4 }[] = [];
-        gltf.scene.traverse((object) => { if (object instanceof Mesh) parts.push({ geometry: object.geometry, material: object.material, matrix: object.matrixWorld.clone() }); });
+        gltf.scene.traverse((object) => {
+          if (!(object instanceof Mesh)) return;
+          const source = object.material as SurfaceMaterial;
+          const material = source instanceof MeshStandardMaterial && !source.transparent ? weathered(source) : source;
+          parts.push({ geometry: object.geometry, material, matrix: object.matrixWorld.clone() });
+        });
         this.parts.set(model.name, parts);
       } catch (error) {
         console.warn(`Could not load prop ${model.name}`, error);
