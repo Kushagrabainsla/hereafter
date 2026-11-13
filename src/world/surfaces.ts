@@ -39,7 +39,7 @@ export function surfaceKind(name: string): number {
 const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity", "soak"] as const;
 const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
   [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6, soak: 0.15 },
-  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.6, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
+  [SurfaceKind.painted]: { mottle: 0.07, chips: 0.3, rust: 0.05, grain: 0, dirt: 0.85, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
   [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1, soak: 0.45 },
   [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1, soak: 0.4 },
   [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.4, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1 },
@@ -125,6 +125,11 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   const dirty = clamp(up.mul(0.55).add(low.mul(0.6)).add(smoothstep(0.05, 0.7, coarse).mul(0.45)).add(wear.r.mul(0.7)), 0, 1).mul(dirt);
   color = mix(color, color.mul(GRIME), dirty);
   color = color.mul(float(1).add(wear.g.mul(dirt).mul(0.12)));
+  // Sun and weather fade what faces the sky most: tops go paler and greyer than the sides, in
+  // patches, and a little more so higher up a piece.
+  const faded = up.mul(0.7).add(smoothstep(0.5, 2.5, P.y).mul(0.3)).mul(smoothstep(-0.5, 0.4, coarse)).mul(dirt.mul(0.45));
+  const grey = color.x.mul(0.3).add(color.y.mul(0.59)).add(color.z.mul(0.11));
+  color = mix(color, vec3(grey).mul(1.12).add(color.mul(0.08)), faded);
 
   // Wear that follows the shape (edges.ts): within a few centimetres of an outside edge, in
   // stretches broken up by noise, paint is rubbed through to dull primer and old dark metal, and

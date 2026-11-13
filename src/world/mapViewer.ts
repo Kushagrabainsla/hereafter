@@ -2,7 +2,7 @@ import {
   ACESFilmicToneMapping, DirectionalLight, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
-import { float, getViewPosition, int, length, rtt, luminance, mix, mrt, normalize, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec3, vec4 } from "three/tsl";
+import { float, getViewPosition, int, length, rtt, luminance, mix, mrt, normalize, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec2, vec3, vec4, fract, dot, screenCoordinate } from "three/tsl";
 import { radialBlur } from "three/addons/tsl/display/radialBlur.js";
 import { aimShafts, ATMOSPHERE, atmosphere, sunward } from "./atmosphere";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
@@ -411,7 +411,22 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     // The pass fades a reflection with distance and grazing angle; standing water mirrors the
     // lamps and sunlit walls more strongly than that leaves, so it is lifted. A rough 0.32 blurs it
     // through the pass's mip chain, which hides the half-resolution pixels.
-    occluded = occluded.add(mirror.getTextureNode().rgb.mul(2));
+    // Rain on the water stretches each reflection into a streak toward the eye, as on any wet
+    // street: the reflection is smeared up and down the screen over about 5% of its height. That also
+    // hides the stair-steps the half-resolution pass leaves on the edges of reflected buildings and
+    // signs. A blur in every direction (a rougher pass) lost a blind test as ghost images.
+    // Twelve taps, each pixel's set offset by a different fraction of a step, so the taps blend
+    // into one smear instead of stacking as separate copies; the film grain covers the dither.
+    const reflected = mirror.getTextureNode();
+    const jitter = fract(float(52.9829189).mul(fract(dot(screenCoordinate.xy, vec2(0.06711056, 0.00583715))))).sub(0.5);
+    let streaks: Node<"vec3"> = vec3(0);
+    let total = 0;
+    for (let k = -6; k <= 5; k += 1) {
+      const weight = Math.exp(-((k + 0.5) ** 2) / 14);
+      streaks = streaks.add(reflected.sample(uv().add(vec2(0, jitter.add(k + 0.5).mul(0.0042)))).rgb.mul(weight));
+      total += weight;
+    }
+    occluded = occluded.add(streaks.mul(2 / total));
   }
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
