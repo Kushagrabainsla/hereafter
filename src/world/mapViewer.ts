@@ -454,7 +454,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
   moveShopGlass(scene, cloudScene, worldPass.getTextureNode("depth"));
   // Rain round the player (rain.ts), in the clouds' scene too; how many drops depends on the preset.
-  const rain = look.wet ? new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth")) : null;
+  const rain = look.wet ? new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth"), built.lightSources) : null;
   // The outdoor lamps' glow and beams in the damp air (lampHaze.ts), in the clouds' scene too.
   const lampHaze = look.lamps ? new LampHaze(cloudScene, built.lightSources, built.lightCones, worldPass.getTextureNode("depth")) : null;
   const clouds = pass(cloudScene, camera).getTextureNode("output");
@@ -730,7 +730,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
     built.update(time / 1000);
     rainTime.value = time / 1000;
-    rain?.follow(camera.position);
+    rain?.follow(camera.position, 2 * Math.tan((camera.fov * Math.PI) / 360) / Math.max(1, renderer.domElement.height));
     lampHaze?.update();
     reflectFrom.inverseProjection.value.copy(camera.projectionMatrixInverse);
     reflectFrom.world.value.copy(camera.matrixWorld);

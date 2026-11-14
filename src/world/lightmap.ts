@@ -84,7 +84,10 @@ export function applyLightmap(surfaces: Mesh[], lightmap: Lightmap): number {
   // (3.5 m across) stay cleaner, so the streaks do not repeat evenly along a wall, and walls over
   // an indoor floor stay clean: there the ray up met a ceiling, not a ledge in the rain.
   const patches = smoothstep(0.3, 0.7, texture3D(noiseVolume(), vec3(along.div(3.5), positionWorld.y.div(9), float(0.81))).r).mul(0.75).add(0.25);
-  const stain = drip ? max(drip.mul(0.3), smoothstep(column.mul(0.85), column.mul(0.85).add(0.35), drip)).mul(patches).mul(smoothstep(0.5, 1, outdoorNode(positionWorld))) : null;
+  // Identical windows bake identical drips, so each window's stain is given its own strength from
+  // noise about a window's width across (1.4 m): some run dark, some are barely there.
+  const own = smoothstep(0.3, 0.7, texture3D(noiseVolume(), vec3(along.div(1.4), positionWorld.y.div(6), float(0.37))).g).mul(0.95).add(0.05);
+  const stain = drip ? max(drip.mul(0.3), smoothstep(column.mul(0.85), column.mul(0.85).add(0.35), drip)).mul(patches).mul(own).mul(smoothstep(0.5, 1, outdoorNode(positionWorld))) : null;
   let applied = 0;
   for (const entry of lightmap.data.looks) {
     const mesh = surfaces.find((surface) => surface.name === `static:${entry.look}`);
@@ -102,6 +105,10 @@ export function applyLightmap(surfaces: Mesh[], lightmap: Lightmap): number {
     const material = new MeshStandardNodeMaterial();
     material.copy(source);
     material.aoNode = sky;
+    // Outside, dirt gathers where little sky reaches: under ledges and sills, in corners and at the
+    // foot of narrow walls, where the rain does not wash it off.
+    const sheltered = float(1).sub(smoothstep(0.25, 0.85, texture(lightmap.sky, at).r)).mul(smoothstep(0.5, 1, outdoorNode(positionWorld)));
+    material.colorNode = ((material.colorNode ?? materialColor) as unknown as Node<"vec3">).mul(mix(float(1), float(0.55), sheltered));
     if (stain) {
       const color = (material.colorNode ?? materialColor) as unknown as Node<"vec3">;
       material.colorNode = color.mul(mix(vec3(1), vec3(0.97, 0.95, 0.9).mul(1 - STAIN.dark), vec3(stain)));

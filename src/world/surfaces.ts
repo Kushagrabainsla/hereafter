@@ -129,6 +129,10 @@ export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatN
   const bleed = smoothstep(rustEdge.sub(0.3), rustEdge.add(0.05), rustField.add(wear.r.mul(0.2))).mul(step(float(0.01), rust));
   color = mix(color, color.mul(RUST_STAIN), bleed.mul(0.55));
   color = mix(color, mix(RUST_DARK, RUST_LIGHT, fine.mul(0.5).add(0.5)), rusty);
+  // On bare metal the rust also runs: water carries it down from seams and edges in thin streaks,
+  // along the rain runs of the wear picture, instead of sitting in separate flecks.
+  const rustRuns = smoothstep(0.12, 0.35, wear.r).mul(smoothstep(0.3, 0.55, rust)).mul(smoothstep(-0.3, 0.3, coarse.add(low.mul(0.5))));
+  color = mix(color, color.mul(RUST_STAIN).mul(0.75), rustRuns.mul(0.9));
   // Dust on what faces up, grime near the ground and in broad patches.
   const up = smoothstep(0.5, 0.95, normalWorld.y);
   // Rain streaks (read above): grime washed down in fine and broad runs, and paler runs where rain ran clean.
