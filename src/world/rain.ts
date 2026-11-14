@@ -27,7 +27,7 @@ const hash = (index: Node<"float">, k: number, m: number): Node<"float"> => frac
 const GRID = { x0: -40, y0: 0, z0: -42, nx: 80, ny: 16, nz: 84 };
 // How brightly a drop shows the lamp light it catches.
 export const RAIN = {
-  lamp: uniform(0.6), sky: uniform(1), sun: uniform(2), alpha: uniform(0.35),
+  lamp: uniform(0.6), sky: uniform(1), sun: uniform(2), alpha: uniform(0.16), splash: uniform(1.4),
   // The view's size of one pixel at 1 m, set each frame (follow).
   pixel: uniform(0.0015),
 };
@@ -137,7 +137,7 @@ export class Rain {
       const centre = vec3(eye.x.add(spread(rx)), 0.01, eye.z.add(spread(rz)));
       const pool = puddleNode(centre);
       const keep = step(hash(index.add(cycle.mul(0.17)), 5.3, 7121.7), mix(float(0.35), float(1), pool));
-      const size = hash(index, 29.71, 14142.136).mul(0.04).add(0.04).mul(mix(float(0.65), float(1), pool));
+      const size = hash(index, 29.71, 14142.136).mul(0.05).add(0.05).mul(mix(float(0.65), float(1), pool));
       const across = size.mul(life.mul(1.5).add(0.7)), up = size.mul(sin(life.mul(Math.PI)).mul(1.3).add(0.4));
       const toSplash = centre.sub(eye), distance = length(toSplash);
       const side = normalize(vec3(toSplash.z, 0, toSplash.x.negate()));
@@ -149,10 +149,10 @@ export class Rain {
       const shape = clamp(crown.mul(0.5).add(core.mul(0.8)), 0, 1);
       const stored = texture3D(volume, vec3(centre.x.sub(GRID.x0).div(GRID.nx), float(0.5 / GRID.ny), centre.z.sub(GRID.z0).div(GRID.nz))).rgb;
       const lit = stored.div(max(vec3(1).sub(stored), vec3(0.02)));
-      material.colorNode = vec3(0.07, 0.08, 0.095).mul(RAIN.sky).add(lit.mul(RAIN.lamp));
+      material.colorNode = vec3(0.12, 0.13, 0.15).mul(RAIN.sky).add(lit.mul(RAIN.lamp.mul(1.4)));
       // A splash stands on the street, so it shows down to just under the surface the world drew there.
       material.opacityNode = shape.mul(float(1).sub(life)).mul(float(1).sub(smoothstep(11, 15, distance))).mul(mix(float(0.5), float(1), pool)).mul(keep)
-        .mul(smoothstep(0.97, 1, outdoorNode(centre))).mul(0.6).mul(smoothstep(-0.12, -0.02, clearance));
+        .mul(smoothstep(0.97, 1, outdoorNode(centre))).mul(RAIN.splash).mul(smoothstep(-0.12, -0.02, clearance));
       this.splashes = new InstancedMesh(new PlaneGeometry(1, 1), material, SPLASHES);
       this.splashes.frustumCulled = false;
       this.splashes.renderOrder = 10;

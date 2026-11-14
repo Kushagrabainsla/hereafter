@@ -87,7 +87,9 @@ export function applyLightmap(surfaces: Mesh[], lightmap: Lightmap): number {
   // Identical windows bake identical drips, so each window's stain is given its own strength from
   // noise about a window's width across (1.4 m): some run dark, some are barely there.
   const own = smoothstep(0.3, 0.7, texture3D(noiseVolume(), vec3(along.div(1.4), positionWorld.y.div(6), float(0.37))).g).mul(0.95).add(0.05);
-  const stain = drip ? max(drip.mul(0.3), smoothstep(column.mul(0.85), column.mul(0.85).add(0.35), drip)).mul(patches).mul(own).mul(smoothstep(0.5, 1, outdoorNode(positionWorld))) : null;
+  // Each window's runs also end at its own length, so the same sill does not leave the same shape.
+  const reach = own.sub(0.5).mul(0.5);
+  const stain = drip ? max(drip.mul(0.3), smoothstep(column.mul(0.85).add(reach), column.mul(0.85).add(reach).add(0.35), drip)).mul(patches).mul(own).mul(smoothstep(0.5, 1, outdoorNode(positionWorld))) : null;
   let applied = 0;
   for (const entry of lightmap.data.looks) {
     const mesh = surfaces.find((surface) => surface.name === `static:${entry.look}`);
