@@ -204,6 +204,10 @@ const facades: Facade[] = [
   { face: "nz", at: 30, from: -30, to: 30, y0: 5.2, y1: 13, lit: 0.35 },
 ];
 // Upper bar room windows, either side of the balcony door.
+// The rooms an unlit window may show (windowInterior kinds: curtains, blinds, half curtain, plant),
+// drawn as glass looks after the dark one and the eight lit ones.
+const UNLIT_ROOMS = [0, 1, 6, 3];
+const UNLIT_FIRST = 9;
 const upperWindows: { z: number }[] = [{ z: -0.6 }, { z: 2.6 }, { z: 8.4 }];
 
 const shopfronts: Shopfront[] = [
@@ -828,10 +832,14 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // ---------- windows: breakable glass on every upper floor ----------
   const windowSpots: { x: number; y: number; z: number; face: Face; lit: number }[] = [];
   facades.forEach((facade, index) => {
-    const r = seeded(index * 131 + 7);
+    const r = seeded(index * 131 + 7), unlit = seeded(index * 131 + 911);
     for (let a = facade.from + 1.7; a <= facade.to - 1.6; a += 3.4) for (let y = facade.y0; y <= facade.y1; y += 3.3) {
       const [nx, nz] = FACE_NORMAL[facade.face];
-      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit && !day ? 1 + Math.floor(r() * 8) : 0 });
+      // An unlit window is dark glass, or shows its unlit room: curtains, blinds, a half curtain or
+      // a plant, seen by the street's light. One dark mirror in every unlit window repeated along
+      // each facade.
+      const dark = unlit() < 0.45 ? 0 : UNLIT_FIRST + Math.floor(unlit() * UNLIT_ROOMS.length);
+      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit && !day ? 1 + Math.floor(r() * 8) : dark });
     }
   });
   upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: day ? 0 : 1 + index }));
@@ -844,7 +852,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const glassLooks = [std({ color: 0x0e1318, roughness: 0.04, metalness: 0.9 }), ...intensities.map((intensity, kind) => {
     const room = own(windowInterior(kind));
     return std({ map: room, emissive: 0xffffff, emissiveMap: room, emissiveIntensity: intensity, roughness: 0.08, metalness: 0.2 });
-  })];
+  }), ...UNLIT_ROOMS.map((kind) => std({ map: own(windowInterior(kind)), color: 0x585858, roughness: 0.08, metalness: 0.25 }))];
   const counts = glassLooks.map(() => 0);
   for (const spot of windowSpots) counts[spot.lit] += 1;
   const glassMeshes = glassLooks.map((material, i) => { const mesh = new InstancedMesh(windowGeometry, material, Math.max(1, counts[i])); mesh.count = counts[i]; return mesh; });
