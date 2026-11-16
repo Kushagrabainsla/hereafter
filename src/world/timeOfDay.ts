@@ -54,9 +54,11 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     wet: false,
     lamps: false,
     // A warm cream haze that washes the far ends of the alleys out toward the sun.
-    haze: { density: 0.006, clear: 0, color: [0.34, 0.31, 0.26], glow: 0.9, tight: 0.9, skyHaze: 0.06 },
-    // Slightly warm in the shade: the blue sky light already cools it, and navy shade read as night.
-    grade: { shadows: [1.03, 1.0, 0.95], lights: [1.02, 1.0, 0.97] },
+    // The haze glows strongly toward the sun (1.5), so the far ends of the alleys soften in it.
+    haze: { density: 0.006, clear: 0, color: [0.34, 0.31, 0.26], glow: 1.5, tight: 1.5, skyHaze: 0.06 },
+    // Slightly warm and lifted in the shade, so brick keeps its detail: the blue sky light already
+    // cools it, and navy shade read as night. With the stronger sun haze this won 6 spots of 18 to 0.
+    grade: { shadows: [1.1, 1.06, 1.0], lights: [1.02, 1.0, 0.97] },
     // Sunlight bounced off the walls and street fills a narrow alley's shade far more than the
     // little sky it sees; 2.6 times the dusk gain won a blind test.
     bounce: 2.6,

@@ -1,5 +1,5 @@
 import type { Node, Texture } from "three/webgpu";
-import { abs, attribute, bumpMap, clamp, float, fwidth, min, mix, normalLocal, normalWorld, positionLocal, positionWorld, smoothstep, step, texture, texture3D, vec2, vec3 } from "three/tsl";
+import { abs, attribute, bumpMap, clamp, dot, float, fwidth, max, min, mix, normalLocal, normalWorld, positionLocal, positionWorld, smoothstep, step, texture, texture3D, uniform, vec2, vec3 } from "three/tsl";
 import { noiseVolume } from "./noiseVolume";
 import { WEAR, WEAR_TILE } from "./wearTextures";
 import { outdoorNode, WEATHER } from "./wetness";
@@ -88,8 +88,14 @@ function triplanar(map: Texture): Node<"vec4"> {
     .add(texture(map, vec2(P.x, P.y)).mul(weights.z));
 }
 
+// No real paint or plastic reflects much more than about 60% of the light (linear): near-white
+// paint (the food truck, air conditioners) burned out to pure white in the day sun.
+export const ALBEDO = { max: uniform(0.6) };
+
 // The layered surface over a base colour, roughness and metalness.
-export function layered(base: ColorNode, roughness: FloatNode, metalness: FloatNode, kind: FloatNode): Layered {
+export function layered(source: ColorNode, roughness: FloatNode, metalness: FloatNode, kind: FloatNode): Layered {
+  const bright = dot(source, vec3(0.2126, 0.7152, 0.0722));
+  const base = source.mul(min(float(1), ALBEDO.max.div(max(bright, float(1e-3)))));
   const P = positionLocal;
   const volume = noiseVolume();
   // Three reads of the noise block: a 6 m block (bumps from 3 m down to 40 cm), an 80 cm block
