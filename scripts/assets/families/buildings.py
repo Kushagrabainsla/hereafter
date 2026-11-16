@@ -33,7 +33,8 @@ from lib import RAD, Piece, box, cylinder, hull, join, material, mesh_object, pr
 def materials():
     # Old paint and city-weathered stone, not fresh white: bright trim glows under the lamps
     # and reads as plastic.
-    material("bld_frame", 0xa89f8c, 0.0, 0.75)
+    # paint_*: the game tints each window's frame by its building (nightMarket.ts, TRIMS).
+    material("paint_frame", 0xd6cfbe, 0.0, 0.75)
     material("bld_sash", 0x2a2622, 0.2, 0.6)
     material("bld_stone", 0xa49b8b, 0.0, 0.88)
     material("bld_trim", 0xa0978a, 0.0, 0.88)
@@ -96,10 +97,10 @@ def window_unit():
     corbels and a lintel with a keystone over it. The glass is the card_window card, set 6 cm out,
     so it sits 8 cm back inside the frame and the frame's inner faces read as the window's depth."""
     W, H, w, h = 1.62, 2.0, 1.38, 1.76
-    parts = [frame_sweep("architrave", W, H, ARCHITRAVE, "bld_frame")]
+    parts = [frame_sweep("architrave", W, H, ARCHITRAVE, "paint_frame")]
     c = 0.035
     for i, (x0, x1, z0, z1) in enumerate(((-w / 2, w / 2, h / 2 - c, h / 2), (-w / 2, w / 2, -h / 2, -h / 2 + c), (-w / 2, -w / 2 + c, -h / 2 + c, h / 2 - c), (w / 2 - c, w / 2, -h / 2 + c, h / 2 - c))):
-        parts.append(box(f"casing{i}", x0, x1, -0.085, -0.055, z0, z1, "bld_frame"))
+        parts.append(box(f"casing{i}", x0, x1, -0.085, -0.055, z0, z1, "paint_frame"))
     parts.append(box("reveal", -w / 2, w / 2, -0.032, -0.03, -h / 2, h / 2, "bld_recess"))
     # Sash bars in front of the glass: a muntin up the middle and the meeting rail, their edges
     # eased so they catch a thin line of light.

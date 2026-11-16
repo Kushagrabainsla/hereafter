@@ -23,7 +23,7 @@ export function surfaceKind(name: string): number {
   const n = name.toLowerCase();
   if (n.startsWith("glow_") || n.startsWith("card_") || n.startsWith("sign_")) return SurfaceKind.plain;
   if (n.includes("rust")) return SurfaceKind.rusted;
-  if (/paint|enamel|lacquer|dumpster|bld_frame|bld_sash|bld_shop|extinguisher|fuel_red|hazard|street_lid|valve|teal|propane|^trim$|^red$|stencil/.test(n)) return SurfaceKind.painted;
+  if (/paint|enamel|lacquer|dumpster|bld_sash|bld_shop|extinguisher|fuel_red|hazard|street_lid|valve|teal|propane|^trim$|^red$|stencil/.test(n)) return SurfaceKind.painted;
   if (/stone|bld_trim|concrete|mortar|fx_brick|insulation/.test(n)) return SurfaceKind.stone;
   if (/wood|plywood|pallet|cedar|walnut|oak|bamboo|panel|butcher|wicker|cue|stall/.test(n)) return SurfaceKind.wood;
   if (/bld_shutter|steel|galv|chrome|iron|grille|brass|copper|alu|grating|rail|checker|conduit|cage|bracket|hoop|lock/.test(n)) return SurfaceKind.metal;

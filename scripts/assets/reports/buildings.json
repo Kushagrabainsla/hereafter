@@ -10,11 +10,11 @@
     2.473
    ],
    "materials": [
-    "bld_frame",
     "bld_recess",
     "bld_sash",
     "bld_stone",
-    "bld_trim"
+    "bld_trim",
+    "paint_frame"
    ],
    "notes": "Every upper-floor window, centred on its glass, set on the wall face."
   },

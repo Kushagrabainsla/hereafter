@@ -209,6 +209,10 @@ const facades: Facade[] = [
 // drawn as glass looks after the dark one and the eight lit ones.
 const UNLIT_ROOMS = [0, 1, 6, 3];
 const UNLIT_FIRST = 9;
+// Each building paints its window frames its own colour, as real buildings do, over the frame's
+// pale base: weathered greige, cream, bottle green, oxblood, slate and charcoal. One greige on
+// every frame of every building made the facades read as one window repeated.
+const TRIMS = [0xc8c0b0, 0xffffff, 0x7a957b, 0x8a5650, 0x8794a0, 0x5a5a5a];
 const upperWindows: { z: number }[] = [{ z: -0.6 }, { z: 2.6 }, { z: 8.4 }];
 
 const shopfronts: Shopfront[] = [
@@ -831,7 +835,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   }
 
   // ---------- windows: breakable glass on every upper floor ----------
-  const windowSpots: { x: number; y: number; z: number; face: Face; lit: number }[] = [];
+  const windowSpots: { x: number; y: number; z: number; face: Face; lit: number; trim: number }[] = [];
   facades.forEach((facade, index) => {
     const r = seeded(index * 131 + 7), unlit = seeded(index * 131 + 911);
     for (let a = facade.from + 1.7; a <= facade.to - 1.6; a += 3.4) for (let y = facade.y0; y <= facade.y1; y += 3.3) {
@@ -840,10 +844,10 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
       // a plant, seen by the street's light. One dark mirror in every unlit window repeated along
       // each facade.
       const dark = unlit() < 0.45 ? 0 : UNLIT_FIRST + Math.floor(unlit() * UNLIT_ROOMS.length);
-      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit && !day ? 1 + Math.floor(r() * 8) : dark });
+      windowSpots.push({ x: nx ? facade.at : a, y, z: nz ? facade.at : a, face: facade.face, lit: r() < facade.lit && !day ? 1 + Math.floor(r() * 8) : dark, trim: TRIMS[(index * 5 + 3) % TRIMS.length] });
     }
   });
-  upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: day ? 0 : 1 + index }));
+  upperWindows.forEach(({ z }, index) => windowSpots.push({ x: 17, y: 5.9, z, face: "nx", lit: day ? 0 : 1 + index, trim: TRIMS[0] }));
   // Each window is a modelled unit (frame, reveal, sash bars, sill and lintel) with its glass
   // a card in front of the reveal, drawn in one of these looks.
   const windowGeometry = cardGeometry(kit, "card_window");
@@ -871,7 +875,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     const [nx, nz] = FACE_NORMAL[spot.face];
     const at = (out: number, up = 0): Vector3 => new Vector3(spot.x + nx * out, spot.y + up, spot.z + nz * out);
     q.setFromAxisAngle(UP, FACE_YAW[spot.face]);
-    placer.place("window_unit", matrix.compose(at(0), q, one));
+    placer.place("window_unit", matrix.compose(at(0), q, one), spot.trim);
     const mesh = glassMeshes[spot.lit], slot = used[spot.lit]++;
     mesh.setMatrixAt(slot, matrix.compose(at(0.06), q, one));
     const id = `window:${index}`;
