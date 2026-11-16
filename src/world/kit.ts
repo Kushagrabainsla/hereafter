@@ -118,6 +118,9 @@ export function kitPieces(gltfs: (GLTF | null)[]): Map<string, KitPiece> {
         const mesh = object as Mesh;
         if (!mesh.isMesh) return;
         const material = mesh.material as SurfaceMaterial;
+        // Flat rust shapes laid on a piece (street_rust, bld_rust) read as stickers; the surfaces
+        // grow rust along each piece's edges and seams instead (surfaces.ts).
+        if (/_rust$/.test(material.name)) return;
         const geometry = unpacked(mesh.geometry.clone()).applyMatrix4(mesh.matrixWorld);
         if (plain(material)) { plainParts.push(withEdges(painted(bare(geometry), material))); return; }
         // glTF counts texture rows from the top; the game's own pictures count from the bottom.

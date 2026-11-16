@@ -43,44 +43,93 @@ export function withEdges(source: BufferGeometry): BufferGeometry {
     const list = sides.get(k);
     if (list) list.push(t); else sides.set(k, [t]);
   }
-  const outside = new Float32Array(count * 3).fill(FAR), inside = new Float32Array(count * 3).fill(FAR);
+  // Each side of each triangle: an outside edge, an inside corner, or nothing (the diagonal of a flat
+  // face), or an open border. Open borders are the outlines of thin paint layers (lettering, hazard
+  // stripes, posters): their own attribute, `edgeOpen`, lets the paint wear at its outline without
+  // the rust that grows along a solid's edges spreading over the whole of a thin stripe.
+  const kinds: ("out" | "in" | "open" | null)[] = new Array(triangles * 3).fill(null);
+  const flatWith: number[][] = Array.from({ length: triangles }, () => []);
   for (let t = 0; t < triangles; t += 1) {
     const corners = [p(t * 3), p(t * 3 + 1), p(t * 3 + 2)];
     const n = [normals[t * 3], normals[t * 3 + 1], normals[t * 3 + 2]];
-    // Twice the area, for each corner's height above the opposite side.
-    const doubleArea = Math.hypot(...cross(sub(corners[1], corners[0]), sub(corners[2], corners[0])));
     for (let s = 0; s < 3; s += 1) {
       const a = corners[(s + 1) % 3], b = corners[(s + 2) % 3], opposite = corners[s];
-      const sideLength = Math.hypot(...sub(b, a));
-      if (sideLength < 1e-6 || doubleArea < 1e-9) continue;
+      if (Math.hypot(...sub(b, a)) < 1e-6) continue;
       const neighbours = (sides.get(sideKey(t * 3 + ((s + 1) % 3), t * 3 + ((s + 2) % 3))) ?? []).filter((other) => other !== t);
-      let kind: "out" | "in" | null = "out";
-      if (neighbours.length) {
-        const o = neighbours[0], m = [normals[o * 3], normals[o * 3 + 1], normals[o * 3 + 2]];
-        const facing = n[0] * m[0] + n[1] * m[1] + n[2] * m[2];
-        if (facing > FLAT) kind = null;
-        else {
-          // Out of this face across the side, in its plane: the neighbour's normal leans that way
-          // on an outside edge and back toward this face in an inside corner.
-          const along = sub(b, a), toOpposite = sub(opposite, a);
-          let away = cross(along, n);
-          if (dot(away, toOpposite) > 0) away = away.map((v) => -v) as [number, number, number];
-          kind = dot(away, m) > 0 ? "out" : "in";
-        }
+      if (!neighbours.length) { kinds[t * 3 + s] = "open"; continue; }
+      const o = neighbours[0], m = [normals[o * 3], normals[o * 3 + 1], normals[o * 3 + 2]];
+      const facing = n[0] * m[0] + n[1] * m[1] + n[2] * m[2];
+      if (facing > FLAT) { flatWith[t].push(o); continue; }
+      // Out of this face across the side, in its plane: the neighbour's normal leans that way
+      // on an outside edge and back toward this face in an inside corner.
+      const along = sub(b, a), toOpposite = sub(opposite, a);
+      let away = cross(along, n);
+      if (dot(away, toOpposite) > 0) away = away.map((v) => -v) as [number, number, number];
+      kinds[t * 3 + s] = dot(away, m) > 0 ? "out" : "in";
+    }
+  }
+  // The flat faces: triangles joined across sides that do not count. A triangle measures to the
+  // edges of its whole face, not only its own sides, or wear along an edge would stop at the face's
+  // diagonal in a hard triangle. Each triangle keeps the three edges of each kind nearest to it; the
+  // distance to an edge's line is linear across the triangle, so the graphics card interpolates it
+  // exactly.
+  const face = new Int32Array(triangles).fill(-1), faces: number[][] = [];
+  for (let t = 0; t < triangles; t += 1) {
+    if (face[t] >= 0) continue;
+    const members: number[] = [], stack = [t];
+    face[t] = faces.length;
+    while (stack.length) {
+      const u = stack.pop()!;
+      members.push(u);
+      for (const v of flatWith[u]) if (face[v] < 0) { face[v] = faces.length; stack.push(v); }
+    }
+    faces.push(members);
+  }
+  const outside = new Float32Array(count * 3).fill(FAR), inside = new Float32Array(count * 3).fill(FAR), open = new Float32Array(count * 3).fill(FAR);
+  for (const members of faces) {
+    const edges: { a: V; b: V; kind: "out" | "in" | "open" }[] = [];
+    for (const t of members) for (let s = 0; s < 3; s += 1) {
+      const kind = kinds[t * 3 + s];
+      if (kind) edges.push({ a: p(t * 3 + ((s + 1) % 3)), b: p(t * 3 + ((s + 2) % 3)), kind });
+    }
+    if (!edges.length) continue;
+    for (const t of members) {
+      const corners = [p(t * 3), p(t * 3 + 1), p(t * 3 + 2)];
+      const n: V = [normals[t * 3], normals[t * 3 + 1], normals[t * 3 + 2]];
+      const centre: V = [(corners[0][0] + corners[1][0] + corners[2][0]) / 3, (corners[0][1] + corners[1][1] + corners[2][1]) / 3, (corners[0][2] + corners[1][2] + corners[2][2]) / 3];
+      for (const kind of ["out", "in", "open"] as const) {
+        // Only edges the triangle lies beside, not beyond an end: the line of a window opening's side
+        // would otherwise run on across the frame above and below it as a false edge.
+        const nearest = edges.filter((edge) => edge.kind === kind && beside(centre, edge.a, edge.b)).map((edge) => ({ edge, d: segmentDistance(centre, edge.a, edge.b) })).sort((x, y) => x.d - y.d).slice(0, 3);
+        const target = kind === "out" ? outside : kind === "in" ? inside : open;
+        nearest.forEach(({ edge }, slot) => {
+          // In the face's plane, across the edge: distance from its line, never below zero.
+          const along = sub(edge.b, edge.a), length = Math.hypot(...along);
+          let across = cross(n, along).map((v) => v / length) as V;
+          if (dot(across, sub(centre, edge.a)) < 0) across = across.map((v) => -v) as V;
+          for (let c = 0; c < 3; c += 1) target[(t * 3 + c) * 3 + slot] = Math.max(0, dot(across, sub(corners[c], edge.a)));
+        });
       }
-      if (!kind) continue;
-      // Linear across the triangle: the corner's height above the side there, zero on the side.
-      const height = doubleArea / sideLength;
-      const target = kind === "out" ? outside : inside;
-      for (let c = 0; c < 3; c += 1) target[(t * 3 + c) * 3 + s] = c === s ? height : 0;
     }
   }
   geometry.setAttribute("edgeOut", new BufferAttribute(outside, 3));
   geometry.setAttribute("edgeIn", new BufferAttribute(inside, 3));
+  geometry.setAttribute("edgeOpen", new BufferAttribute(open, 3));
   return geometry;
 }
 
 type V = [number, number, number];
 const sub = (a: V, b: V): V => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: V | number[], b: V | number[]): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: V, b: V | number[]): V => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const cross = (a: V | number[], b: V | number[]): V => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+// Whether a point lies beside a segment: its foot on the segment's line falls between the ends.
+function beside(point: V, a: V, b: V): boolean {
+  const ab = sub(b, a), k = dot(sub(point, a), ab) / (dot(ab, ab) || 1);
+  return k >= 0 && k <= 1;
+}
+// The distance from a point to a segment.
+function segmentDistance(point: V, a: V, b: V): number {
+  const ab = sub(b, a), ap = sub(point, a);
+  const k = Math.max(0, Math.min(1, dot(ap, ab) / (dot(ab, ab) || 1)));
+  return Math.hypot(ap[0] - ab[0] * k, ap[1] - ab[1] * k, ap[2] - ab[2] * k);
+}

@@ -125,19 +125,30 @@ export function layered(source: ColorNode, roughness: FloatNode, metalness: Floa
   color = mix(color, mix(PRIMER, UNDER, deep), chipped);
   // Rain streaks: grime washed down in fine and broad runs, and paler runs where rain ran clean.
   const wear = triplanar(WEAR.streaks.texture);
-  // Rust grows from the bottom of a piece and in patches.
+  // Rust starts where water sits and paint wears: along a piece's edges, seams and inside corners
+  // (edges.ts), and along its bottom. A ragged band about 20 cm wide follows each edge, more of it
+  // low down; rust in the middle of a clean panel, away from any edge, read as a pasted blob. Bare
+  // metal rusts in patches inside that band; painted pieces rust through the paint in stretches of
+  // it, where the noise says the paint has failed.
   const rustEdge = float(1.0).sub(rust.mul(0.85));
   // A grainy, stringy edge, drawn out up and down by the stretched noise, not a cut-out shape.
   const rustField = medium.mul(0.6).add(low.mul(0.6)).add(coarse.mul(0.3)).add(fine.mul(0.25)).add(flecks.mul(0.15));
-  const rusty = smoothstep(rustEdge, rustEdge.add(0.3), rustField).mul(step(float(0.01), rust));
+  const solidEdge = attribute("edgeOut", "vec3"), solidCorner = attribute("edgeIn", "vec3");
+  const toSeam = min(min(solidEdge.x, min(solidEdge.y, solidEdge.z)), min(solidCorner.x, min(solidCorner.y, solidCorner.z)));
+  const seam = smoothstep(0.2, 0.0, toSeam.add(flecks.mul(0.035)).add(fine.mul(0.02)));
+  const rustZone = max(seam.mul(low.mul(0.5).add(0.7)), low.mul(low)).clamp(0, 1);
+  const nearSeam = max(smoothstep(0.45, 0.05, toSeam), low);
+  const paintRust = seam.mul(smoothstep(0.0, 0.4, coarse.mul(0.5).add(low.mul(0.55)).add(flecks.mul(0.3)))).mul(step(float(0.01), chips));
+  const rusty = max(smoothstep(rustEdge, rustEdge.add(0.3), rustField).mul(step(float(0.01), rust)).mul(rustZone), paintRust);
   // Round each patch the rust bleeds into the paint as a brown stain that fades out, and runs down
   // from it in streaks, so a patch never ends at a cut line against clean paint.
-  const bleed = smoothstep(rustEdge.sub(0.3), rustEdge.add(0.05), rustField.add(wear.r.mul(0.2))).mul(step(float(0.01), rust));
+  const bleed = max(smoothstep(rustEdge.sub(0.3), rustEdge.add(0.05), rustField.add(wear.r.mul(0.2))).mul(step(float(0.01), rust)).mul(nearSeam), smoothstep(0.0, 0.6, paintRust.add(seam.mul(0.25))));
   color = mix(color, color.mul(RUST_STAIN), bleed.mul(0.55));
-  color = mix(color, mix(RUST_DARK, RUST_LIGHT, fine.mul(0.5).add(0.5)), rusty);
-  // On bare metal the rust also runs: water carries it down from seams and edges in thin streaks,
-  // along the rain runs of the wear picture, instead of sitting in separate flecks.
-  const rustRuns = smoothstep(0.12, 0.35, wear.r).mul(smoothstep(0.3, 0.55, rust)).mul(smoothstep(-0.3, 0.3, coarse.add(low.mul(0.5))));
+  // Mostly the dark brown of old rust, the bright orange only in flecks.
+  color = mix(color, mix(RUST_DARK, RUST_LIGHT, fine.mul(0.5).add(0.5).mul(0.8)), rusty);
+  // The rust also runs: water carries it down from the seams and edges in thin streaks, along the
+  // rain runs of the wear picture, instead of sitting in separate flecks.
+  const rustRuns = smoothstep(0.12, 0.35, wear.r).mul(max(smoothstep(0.3, 0.55, rust), smoothstep(0.0, 0.3, paintRust).mul(0.7))).mul(smoothstep(-0.3, 0.3, coarse.add(low.mul(0.5)))).mul(nearSeam);
   color = mix(color, color.mul(RUST_STAIN).mul(0.75), rustRuns.mul(0.9));
   // Dust on what faces up, grime near the ground and in broad patches.
   const up = smoothstep(0.5, 0.95, normalWorld.y);
@@ -157,8 +168,8 @@ export function layered(source: ColorNode, roughness: FloatNode, metalness: Floa
   // dirt gathers dark and dull. Nothing at an edge is made shinier: polished steel caught the sky
   // and drew bright silver outlines round every rim. The wear fades out where a pixel spans more
   // than about a centimetre, as a band thinner than a pixel can only flicker as a line.
-  const toEdge = attribute("edgeOut", "vec3"), toCorner = attribute("edgeIn", "vec3");
-  const outsideEdge = min(toEdge.x, min(toEdge.y, toEdge.z)), insideCorner = min(toCorner.x, min(toCorner.y, toCorner.z));
+  const toEdge = attribute("edgeOut", "vec3"), toCorner = attribute("edgeIn", "vec3"), toOutline = attribute("edgeOpen", "vec3");
+  const outsideEdge = min(min(toEdge.x, min(toEdge.y, toEdge.z)), min(toOutline.x, min(toOutline.y, toOutline.z))), insideCorner = min(toCorner.x, min(toCorner.y, toCorner.z));
   const pixel = fwidth(outsideEdge).add(fwidth(insideCorner)).mul(0.5);
   const close = float(1).sub(smoothstep(0.006, 0.016, pixel));
   const edgeAmount = amount(kind, "edge").mul(close), cavityAmount = amount(kind, "cavity").mul(close);
