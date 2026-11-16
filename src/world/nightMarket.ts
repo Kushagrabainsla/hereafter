@@ -9,6 +9,7 @@ import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleHeight, setIndoors,
 import { noiseVolume } from "./noiseVolume";
 import { SHOP_GLASS } from "./shopGlass";
 import { WEAR } from "./wearTextures";
+import { windowRoom } from "./windowRooms";
 import { LOOKS } from "./timeOfDay";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { type Arena, type ArenaData, type LayoutBox, type MapLayout } from "./arena";
@@ -849,10 +850,16 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // Unlit panes are dark glass reflecting the dusk; lit ones show a room, dim enough that its
   // pale walls and curtains keep their colour instead of burning out to white.
   const intensities = [0.45, 0.42, 0.45, 0.42, 0.45, 0.42, 0.42, 0.47];
-  const glassLooks = [std({ color: 0x0e1318, roughness: 0.04, metalness: 0.9 }), ...intensities.map((intensity, kind) => {
-    const room = own(windowInterior(kind));
-    return std({ map: room, emissive: 0xffffff, emissiveMap: room, emissiveIntensity: intensity, roughness: 0.08, metalness: 0.2 });
-  }), ...UNLIT_ROOMS.map((kind) => std({ map: own(windowInterior(kind)), color: 0x585858, roughness: 0.08, metalness: 0.25 }))];
+  // Each room has depth behind the glass (windowRooms.ts): lit ones glow with it, unlit ones show it
+  // only by the street's light.
+  const roomGlass = (kind: number, glow: number): MeshStandardNodeMaterial => {
+    const material = new MeshStandardNodeMaterial({ roughness: 0.08, metalness: glow > 0 ? 0.2 : 0.25 });
+    const room = windowRoom(own(windowInterior(kind)));
+    material.colorNode = glow > 0 ? room : room.mul(color(0x585858));
+    if (glow > 0) material.emissiveNode = room.mul(glow);
+    return material;
+  };
+  const glassLooks = [std({ color: 0x0e1318, roughness: 0.04, metalness: 0.9 }), ...intensities.map((intensity, kind) => roomGlass(kind, intensity)), ...UNLIT_ROOMS.map((kind) => roomGlass(kind, 0))];
   const counts = glassLooks.map(() => 0);
   for (const spot of windowSpots) counts[spot.lit] += 1;
   const glassMeshes = glassLooks.map((material, i) => { const mesh = new InstancedMesh(windowGeometry, material, Math.max(1, counts[i])); mesh.count = counts[i]; return mesh; });
