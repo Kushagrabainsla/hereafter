@@ -3,7 +3,7 @@ import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
 import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loadEffects, NO_SPRINT_LEG, RUSH_SPEED, type WeaponKind } from "./combatRules";
-import { Recoil } from "./gunFeel";
+import { LandingDip, Recoil } from "./gunFeel";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
 import { gameKey } from "../keys";
@@ -132,6 +132,8 @@ export class PlayerController {
   private punchYaw = 0;
   // The view's kick from the player's own shots, on top of the aim.
   private recoil = new Recoil();
+  // The dip of the eyes after a landing.
+  private dip = new LandingDip();
   private tagged = 0;
   private load = loadEffects(0);
   // What the player has on them, and what they hold in both hands, in kilograms.
@@ -206,6 +208,7 @@ export class PlayerController {
     this.punchPitch = 0;
     this.punchYaw = 0;
     this.recoil.reset();
+    this.dip.reset();
     this.tagged = 0;
     this.shoveEast = this.shoveNorth = this.shoveUp = 0;
     this.exertion = 0;
@@ -369,6 +372,7 @@ export class PlayerController {
     this.punchPitch *= settle;
     this.punchYaw *= settle;
     this.recoil.update(delta);
+    this.dip.update(delta);
     // Sprinting, climbing and jumping build exertion, faster under load; it eases at rest.
     const working = this.running ? 0.11 : this.climbing ? 0.08 : this.moving ? -0.03 : -0.07;
     this.exertion = Math.max(0, Math.min(1, this.exertion + delta * (working > 0 ? working * this.load.inertia ** 2 : working)));
@@ -481,6 +485,7 @@ export class PlayerController {
     if (!this.grounded && position.grounded && this.airTime > 0.18) {
       this.landings += 1;
       this.landingSpeed = falling;
+      this.dip.land(falling);
     }
     this.airTime = position.grounded ? 0 : this.airTime + delta;
     this.grounded = position.grounded;
@@ -670,7 +675,7 @@ export class PlayerController {
     const lean = this.lean * LEAN_OFFSET;
     // A limp drops the head on the bad leg and rolls it toward that side.
     const limp = Math.sin(this.stride) * this.bobAmount * this.leg;
-    this.camera.position.set(this.east - Math.cos(heading) * lean, this.feet + this.eyeHeight + bob - Math.max(0, limp) * 0.05 - Math.abs(this.lean) * 0.04, this.north + Math.sin(heading) * lean);
+    this.camera.position.set(this.east - Math.cos(heading) * lean, this.feet + this.eyeHeight + bob - Math.max(0, limp) * 0.05 - Math.abs(this.lean) * 0.04 - this.dip.value, this.north + Math.sin(heading) * lean);
     this.camera.lookAt(
       this.camera.position.x + Math.sin(heading) * Math.cos(pitch),
       this.camera.position.y + Math.sin(pitch),

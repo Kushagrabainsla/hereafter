@@ -85,6 +85,18 @@ A mouse move against the recoil is taken out of the recoil first. A player who h
 | Size of the flash over five shots | 1, 1, 1, 1, 1 | 0.80 to 1.33 |
 | Roll about the barrel over five shots | the same | different for each shot |
 
+**Camera shake.** One value, the trauma (0 to 1), drives every shake of the camera (`SHAKE` in `gunFeel.ts`, `ViewShake`). A shot adds a little (`shake` in the weapon's row), a hit adds by its damage, a hard landing adds by its speed, and a blast adds up to 1 at its centre, falling to nothing at 24 m. The shake is the square of the trauma, so small knocks barely show and big ones are strong. The trauma drains at a steady rate. The motion is smooth noise on pitch, yaw and roll (three sine waves that never line up), not a new random jolt each frame. It turns the picture only: shots leave along the aim. Before, only blasts moved the camera, by a new random offset and roll each frame.
+
+**Landing dip.** When the player lands, the eyes drop and come back up (`LANDING` in `gunFeel.ts`): 2.2 cm for each m/s of landing speed above 2.5 m/s, at most 16 cm, lowest about 70 ms after the landing.
+
+| Measured in play, the camera every frame | Before | Now |
+|---|---|---|
+| Blast 6 m away: most turn of the view | 0° pitch, 0° yaw, 0.29° roll | 0.72° pitch, 0.41° yaw, 0.87° roll |
+| Blast: jolt index (size of the frame-to-frame changes of direction against the size of the motion; random jolts give about 2.4 or more) | 3.21 | 0.34 to 0.43 |
+| One pistol shot: roll of the view | 0° | 0.09° for about 90 ms |
+| Landing from a jump on the spot: dip of the eyes | 0 cm | 5.3 cm, lowest 42 ms after the landing, back after 330 ms |
+| Landing from a 2.5 m drop | 0 cm | 12.3 cm, lowest 58 ms after the landing, back after 350 ms |
+
 ## Leaning, hit reactions and climbing
 
 Hold Q or E to lean left or right while standing or walking. The lean starts after the key is held for 150 ms (`LEAN_HOLD` in `playerController.ts`), because E is also the interact key: a tap of E to take a pickup or open a door does not tilt the view. A press of E that interacts with something does not lean at all, however long the key stays down. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.

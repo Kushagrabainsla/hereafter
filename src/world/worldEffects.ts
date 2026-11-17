@@ -8,6 +8,7 @@ import { MATERIALS, type Material } from "./materials";
 import { type GrenadePath, type Quat } from "./physics";
 import { kitObject, type KitPiece } from "./kit";
 import { gameAudio } from "../game/gameAudio";
+import { SHAKE } from "../game/gunFeel";
 
 type Style = "dust" | "sparks" | "splinters" | "shards" | "puff" | "blood" | "chunks" | "soil" | "leaves" | "embers";
 
@@ -238,6 +239,8 @@ export class WorldEffects {
   private quaternion = new Quaternion();
   private flameAt = new Vector3();
   private flameSize = new Vector3();
+  // The camera trauma (0 to 1) that blasts since the last frame add; the viewer takes it and
+  // sets it back to 0 (see SHAKE in gunFeel.ts).
   shake = 0;
 
   // `groups` holds plain objects drawn for an entity (hand-built maps), hidden while it is destroyed.
@@ -590,7 +593,7 @@ export class WorldEffects {
     const mark = this.scorchUnder(at);
     if (mark) this.scorch({ x: at.x, y: mark.y, z: at.z }, mark.size);
     const camera = this.camera();
-    this.shake = Math.max(this.shake, Math.min(1, 9 / (1 + camera.distanceTo(new Vector3(at.x, at.y, at.z)))));
+    this.shake = Math.max(this.shake, SHAKE.blast * Math.max(0, 1 - camera.distanceTo(new Vector3(at.x, at.y, at.z)) / SHAKE.blastReach));
   }
 
   // A thrown grenade follows the path the physics world computed, spinning, and clinks
@@ -646,7 +649,6 @@ export class WorldEffects {
       smoke.mesh.position.y += smoke.rise * seconds * (1 - t);
       smoke.material.opacity = smoke.base * (t < 0.1 ? t / 0.1 : 1 - (t - 0.1) / 0.9);
     }
-    this.shake *= Math.exp(-seconds * 6);
     const now = performance.now();
     for (const [id, grenade] of this.grenades) {
       const elapsed = (now - grenade.start) / 1000;

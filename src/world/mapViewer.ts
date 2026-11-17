@@ -30,6 +30,7 @@ import { Ejecta } from "../game/ejecta";
 import { WeaponVisuals } from "../game/weaponVisuals";
 import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio, type AmbientSource } from "../game/gameAudio";
+import { GUN_FEEL, LANDING, SHAKE, ViewShake } from "../game/gunFeel";
 import { CONDENSER_SPOTS } from "./facades";
 import { SoundStage } from "../game/soundStage";
 import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, BODY_MASS, type GunKind, type WeaponKind } from "../game/combatRules";
@@ -553,6 +554,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const port = (muzzle ?? camera.position.clone().addScaledVector(forward, 0.6).addScaledVector(up, -0.15)).addScaledVector(forward, gun === "rifle" ? -0.33 : -0.13).addScaledVector(right, 0.02).addScaledVector(up, 0.03);
     ejecta.ejectCase(gun, port, right, forward, eyeVelocity);
   };
+  const viewShake = new ViewShake();
   const effects = new WorldEffects(scene, data, refs, () => camera.position, groups, pieces);
   effects.setWorld({ pose: (id) => physics.bodyPose(id), surface: (id, point, normal) => physics.surfaceOf(id, point, normal), below: (at, reach) => physics.floorBelow(at, reach) });
   const breaches = new BreachViews(scene, built.surfaces, pieces);
@@ -688,6 +690,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const gait = player.gait();
     if (gait.landings !== lastLandings) {
       lastLandings = gait.landings;
+      viewShake.add(Math.max(0, gait.landingSpeed - LANDING.from) * LANDING.shake);
       if (gait.landingSpeed > 9) events.onHardLanding?.(gait.landingSpeed);
     }
     shotEffects.update(delta);
@@ -704,12 +707,15 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       const pose = physics.propPose(leaf.id);
       if (pose) built.doors.place(leaf.id, pose.position, pose.rotation);
     }
-    // Nearby blasts shake the view; the controller resets the camera every frame.
-    if (effects.shake > 0.01) {
-      const amount = effects.shake * 0.05;
-      camera.position.x += (Math.random() - 0.5) * amount;
-      camera.position.y += (Math.random() - 0.5) * amount;
-      camera.rotateZ((Math.random() - 0.5) * effects.shake * 0.02);
+    // Blasts, shots, hits and hard landings shake the view (ViewShake in gunFeel.ts): smooth
+    // turns of the camera that die away. The controller resets the camera every frame, and
+    // shots leave along the aim, not along the shaken view.
+    if (effects.shake > 0) { viewShake.add(effects.shake); effects.shake = 0; }
+    viewShake.update(Math.min(delta, 0.1));
+    if (viewShake.trauma > 0 && !deathView) {
+      camera.rotateX(viewShake.turn.pitch * Math.PI / 180);
+      camera.rotateY(viewShake.turn.yaw * Math.PI / 180);
+      camera.rotateZ(viewShake.turn.roll * Math.PI / 180);
     }
     const pose = player.pose();
     // The spring sway works in world terms: the eyes' acceleration along the camera's own axes.
@@ -992,7 +998,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       }
     },
     seenTimes() { return remotePlayers.seen(); },
-    flinch(damage) { player.flinch(damage); },
+    flinch(damage) { player.flinch(damage); viewShake.add(Math.min(SHAKE.hitMost, damage * SHAKE.hit)); },
     remoteFlinch(peerId, damage) { remotePlayers.flinch(peerId, damage); },
     remotePosition(peerId) { return remotePlayers.position(peerId); },
     quickThrow() { weaponVisuals.quickThrow(); },
@@ -1028,6 +1034,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     playAttack(weapon) {
       authoredViewModel.fire(weapon, player.aimAmount());
       weaponVisuals.fire(weapon, player.aimAmount());
+      viewShake.add(GUN_FEEL[weapon].shake);
       gameAudio.fire(weapon);
       const now = performance.now();
       localBloom = bloomAfterShot(weapon, localBloom, (now - lastLocalShot) / 1000);

@@ -66,6 +66,8 @@ export interface WeaponFeel {
   recoil: RecoilFeel;
   kick: KickFeel;
   flash: FlashFeel;
+  // The camera trauma one shot adds (see SHAKE).
+  shake: number;
 }
 
 export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
@@ -86,6 +88,7 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
     },
     kick: { back: 0.035, up: 0.012, pitch: 0.09, yaw: 0.02, roll: 0.035, peakMs: 28, vary: 0.2, aimed: 0.3 },
     flash: { ms: 30, size: [0.8, 1.3], stretch: 0.3, smokeSeconds: 0.45, smokeSize: 0.2, smokeDrift: 0.1, smokeOpacity: 0.85 },
+    shake: 0.3,
   },
   rifle: {
     recoil: {
@@ -108,7 +111,43 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
     },
     kick: { back: 0.028, up: 0.008, pitch: 0.07, yaw: 0.012, roll: 0.03, peakMs: 26, vary: 0.25, aimed: 0.3 },
     flash: { ms: 28, size: [0.85, 1.35], stretch: 0.3, smokeSeconds: 0.55, smokeSize: 0.26, smokeDrift: 0.14, smokeOpacity: 0.9 },
+    shake: 0.26,
   },
+};
+
+// The camera's shake. Anything violent adds "trauma" (0 to 1): a shot, a blast, a hit, a hard
+// landing. The shake is the square of the trauma, so small knocks barely show and big ones are
+// strong, and the trauma drains away at a steady rate. The motion is smooth noise on pitch, yaw
+// and roll, not a new random jolt each frame. It turns the picture only: shots still leave along
+// the aim.
+export const SHAKE = {
+  // The most the view turns at full trauma, in degrees, on each axis.
+  pitch: 2.4,
+  yaw: 1.8,
+  roll: 3,
+  // How fast the noise moves, in cycles per second.
+  frequency: 5,
+  // How much trauma drains each second.
+  decay: 1.3,
+  // A blast adds this much at its centre, falling to nothing at `blastReach` metres.
+  blast: 1,
+  blastReach: 24,
+  // A hit adds this much for each point of damage, up to `hitMost`.
+  hit: 0.012,
+  hitMost: 0.55,
+};
+
+// The dip of the view when the player lands: the eyes drop, then come back up.
+export const LANDING = {
+  // A landing slower than this (m/s) does not dip the view.
+  from: 2.5,
+  // Metres of dip for each m/s above that, up to `most` metres.
+  perSpeed: 0.022,
+  most: 0.16,
+  // The time from the landing to the lowest point, in milliseconds.
+  peakMs: 70,
+  // Trauma added for each m/s above `from` (see SHAKE).
+  shake: 0.04,
 };
 
 const signed = (): number => Math.random() * 2 - 1;
@@ -230,4 +269,42 @@ export class GunKick {
     for (const axis of Object.values(this.axes)) axis.reset();
     this.pose.back = this.pose.up = this.pose.pitch = this.pose.yaw = this.pose.roll = 0;
   }
+}
+
+// The camera's shake (see SHAKE): turns of the view in degrees, to add after the player's own.
+export class ViewShake {
+  trauma = 0;
+  private time = Math.random() * 100;
+  readonly turn = { pitch: 0, yaw: 0, roll: 0 };
+
+  add(amount: number): void { this.trauma = Math.min(1, this.trauma + Math.max(0, amount)); }
+
+  // Smooth noise between -1 and 1: three sine waves that never line up.
+  private noise(seed: number): number {
+    const t = this.time * SHAKE.frequency * Math.PI * 2;
+    return (Math.sin(t + seed) + Math.sin(t * 1.618 + seed * 2.3) * 0.7 + Math.sin(t * 0.437 + seed * 4.1) * 0.5) / 2.2;
+  }
+
+  update(seconds: number): void {
+    this.time += seconds;
+    this.trauma = Math.max(0, this.trauma - SHAKE.decay * seconds);
+    const shake = this.trauma * this.trauma;
+    this.turn.pitch = SHAKE.pitch * shake * this.noise(1.3);
+    this.turn.yaw = SHAKE.yaw * shake * this.noise(7.7);
+    this.turn.roll = SHAKE.roll * shake * this.noise(13.1);
+  }
+
+  reset(): void { this.trauma = 0; this.turn.pitch = this.turn.yaw = this.turn.roll = 0; }
+}
+
+// The dip of the eyes on a landing (see LANDING), in metres below their usual height.
+export class LandingDip {
+  private axis = new KickAxis();
+  get value(): number { return this.axis.value; }
+  land(speed: number): void {
+    const dip = Math.min(LANDING.most, Math.max(0, speed - LANDING.from) * LANDING.perSpeed);
+    if (dip > 0) this.axis.hit(dip, 1000 / LANDING.peakMs);
+  }
+  update(seconds: number): void { this.axis.step(Math.min(seconds, 0.1), 1000 / LANDING.peakMs); }
+  reset(): void { this.axis.reset(); }
 }
