@@ -141,8 +141,9 @@ export interface EffectsWorld {
   pose(id: string): { position: Vec3; rotation: Quat } | null;
   // The point on that thing's surface under a point near it, and the normal there.
   surface(id: string, point: Vec3, normal: Vec3): { point: Vec3; normal: Vec3 } | null;
-  // How far below a point the first fixed floor is, or null if none is within `reach` metres.
-  below(at: Vec3, reach: number): number | null;
+  // How far below a point the first fixed floor is and what it is made of, or null if none is
+  // within `reach` metres.
+  below(at: Vec3, reach: number): { distance: number; material: Material } | null;
 }
 
 // A blast's scorch mark, in metres across; and the smaller mark on a floor too narrow for it.
@@ -566,13 +567,17 @@ export class WorldEffects {
   // edge the mark is smaller, so it does not hang over the side.
   private scorchUnder(at: Vec3): { y: number; size: number } | null {
     if (!this.world) return { y: this.floor(at), size: SCORCH_SIZE };
-    const from = at.y + 0.3, drop = this.world.below({ x: at.x, y: from, z: at.z }, 3);
-    if (drop === null) return null;
+    const from = at.y + 0.3, under = this.world.below({ x: at.x, y: from, z: at.z }, 3);
+    if (under === null) return null;
+    const drop = under.distance;
     // A blast inside something solid, such as a cylinder in the food truck, marks the ground.
     if (drop < 0.02) return { y: this.floor(at), size: SCORCH_SIZE };
+    // Steel takes no mark: on the open grating of the fire escape the mark was a dark sheet
+    // lying across the bars.
+    if (under.material.startsWith("metal")) return null;
     let held = 0;
     for (let k = 0; k < 8; k += 1) {
-      const angle = k * Math.PI / 4, far = this.world.below({ x: at.x + Math.cos(angle) * SCORCH_SIZE * 0.42, y: from, z: at.z + Math.sin(angle) * SCORCH_SIZE * 0.42 }, 3);
+      const angle = k * Math.PI / 4, far = this.world.below({ x: at.x + Math.cos(angle) * SCORCH_SIZE * 0.42, y: from, z: at.z + Math.sin(angle) * SCORCH_SIZE * 0.42 }, 3)?.distance ?? null;
       // The floor carries on at the same height there, or a wall stands there and hides the rest.
       if (far !== null && (far < 0.02 || Math.abs(far - drop) < 0.15)) held += 1;
     }
