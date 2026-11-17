@@ -659,7 +659,8 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // street is not one even gloss: broad patches (7 m across) of it shed the water sooner.
   const wet = puddleNode(P);
   const damp = dampNode(P);
-  const sheen = mix(float(0.42), float(0.8), smoothstep(0.35, 0.65, texture3D(noiseVolume(), vec3(P.x.div(7), float(0.55), P.z.div(7))).g));
+  // A shade glossier than before (0.8 times the roughness), with the fewer puddles (wetness.ts).
+  const sheen = mix(float(0.336), float(0.64), smoothstep(0.35, 0.65, texture3D(noiseVolume(), vec3(P.x.div(7), float(0.55), P.z.div(7))).g));
   const street = (options: NodeOptions): MeshStandardNodeMaterial => {
     const material = new MeshStandardNodeMaterial(options);
     material.normalScale.set(0.5, 0.5);

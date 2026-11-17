@@ -12,11 +12,12 @@ import { noiseVolume } from "./noiseVolume";
 // The noise block is laid flat over the ground, one block every PUDDLE_SCALE metres.
 const PUDDLE_SCALE = 14;
 // How much of the ground the puddles cover: the noise's upper part. A narrow band, so the water
-// ends at a fairly crisp line, as real water does.
-const PUDDLE_FROM = 0.58;
-const PUDDLE_TO = 0.635;
+// ends at a fairly crisp line, as real water does. Only the highest part of the noise holds water:
+// a damp street with a few small puddles, the look the player chose over bigger, more puddles.
+const PUDDLE_FROM = 0.64;
+const PUDDLE_TO = 0.695;
 // Below the water, a ring of damp ground: darker and glossier, but no mirror.
-const DAMP_FROM = 0.5;
+const DAMP_FROM = 0.56;
 // Where on the block's height the ground's slice is taken.
 const SLICE = 0.37;
 // The finer read: one block every FINE_SCALE metres, from another slice, with this share.
