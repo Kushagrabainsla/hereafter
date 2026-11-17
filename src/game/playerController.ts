@@ -2,7 +2,8 @@ import { PerspectiveCamera } from "three/webgpu";
 import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
-import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loadEffects, NO_SPRINT_LEG, RUSH_SPEED } from "./combatRules";
+import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loadEffects, NO_SPRINT_LEG, RUSH_SPEED, type WeaponKind } from "./combatRules";
+import { Recoil } from "./gunFeel";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
 import { gameKey } from "../keys";
@@ -129,6 +130,8 @@ export class PlayerController {
   private leanHeld = { q: 0, e: 0 };
   private punchPitch = 0;
   private punchYaw = 0;
+  // The view's kick from the player's own shots, on top of the aim.
+  private recoil = new Recoil();
   private tagged = 0;
   private load = loadEffects(0);
   // What the player has on them, and what they hold in both hands, in kilograms.
@@ -202,6 +205,7 @@ export class PlayerController {
     this.lean = 0;
     this.punchPitch = 0;
     this.punchYaw = 0;
+    this.recoil.reset();
     this.tagged = 0;
     this.shoveEast = this.shoveNorth = this.shoveUp = 0;
     this.exertion = 0;
@@ -217,10 +221,14 @@ export class PlayerController {
     this.applyPose();
   }
 
-  kickRecoil(degrees: number): void {
-    this.pitch = Math.min(80, this.pitch + degrees);
-    this.applyPose();
+  // A shot kicks the view up and to a side, along the weapon's recoil pattern (gunFeel.ts). The
+  // kick is an offset on top of the aim: it returns when the trigger rests.
+  fireRecoil(weapon: WeaponKind): void {
+    this.recoil.fire(weapon, this.aim > 0.5, this.crouching);
   }
+
+  // How far the recoil has the view off the aim now, in degrees up and to the right.
+  recoilOffset(): { pitch: number; yaw: number } { return { pitch: this.recoil.pitch, yaw: this.recoil.yaw }; }
 
   motion(): PlayerMotion {
     return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed, aiming: this.aim > 0.5, aim: this.aim, exertion: this.exertion };
@@ -287,8 +295,10 @@ export class PlayerController {
     return {
       east: this.east,
       north: this.north,
-      heading: (this.heading + this.punchYaw + 360) % 360,
-      pitch: Math.max(-80, Math.min(80, this.pitch + this.punchPitch)),
+      // Shots leave along the view as it is kicked, by a hit or by the gun's own recoil. A
+      // rising heading turns the view left, so a kick to the right lowers it.
+      heading: (this.heading + this.punchYaw - this.recoil.yaw + 360) % 360,
+      pitch: Math.max(-80, Math.min(80, this.pitch + this.punchPitch + this.recoil.pitch)),
       jumpHeight: this.jumpHeight,
       moving: this.moving,
       running: this.running,
@@ -358,6 +368,7 @@ export class PlayerController {
     const settle = Math.exp(-delta * 8);
     this.punchPitch *= settle;
     this.punchYaw *= settle;
+    this.recoil.update(delta);
     // Sprinting, climbing and jumping build exertion, faster under load; it eases at rest.
     const working = this.running ? 0.11 : this.climbing ? 0.08 : this.moving ? -0.03 : -0.07;
     this.exertion = Math.max(0, Math.min(1, this.exertion + delta * (working > 0 ? working * this.load.inertia ** 2 : working)));
@@ -594,8 +605,11 @@ export class PlayerController {
   private turn(dx: number, dy: number, mode: "drag" | "locked"): void {
     // Looking down magnifying sights, the view turns slower in proportion.
     const direction = mode === "drag" ? 1 : -1, rate = 0.18 / (1 + this.aim * (this.zoom - 1));
-    this.heading = (this.heading + dx * rate * direction + 360) % 360;
-    this.pitch = Math.max(-80, Math.min(80, this.pitch + dy * rate * direction));
+    // A turn against the recoil is taken out of the recoil first, so holding the sights down
+    // through a burst does not leave the view thrown downward when the recoil returns.
+    const turned = this.recoil.absorb(dy * rate * direction, -dx * rate * direction);
+    this.heading = (this.heading - turned.right + 360) % 360;
+    this.pitch = Math.max(-80, Math.min(80, this.pitch + turned.up));
     this.applyPose();
   }
 
@@ -649,8 +663,8 @@ export class PlayerController {
   };
 
   private applyPose(): void {
-    const heading = (this.heading + this.punchYaw) * Math.PI / 180;
-    const pitch = Math.max(-80, Math.min(80, this.pitch + this.punchPitch)) * Math.PI / 180;
+    const heading = (this.heading + this.punchYaw - this.recoil.yaw) * Math.PI / 180;
+    const pitch = Math.max(-80, Math.min(80, this.pitch + this.punchPitch + this.recoil.pitch)) * Math.PI / 180;
     const bob = Math.sin(this.stride * 2) * this.bobAmount * (this.running ? 0.045 : 0.025);
     // Leaning moves the eyes toward screen right, (-cos h, sin h), and a little lower.
     const lean = this.lean * LEAN_OFFSET;

@@ -53,6 +53,21 @@ Aiming down the sights, by holding the right button, halves the whole cone, bloo
 
 The crosshair's four ticks open to the same spread every frame, converted to pixels from the camera's field of view, with a 3 px minimum. Pose packets carry new `sliding` and `airborne` flags for this. Older peers omit them, and those flags then count as false.
 
+## Gun feel
+
+Every number that shapes how the guns handle is in one table, `GUN_FEEL` in `src/game/gunFeel.ts`. Change a number there to change the feel; each number has a comment that says what it does.
+
+**Recoil.** A shot kicks the view up and to a side. The kick is an offset on top of the aim, so it can return: before, each shot moved the aim itself up by 1.2° (pistol) or 0.7° (carbine) for good. Each shot adds one row of the weapon's `pattern`, in degrees up and right, plus a small random part. The carbine climbs hard for four shots, then wanders right and back left; a long burst goes round the last ten rows again. The view chases the kick quickly (`attack`), starts to return `rest` seconds after the last shot, and comes back at the rate `recovery`. The climb stops at `maxPitch`. Aiming down the sights leaves 70% to 75% of the kick, and crouching 80%. Shots leave along the kicked view.
+
+A mouse move against the recoil is taken out of the recoil first. A player who holds the sights on target through a burst therefore keeps the view where it is when the burst ends; the view is not thrown downward as the recoil returns.
+
+| Measured in play, view pitch every frame | Before | Now |
+|---|---|---|
+| Carbine, 12 rounds, hands off the mouse | climbs 7.7° in 11 rounds, never returns | climbs 6.3°, returns to 0.00° |
+| Carbine, most turn to a side in that burst | 0.0° | 0.7° |
+| Pistol, 6 shots 0.4 s apart | climbs 6.0°, never returns | 1.5° for each shot, returns to 0.00° |
+| Carbine, 12 rounds, view pulled down 4° a second | (no test) | ends 0.6° under the start, then does not move |
+
 ## Leaning, hit reactions and climbing
 
 Hold Q or E to lean left or right while standing or walking. The lean starts after the key is held for 150 ms (`LEAN_HOLD` in `playerController.ts`), because E is also the interact key: a tap of E to take a pickup or open a door does not tilt the view. A press of E that interacts with something does not lean at all, however long the key stays down. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.

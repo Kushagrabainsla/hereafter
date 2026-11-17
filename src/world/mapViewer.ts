@@ -1031,7 +1031,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       const now = performance.now();
       localBloom = bloomAfterShot(weapon, localBloom, (now - lastLocalShot) / 1000);
       lastLocalShot = now;
-      player.kickRecoil(weapon === "rifle" ? 0.7 : 1.2);
+      player.fireRecoil(weapon);
       ejectLocal(weapon);
       viewLighting.muzzleFlash(authoredViewModel.muzzle(), weapon === "rifle" ? 1.2 : 1);
       flashAt(camera.position.clone().add(new Vector3().setFromMatrixColumn(camera.matrixWorld, 2).multiplyScalar(-0.8)), 1);
