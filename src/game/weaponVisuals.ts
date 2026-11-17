@@ -3,6 +3,7 @@ import { terrainHeight, type ArenaData } from "../world/arena";
 import { glowing, kitObject, type KitPiece } from "../world/kit";
 import { reloadMoment, type WeaponKind, type WeaponPickup } from "./combatRules";
 import { type PlayerMotion } from "./playerController";
+import { GunKick, type KickPose } from "./gunFeel";
 
 interface PickupView { root: Group; beamMaterial: MeshStandardMaterial; holder: Group; weapon: WeaponKind }
 
@@ -13,7 +14,8 @@ interface PickupView { root: Group; beamMaterial: MeshStandardMaterial; holder: 
 // decaying kick when a magazine seats or the action closes.
 export interface Sway { x: number; y: number; z: number; pitch: number; yaw: number; roll: number }
 // hands is true once both hands are on something else: the weapon has gone and they have come up empty.
-export interface ViewDynamics { active: WeaponKind; lower: number; sway: Sway; reload: number; jolt: number; hands: boolean }
+// kick is how far the last shots have thrown the gun back, up and round (gunFeel.ts).
+export interface ViewDynamics { active: WeaponKind; lower: number; sway: Sway; reload: number; jolt: number; hands: boolean; kick: KickPose }
 
 // The weapon hangs off the hands like a mass on a spring. Turning drags it behind the view,
 // starting, stopping, jumping and landing swing it, and strafing rolls it. Heavier weapons
@@ -80,6 +82,7 @@ export class WeaponVisuals {
   private sway: Sway = { x: 0, y: 0, z: 0, pitch: 0, yaw: 0, roll: 0 };
   private breathPhase = 0;
   private time = 0;
+  private kick = new GunKick();
 
   constructor(scene: Scene, data: ArenaData, pickupData: WeaponPickup[], pieces: Map<string, KitPiece>) {
     const ringMaterial = new MeshStandardMaterial({ color: 0x59d3d0, emissive: 0x237a78, emissiveIntensity: 1.8, metalness: 0.35, roughness: 0.34 });
@@ -137,8 +140,11 @@ export class WeaponVisuals {
 
   cancelReload(): void { this.reloadDuration = 0; }
 
+  // A shot kicks the gun in the hands; aim is how far the sights are up, 0 to 1.
+  fire(kind: WeaponKind, aim: number): void { this.kick.fire(kind, aim); }
+
   dynamics(): ViewDynamics {
-    return { active: this.active, lower: this.lower, sway: this.sway, reload: this.reloadTilt, jolt: this.reloadJolt, hands: this.stowed > 0.5 };
+    return { active: this.active, lower: this.lower, sway: this.sway, reload: this.reloadTilt, jolt: this.reloadJolt, hands: this.stowed > 0.5, kick: this.kick.pose };
   }
 
   // Drives the spring from how the view turned and how the eyes accelerated since the last
@@ -238,6 +244,7 @@ export class WeaponVisuals {
       if (this.switchPhase >= 1 - 1e-6) { this.switchPhase = 1; this.switching = false; }
     }
     this.time += seconds;
+    this.kick.update(elapsed);
     this.swing(seconds, motion, heading, pitch, eye, axes?.right ?? new Vector3(1, 0, 0), axes?.up ?? new Vector3(0, 1, 0), axes?.forward ?? new Vector3(0, 0, -1));
     // Both hands are busy climbing during a mantle, so the weapon tucks away.
     this.vault += ((motion.mantling || motion.climbing ? 1 : 0) - this.vault) * Math.min(1, seconds * 14);

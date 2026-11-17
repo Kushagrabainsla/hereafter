@@ -68,6 +68,15 @@ A mouse move against the recoil is taken out of the recoil first. A player who h
 | Pistol, 6 shots 0.4 s apart | climbs 6.0°, never returns | 1.5° for each shot, returns to 0.00° |
 | Carbine, 12 rounds, view pulled down 4° a second | (no test) | ends 0.6° under the start, then does not move |
 
+**Kick.** The gun also moves in the hands for each shot (`kick` in the table, `GunKick` in `gunFeel.ts`). A critically damped spring throws it back toward the eye and up, tips the muzzle up, and turns and rolls it to a random side. It peaks `peakMs` after the shot and is home after about six times that. Each shot differs from the last by up to `vary`. Shots that come faster than the spring settles stack, so automatic fire rides back and shudders. Aiming down the sights leaves the share `aimed` of the kick. Before, a clip with linear keys at 24 frames a second played for each shot: it was the same every time, it restarted with a snap in automatic fire, and it played at full strength while aiming.
+
+| Measured in play, the muzzle in the camera's frame | Before | Now |
+|---|---|---|
+| Pistol, hip fire: travel of the muzzle | 45 mm, the same for each shot | 44 to 56 mm, about 22% between shots |
+| Time from the shot to the peak | about 65 ms | about 40 ms (one frame at the test's 30 frames a second) |
+| Time until the gun is home | about 250 ms | about 160 ms |
+| Pistol, aiming: share of the hip-fire travel | 116% | 28% |
+
 ## Leaning, hit reactions and climbing
 
 Hold Q or E to lean left or right while standing or walking. The lean starts after the key is held for 150 ms (`LEAN_HOLD` in `playerController.ts`), because E is also the interact key: a tap of E to take a pickup or open a door does not tilt the view. A press of E that interacts with something does not lean at all, however long the key stays down. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.

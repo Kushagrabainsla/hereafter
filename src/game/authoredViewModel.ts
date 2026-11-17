@@ -94,6 +94,9 @@ export class AuthoredViewModel {
             // exporters share one accessor between identical constant tracks of different
             // clips, and makeClipAdditive subtracts from the track arrays in place.
             clip = AnimationUtils.makeClipAdditive(source.clone());
+            // Only the muzzle flash is taken from the fire clip. The kick of the gun itself comes
+            // from a spring (GunKick in gunFeel.ts): the clip's keys were the same for every shot.
+            clip.tracks = clip.tracks.filter((track) => track.name.startsWith("muzzle."));
           }
           const action = mixer.clipAction(clip);
           if (ATTACKS.includes(name)) { action.setLoop(LoopOnce, 1); action.clampWhenFinished = false; }
@@ -161,7 +164,7 @@ export class AuthoredViewModel {
     at.y *= scale;
     return at;
   }
-  // The gun's recoil clip.
+  // The muzzle flash of a shot (the fire clip's one remaining part).
   fire(): void {
     const action = this.models.get(this.active)?.clips.get("fire");
     if (!action) return;
@@ -205,6 +208,14 @@ export class AuthoredViewModel {
     model.root.position.y += this.framing.y * (1 - aim);
     model.root.position.z += this.framing.z * (1 - aim);
     model.root.rotation.set(sway.pitch - lower * 0.6 + reload * 0.1 + jolt * 0.03, sway.yaw + lower * 0.25, sway.roll - lower * 0.3 + reload * 0.32);
+    // The kick of each shot: back toward the eye and up, the muzzle tipped up and thrown a
+    // little to one side and round, differently every shot.
+    const kick = dynamics.kick;
+    model.root.position.y += kick.up;
+    model.root.position.z += kick.back;
+    model.root.rotation.x += kick.pitch;
+    model.root.rotation.y += kick.yaw;
+    model.root.rotation.z += kick.roll;
     if (dynamics.hands) this.handsOn(model, lower);
   }
   // Puts the hands on what they hold, once the arms have been posed. They arrive as the arms come

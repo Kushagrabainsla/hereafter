@@ -1027,6 +1027,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     playAttack(weapon) {
       authoredViewModel.fire();
+      weaponVisuals.fire(weapon, player.aimAmount());
       gameAudio.fire(weapon);
       const now = performance.now();
       localBloom = bloomAfterShot(weapon, localBloom, (now - lastLocalShot) / 1000);

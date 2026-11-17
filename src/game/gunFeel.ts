@@ -29,8 +29,26 @@ export interface RecoilFeel {
   crouched: number;
 }
 
+export interface KickFeel {
+  // How far the gun moves in the hands for one shot: back and up in metres; muzzle up, to a
+  // random side, and rolled to a random side, in radians.
+  back: number;
+  up: number;
+  pitch: number;
+  yaw: number;
+  roll: number;
+  // The time from the shot to the peak of the kick, in milliseconds. The gun is back to rest
+  // after about 6 times this.
+  peakMs: number;
+  // How much each shot differs from the last: 0.2 is 20% more or less.
+  vary: number;
+  // The share of the kick that is left while the player aims down the sights.
+  aimed: number;
+}
+
 export interface WeaponFeel {
   recoil: RecoilFeel;
+  kick: KickFeel;
 }
 
 export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
@@ -49,6 +67,7 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
       aimed: 0.7,
       crouched: 0.8,
     },
+    kick: { back: 0.035, up: 0.012, pitch: 0.09, yaw: 0.02, roll: 0.035, peakMs: 28, vary: 0.2, aimed: 0.3 },
   },
   rifle: {
     recoil: {
@@ -69,6 +88,7 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
       aimed: 0.75,
       crouched: 0.8,
     },
+    kick: { back: 0.028, up: 0.008, pitch: 0.07, yaw: 0.012, roll: 0.03, peakMs: 26, vary: 0.25, aimed: 0.3 },
   },
 };
 
@@ -136,5 +156,59 @@ export class Recoil {
     this.pitch = this.yaw = this.targetPitch = this.targetYaw = 0;
     this.shot = 0;
     this.sinceShot = Infinity;
+  }
+}
+
+// One axis of a spring that takes a kick and comes back to rest without ringing: critically
+// damped, so it peaks 1 / omega seconds after the kick and is back after about 6 / omega.
+class KickAxis {
+  value = 0;
+  private speed = 0;
+  // A kick that takes the axis to `peak` at its highest.
+  hit(peak: number, omega: number): void { this.speed += peak * omega * Math.E; }
+  step(seconds: number, omega: number): void {
+    // Small fixed steps keep the spring the same at any frame rate.
+    for (let left = seconds; left > 0; left -= 1 / 480) {
+      const dt = Math.min(left, 1 / 480);
+      this.speed += (-omega * omega * this.value - 2 * omega * this.speed) * dt;
+      this.value += this.speed * dt;
+    }
+  }
+  reset(): void { this.value = this.speed = 0; }
+}
+
+export interface KickPose { back: number; up: number; pitch: number; yaw: number; roll: number }
+
+// The kick of the gun in the hands: each shot throws it back and up and tips the muzzle, a
+// little differently every time, and a spring brings it home. Shots that come faster than the
+// spring settles stack, so automatic fire rides back and shudders. In place of the fire clip,
+// whose keys were the same for every shot.
+export class GunKick {
+  private axes = { back: new KickAxis(), up: new KickAxis(), pitch: new KickAxis(), yaw: new KickAxis(), roll: new KickAxis() };
+  private omega = 1000 / GUN_FEEL.pistol.kick.peakMs;
+  readonly pose: KickPose = { back: 0, up: 0, pitch: 0, yaw: 0, roll: 0 };
+
+  // aim is how far the sights are up, 0 to 1.
+  fire(weapon: WeaponKind, aim: number): void {
+    const feel = GUN_FEEL[weapon].kick, scale = 1 - (1 - feel.aimed) * aim, vary = (): number => 1 + signed() * feel.vary;
+    this.omega = 1000 / feel.peakMs;
+    this.axes.back.hit(feel.back * scale * vary(), this.omega);
+    this.axes.up.hit(feel.up * scale * vary(), this.omega);
+    this.axes.pitch.hit(feel.pitch * scale * vary(), this.omega);
+    this.axes.yaw.hit(feel.yaw * scale * signed(), this.omega);
+    this.axes.roll.hit(feel.roll * scale * signed(), this.omega);
+  }
+
+  update(seconds: number): void {
+    const step = Math.min(seconds, 0.1);
+    for (const key of ["back", "up", "pitch", "yaw", "roll"] as const) {
+      this.axes[key].step(step, this.omega);
+      this.pose[key] = this.axes[key].value;
+    }
+  }
+
+  reset(): void {
+    for (const axis of Object.values(this.axes)) axis.reset();
+    this.pose.back = this.pose.up = this.pose.pitch = this.pose.yaw = this.pose.roll = 0;
   }
 }
