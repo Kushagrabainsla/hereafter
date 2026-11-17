@@ -5,6 +5,7 @@ import { PhysicsWorld, type Ledge } from "../world/physics";
 import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loadEffects, NO_SPRINT_LEG, RUSH_SPEED } from "./combatRules";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
+import { gameKey } from "../keys";
 
 export interface PlayerMotion {
   moving: boolean;
@@ -617,7 +618,7 @@ export class PlayerController {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (this.paused) return;
-    const key = event.key.toLowerCase();
+    const key = gameKey(event);
     if (!["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift", "control", "c", " "].includes(key)) return;
     if (document.activeElement instanceof HTMLInputElement) return;
     event.preventDefault();
@@ -628,7 +629,7 @@ export class PlayerController {
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
-    this.keys.delete(event.key.toLowerCase());
+    this.keys.delete(gameKey(event));
   };
 
   private clearKeys = (): void => {

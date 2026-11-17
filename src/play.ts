@@ -13,6 +13,7 @@ import { assetUrl, releaseAssets } from "./assetStore";
 import { mapById } from "./maps";
 import { DefaultLoadingManager } from "three/webgpu";
 import { fillScreen } from "./mouseLock";
+import { gameKey } from "./keys";
 import { cheaper, drawnPixels, FPS_FLOOR, pickQuality, QUALITY, QUALITY_LABEL, type QualityLevel } from "./world/quality";
 
 // The game: the world, the match and everything on screen during play. main.ts loads this
@@ -541,7 +542,7 @@ function showScoreboard(): void {
   }));
 }
 document.addEventListener("keydown", (event) => {
-  if (!launched || event.key !== "Tab" || event.altKey || event.metaKey || event.ctrlKey || dialogOpen()) return;
+  if (!launched || event.key !== "Tab" || event.altKey || event.metaKey || dialogOpen()) return;
   event.preventDefault();
   if (tabHeld) return;
   tabHeld = true;
@@ -806,15 +807,17 @@ copyInviteButton.addEventListener("click", () => {
   });
 });
 document.addEventListener("keydown", (event) => {
-  if (!launched || event.key.toLowerCase() !== "h" || event.repeat || event.altKey || event.metaKey || event.ctrlKey || roomDialog.open) return;
+  if (!launched || gameKey(event) !== "h" || event.repeat || event.altKey || event.metaKey || roomDialog.open) return;
   event.preventDefault();
   if (controlsDialog.open) closeControls();
   else openControls();
 });
 
+// Ctrl is the crouch key, so the action keys work with it held: a crouched player can reload,
+// throw and switch weapons. Keys are read by their place on the keyboard (keys.ts).
 document.addEventListener("keydown", (event) => {
-  if (!launched || event.repeat || event.altKey || event.metaKey || event.ctrlKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
-  const key = event.key.toLowerCase();
+  if (!launched || event.repeat || event.altKey || event.metaKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
+  const key = gameKey(event);
   if (!["f", "e", "g", "t", "b", "1", "2", "r", "m", "enter"].includes(key)) return;
   event.preventDefault();
   if (key === "m") {
@@ -835,7 +838,7 @@ document.addEventListener("keydown", (event) => {
     submit({ kind: "select", weapon });
   }
 });
-document.addEventListener("keyup", (event) => { if (event.key.toLowerCase() === "f") { viewer?.releaseThrow(); sprayHeld = false; } });
+document.addEventListener("keyup", (event) => { if (gameKey(event) === "f") { viewer?.releaseThrow(); sprayHeld = false; } });
 
 // While the trigger is held, the extinguisher in hand keeps spraying.
 function sprayOnce(): void {

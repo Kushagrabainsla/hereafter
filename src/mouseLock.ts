@@ -1,3 +1,5 @@
+import { GAME_KEY_CODES } from "./keys";
+
 // Locks the mouse to an element for mouse look. Browsers allow it only during a click or key
 // press, refuse it for about a second after the player pressed Esc, and older Safari returns
 // nothing instead of a promise.
@@ -10,6 +12,14 @@ export function lockMouse(element: HTMLElement): void {
   }
 }
 
+// In full screen, asks the browser to pass the game's keys to the page, so Ctrl (crouch) with W
+// does not close the tab and Ctrl with R does not reload it. Only Chromium browsers have this
+// lock, and only in full screen; the lock ends when full screen ends. Escape is not locked.
+function lockGameKeys(): void {
+  const keyboard = (navigator as Navigator & { keyboard?: { lock?: (codes?: string[]) => Promise<void> } }).keyboard;
+  keyboard?.lock?.(GAME_KEY_CODES).catch(() => undefined);
+}
+
 // Fills the screen with the game, as it starts and whenever a click takes the player back into
 // play (Esc leaves full screen along with the mouse lock). Like the lock, browsers allow it only
 // during a click or key press. It is the whole page that fills the screen, not the canvas, so
@@ -20,7 +30,7 @@ export function fillScreen(): void {
   if (page.fullscreenElement ?? page.webkitFullscreenElement) return;
   const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
   try {
-    if (root.requestFullscreen) root.requestFullscreen({ navigationUI: "hide" }).catch(() => undefined);
+    if (root.requestFullscreen) root.requestFullscreen({ navigationUI: "hide" }).then(lockGameKeys).catch(() => undefined);
     else root.webkitRequestFullscreen?.();
   } catch {
     // Full screen is unavailable here.

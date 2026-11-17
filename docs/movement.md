@@ -2,6 +2,12 @@
 
 Walking, running, jumping and crouching run on the Rapier capsule controller in `src/game/playerController.ts` at a fixed 60 Hz. This note covers the slide, the mantle, firing out of a sprint, carried weight, how the held weapon moves, and the spread that movement adds to shots.
 
+## Keys
+
+The game reads each key by its place on the keyboard (`event.code`, in `src/keys.ts`), not by the letter printed on it. The controls sit under the same fingers on every layout: on an AZERTY keyboard, the key marked Z walks forward.
+
+Ctrl is a crouch key, so every action key also works with Ctrl held: a crouched player can reload, throw a grenade, bandage, interact and switch weapons. In full screen, Chromium browsers pass the game's keys to the page (`navigator.keyboard.lock` in `src/mouseLock.ts`), so Ctrl with W does not close the tab. Escape is not locked: it leaves full screen and frees the mouse at once.
+
 ## Slide
 
 Press C or Ctrl while running to slide. The slide keeps the direction you were running, adds 1.8 m/s on top of your speed (at most 10.5 m/s) and bleeds off 8.5 m/s every second. It ends when you let go of crouch, leave the ground, drop below 3.2 m/s, hit a wall or after 1.3 s. A full slide covers about 5 m in 0.8 s. Strafe keys steer it slightly, and the view stays free.
