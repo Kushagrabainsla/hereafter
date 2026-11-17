@@ -894,7 +894,7 @@ window.setInterval(() => {
   match.setPose(selfId, pose);
   peerRoom?.sendPose(pose);
   // A solo game has practice targets to shoot at; a room has real players.
-  if (!peerRoom && launched) (soloTargets ??= new SoloTargets(match, viewer)).update();
+  if (!peerRoom && launched) (soloTargets ??= new SoloTargets(match, viewer, selfId)).update();
   if (launched && (match.player(selfId)?.health ?? 0) > 0) movementMemes(pose);
 }, 33);
 
@@ -1004,7 +1004,7 @@ export async function launch(chosen: Settings, loading: Loading): Promise<void> 
   launched = true;
   syncPause();
   if (peerRoom && chosen.room === "create") toast(`Room ${peerRoom.code} is open · press Room to copy the invite link`);
-  if (!peerRoom) toast("Practice · eight targets stand and walk in the market");
+  if (!peerRoom) toast("Practice · eight targets are in the market · they shoot back once you move");
   // Files a model loads late can still use the downloads for a while; then they are freed.
   window.setTimeout(releaseAssets, 15_000);
 }
