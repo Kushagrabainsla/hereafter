@@ -94,6 +94,8 @@ export interface MapViewer {
   busyHands: (seconds: number) => void;
   startRush: (seconds: number) => void;
   holdSprint: (seconds: number) => void;
+  // The E press in progress was an interaction, so it does not lean.
+  skipLean: () => void;
   combatWorld: () => CombatWorld;
   setEntityHealth: (health: Record<string, number>) => void;
   playEvent: (event: CombatEvent, selfId: string) => void;
@@ -834,6 +836,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     startRush(seconds) { player.startRush(seconds); },
     weaponReady() { const motion = player.motion(); return weaponVisuals.ready() && !motion.mantling && !motion.climbing; },
     holdSprint(seconds) { player.holdSprint(seconds); },
+    skipLean() { player.skipLean(); },
     combatWorld() { return combatWorld; },
     setEntityHealth(health) {
       // Anything destroyed earlier but intact in this table was restored (a room reset).

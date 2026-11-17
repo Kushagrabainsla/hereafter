@@ -71,6 +71,9 @@ const SLIDE_ROLL = -0.06;
 // Leaning tilts the view this far (radians) at full lean and slows walking.
 const LEAN_ROLL = 0.14;
 const LEAN_SPEED = 0.7;
+// A lean starts only after Q or E is held this long, in seconds. E is also the interact key, so
+// a tap of it to take a pickup or open a door does not tilt the view.
+const LEAN_HOLD = 0.15;
 // Being hit jolts the aim and slows movement briefly ("tagging").
 const TAG_SECONDS = 0.55;
 const TAG_SLOW = 0.45;
@@ -122,6 +125,8 @@ export class PlayerController {
   private rungs = 0;
   private roll = 0;
   private lean = 0;
+  // How long each lean key has been held, in seconds (see LEAN_HOLD).
+  private leanHeld = { q: 0, e: 0 };
   private punchPitch = 0;
   private punchYaw = 0;
   private tagged = 0;
@@ -264,6 +269,10 @@ export class PlayerController {
 
   startRush(seconds: number): void { this.rushLeft = Math.max(this.rushLeft, seconds); }
 
+  // This press of E was an interaction (a pickup, a door, a prop), so it is not also a lean,
+  // however long the key stays down.
+  skipLean(): void { this.leanHeld.e = -Infinity; }
+
   // Firing drops a sprint; it resumes on its own once the trigger has rested this long.
   holdSprint(seconds: number): void {
     this.sprintHold = Math.max(this.sprintHold, seconds);
@@ -371,6 +380,8 @@ export class PlayerController {
     this.sprintHold = Math.max(0, this.sprintHold - delta);
     this.rushLeft = Math.max(0, this.rushLeft - delta);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - delta);
+    this.leanHeld.q = this.keys.has("q") ? this.leanHeld.q + delta : 0;
+    this.leanHeld.e = this.keys.has("e") ? this.leanHeld.e + delta : 0;
     this.physics.setHoldView(this.heading, this.pitch, this.eyeHeight);
     if (this.mantle) { this.stepMantle(delta); return; }
     const forward = Number(this.keys.has("w") || this.keys.has("arrowup")) - Number(this.keys.has("s") || this.keys.has("arrowdown"));
@@ -403,8 +414,8 @@ export class PlayerController {
     }
     this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
     const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld && this.carried < CARRY_SPRINT_LIMIT && this.leg < NO_SPRINT_LEG;
-    // Q and E lean while walking or standing; a wall at the side limits how far.
-    const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.keys.has("e")) - Number(this.keys.has("q"));
+    // Q and E, held, lean while walking or standing; a wall at the side limits how far.
+    const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.leanHeld.e >= LEAN_HOLD) - Number(this.leanHeld.q >= LEAN_HOLD);
     this.lean += (leanInput - this.lean) * Math.min(1, delta * 8);
     if (Math.abs(this.lean) > 0.01) {
       const side = Math.sign(this.lean);

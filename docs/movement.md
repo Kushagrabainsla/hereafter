@@ -55,7 +55,7 @@ The crosshair's four ticks open to the same spread every frame, converted to pix
 
 ## Leaning, hit reactions and climbing
 
-Hold Q or E to lean left or right while standing or walking. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.
+Hold Q or E to lean left or right while standing or walking. The lean starts after the key is held for 150 ms (`LEAN_HOLD` in `playerController.ts`), because E is also the interact key: a tap of E to take a pickup or open a door does not tilt the view. A press of E that interacts with something does not lean at all, however long the key stays down. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.
 
 Taking a hit kicks the view up and to one side, more for heavier hits, and the kick moves where shots go until it settles in about a quarter of a second. For 0.55 s after a hit, movement slows by up to 45%. Other players flinch when hit.
 

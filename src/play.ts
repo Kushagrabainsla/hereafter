@@ -656,10 +656,11 @@ function liftTarget(): ReturnType<MapViewer["liftable"]> {
 }
 
 // E puts down what the hands hold. Otherwise it takes the nearest pickup, lifts the loose prop
-// the player is looking at, or opens or closes the nearest door or hatch.
-function interact(): void {
-  if (viewer?.holding()) { viewer.putDown(); return; }
-  if ((match?.player(selfId)?.powder ?? 0) > 0) { submit({ kind: "stow" }); return; }
+// the player is looking at, or opens or closes the nearest door or hatch. Returns whether there
+// was anything to interact with: E is also lean right, and a press that did something does not lean.
+function interact(): boolean {
+  if (viewer?.holding()) { viewer.putDown(); return true; }
+  if ((match?.player(selfId)?.powder ?? 0) > 0) { submit({ kind: "stow" }); return true; }
   const pickup = nearestPickup();
   const usable = viewer?.nearestUse();
   const prop = liftTarget();
@@ -670,6 +671,8 @@ function interact(): void {
   else if (usable) submit({ kind: "use", target: usable.id });
   else if (prop) toast(`Too heavy to lift: ${prop.mass} kg. Push it instead`);
   else if (pickup?.idle) toast(pickup.label);
+  else return false;
+  return true;
 }
 
 // Ties a bandage round the worst of it: both hands, for a couple of seconds.
@@ -827,7 +830,7 @@ document.addEventListener("keydown", (event) => {
   else if (key === "g") throwGrenade();
   else if (key === "t") throwGrenade(true);
   else if (key === "b") bandage();
-  else if (key === "e") interact();
+  else if (key === "e") { if (interact()) viewer?.skipLean(); }
   else if (key === "r") reload();
   else if (key === "enter") submit({ kind: "respawn" });
   else {
