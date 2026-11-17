@@ -44,7 +44,9 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     // The haze starts 6 m out and thickens faster beyond, so near walls stay dark and clear and the
     // far ends of the alleys fade; it won a blind test 10 spots to none against haze from the eye.
     haze: { density: 0.012, clear: 6, color: [0.02, 0.026, 0.04], glow: 0.3, tight: 0.3, skyHaze: 0.04, sun: [0.35, 0.25, 0.16], shafts: 0.6 },
-    grade: { shadows: [0.78, 0.95, 1.28], lights: [1.0, 1.0, 0.99], saturation: 0.82 },
+    // Colour at 0.68 of full strength: with the sun as the key light, 0.82 turned walls and haze
+    // orange-brown; 0.68 won 32 spots to 2 in blind tests.
+    grade: { shadows: [0.78, 0.95, 1.28], lights: [1.0, 1.0, 0.99], saturation: 0.68 },
     bounce: 0.72,
   },
   day: {
