@@ -4,8 +4,8 @@ import {
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
-import { abs, bumpMap, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, vec2, vec3 } from "three/tsl";
-import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleHeight, setIndoors, WEATHER } from "./wetness";
+import { abs, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, transformNormalToView, vec2, vec3 } from "three/tsl";
+import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleNormal, setIndoors, WEATHER } from "./wetness";
 import { noiseVolume } from "./noiseVolume";
 import { SHOP_GLASS } from "./shopGlass";
 import { WEAR } from "./wearTextures";
@@ -668,7 +668,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     material.colorNode = materialColor.mul(mix(mix(mix(float(1), float(0.78), WEATHER.wet), float(0.64), damp), float(0.72), wet));
     const wetRough = materialRoughness.mul(mix(float(1), sheen, WEATHER.wet));
     material.roughnessNode = mix(mix(wetRough, wetRough.mul(0.55), damp), float(0.14), wet);
-    material.normalNode = mix(materialNormal, bumpMap(rippleHeight(P)) as unknown as typeof materialNormal, wet);
+    material.normalNode = mix(materialNormal, transformNormalToView(rippleNormal(P)), wet);
     return material;
   };
   const brick = (color: number): MeshStandardNodeMaterial => wall({ map: textures.brick, normalMap: textures.brickNormal, color, roughness: 0.92 });

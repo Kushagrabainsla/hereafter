@@ -1,5 +1,5 @@
 import { DataTexture, LinearFilter, RedFormat, UnsignedByteType } from "three/webgpu";
-import { dot, exp, float, floor, fract, fwidth, length, sin, smoothstep, texture, texture3D, uniform, vec2, vec3 } from "three/tsl";
+import { cos, dot, exp, float, floor, fract, fwidth, length, normalize, sin, smoothstep, texture, texture3D, uniform, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { noiseVolume } from "./noiseVolume";
 
@@ -80,21 +80,34 @@ export function dampNode(position: Node<"vec3">): Node<"float"> {
   return smoothstep(DAMP_FROM, PUDDLE_FROM, puddleLevel(position)).mul(outdoorNode(position)).mul(WEATHER.wet);
 }
 
-// Rain rings on standing water, as relief for bump mapping: the ground is split into 32 cm cells,
-// and in each a ring grows from a random point and fades, at a random moment. Wavelength about
-// 3 cm, height half a millimetre. Each ring fades in as it opens, so it never shows as a dot at its
-// centre, and the rings fade out with distance once a pixel covers more than about a centimetre
-// of water, where they could only show as specks.
-export function rippleHeight(position: Node<"vec3">): Node<"float"> {
-  const p = vec2(position.x, position.z).div(0.32);
+// Rain rings on standing water, as the water's normal in world space (up, tilted by the rings).
+// The ground is split into 32 cm cells, and in each a ring grows from a random point and fades, at
+// a random moment. Wavelength about 3 cm, height half a millimetre. Each ring fades in as it opens,
+// so it never shows as a dot at its centre, and the rings fade out with distance once a pixel
+// covers more than about a centimetre of water, where they could only show as specks.
+//
+// The ring's height is sin(60 d) exp(-180 d²), with d the distance from the ring in cells. Its
+// slope is worked out here by hand. three's bumpMap takes the slope of a height by reading a
+// texture three times; for a height made of maths, as this one is, it reads the same value three
+// times and the water stays flat.
+const RING_CELL = 0.32;
+const RING_HEIGHT = 0.0005;
+export function rippleNormal(position: Node<"vec3">): Node<"vec3"> {
+  const p = vec2(position.x, position.z).div(RING_CELL);
   const cell = floor(p);
   const seed = fract(sin(dot(cell, vec2(12.9898, 78.233))).mul(43758.5453));
   const phase = fract(rainTime.mul(1.15).add(seed));
   const centre = vec2(fract(seed.mul(7.31)), fract(seed.mul(3.17))).sub(0.5).mul(0.3);
-  const d = length(fract(p).sub(0.5).sub(centre)).sub(phase.mul(0.42));
+  const out = fract(p).sub(0.5).sub(centre);
+  const far = length(out).max(0.0001);
+  const d = far.sub(phase.mul(0.42));
   const footprint = fwidth(position.x).add(fwidth(position.z));
   const near = float(1).sub(smoothstep(0.012, 0.03, footprint));
-  return sin(d.mul(60)).mul(exp(d.mul(d).mul(-180))).mul(float(1).sub(phase)).mul(smoothstep(0, 0.18, phase)).mul(near).mul(0.0005).mul(WEATHER.wet);
+  const strength = exp(d.mul(d).mul(-180)).mul(float(1).sub(phase)).mul(smoothstep(0, 0.18, phase)).mul(near).mul(RING_HEIGHT / RING_CELL).mul(WEATHER.wet);
+  // Metres of height per metre along the ground, away from the ring's centre.
+  const slope = cos(d.mul(60)).mul(60).sub(sin(d.mul(60)).mul(d).mul(360)).mul(strength);
+  const along = out.div(far).mul(slope);
+  return normalize(vec3(along.x.negate(), 1, along.y.negate()));
 }
 
 // Whether a point is outdoors, on the CPU: for the rain's sound under a roof.
