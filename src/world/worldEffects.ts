@@ -124,8 +124,14 @@ class ParticlePool {
 }
 
 
-// Bullet holes kept at once; the oldest goes when another is made.
-const DECALS = 260;
+// Bullet holes kept at once; the oldest goes when another is made. A long fight with both guns
+// leaves a few hundred, and each is 50 triangles.
+const DECALS = 1024;
+// Scorch marks kept at once, from blasts and from fires. They have a pool of their own, so that
+// gunfire never erases them.
+const SCORCHES = 32;
+const SCORCH_TINT = new Color(0x1c1a18);
+const UP = new Vector3(0, 1, 0), FACING = new Vector3(0, 0, 1);
 
 // What the effects ask of the physical world, so that a bullet hole stays on the object it is in.
 export interface EffectsWorld {
@@ -202,6 +208,8 @@ export class WorldEffects {
   private glow: ParticlePool;
   private decals: InstancedMesh;
   private nextDecal = 0;
+  private scorches: InstancedMesh;
+  private nextScorch = 0;
   // The object each hole is in, by the hole's slot; the slots of each object's holes; and, for an
   // object that moves, each hole's place in the object's own frame and where the object was when
   // its holes were last placed.
@@ -241,11 +249,16 @@ export class WorldEffects {
     this.glow = new ParticlePool(true, 260, shapes(["spark"]));
     scene.add(this.solid.group, this.glow.group, this.flash);
     // A hole is a crater with a scorched ring and a spalled rim, its rim tinted by the surface.
-    this.decals = new InstancedMesh(shape("bullet_hole"), new MeshStandardMaterial({ vertexColors: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4 }), DECALS);
-    this.decals.setColorAt(0, new Color(0xffffff));
-    hideAll(this.decals);
-    this.decals.frustumCulled = false;
-    scene.add(this.decals);
+    const crater = new MeshStandardMaterial({ vertexColors: true, roughness: 1, polygonOffset: true, polygonOffsetFactor: -4 });
+    this.decals = new InstancedMesh(shape("bullet_hole"), crater, DECALS);
+    // A scorch mark is the same crater, laid flat, metres across and black.
+    this.scorches = new InstancedMesh(shape("bullet_hole"), crater, SCORCHES);
+    for (const mesh of [this.decals, this.scorches]) {
+      mesh.setColorAt(0, new Color(0xffffff));
+      hideAll(mesh);
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+    }
     this.fireball = new Sprite(new SpriteMaterial({ map: this.puffMap, color: 0xffa54a, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
     this.fireball.visible = false;
     scene.add(this.fireball);
@@ -468,9 +481,26 @@ export class WorldEffects {
     this.clearHoles(id);
   }
 
-  // The black mark a fire leaves on what it burned on.
+  // The black mark a fire or a blast leaves on the floor: `size` metres across, flat at `at`.
   scorch(at: Vec3, size: number): void {
-    this.decal({ x: at.x, y: at.y + 0.012, z: at.z }, { x: 0, y: 1, z: 0 }, size, 0x1c1a18);
+    const index = this.nextScorch;
+    this.nextScorch = (this.nextScorch + 1) % SCORCHES;
+    this.scorches.count = Math.max(this.scorches.count, index + 1);
+    this.quaternion.setFromUnitVectors(FACING, UP).multiply(new Quaternion().setFromAxisAngle(FACING, Math.random() * Math.PI * 2));
+    this.scorches.setMatrixAt(index, this.matrix.compose(new Vector3(at.x, at.y + 0.012, at.z), this.quaternion, new Vector3(size, size, size)));
+    this.scorches.setColorAt(index, SCORCH_TINT);
+    this.scorches.instanceMatrix.needsUpdate = true;
+    if (this.scorches.instanceColor) this.scorches.instanceColor.needsUpdate = true;
+  }
+
+  // Takes away every bullet hole and scorch mark: the market is rebuilt for a new round or room.
+  clearMarks(): void {
+    hideAll(this.decals);
+    hideAll(this.scorches);
+    this.nextDecal = this.nextScorch = 0;
+    this.holeOwner.clear();
+    this.holesOn.clear();
+    this.riding.clear();
   }
 
   // Powder from an extinguisher, widening as it goes.
@@ -558,7 +588,7 @@ export class WorldEffects {
     this.solid.spawn({ ...at, y: at.y + 0.1 }, { x: 0, y: 1, z: 0 }, 14, "chunks", floor, 1.2);
     for (let i = 0; i < 10; i += 1) this.puff({ x: at.x + (Math.random() - 0.5) * 1.6, y: at.y + 0.4 + i * 0.22, z: at.z + (Math.random() - 0.5) * 1.6 }, 2.6 + Math.random() * 2.2, 3 + Math.random() * 1.5, 0.7 + Math.random() * 0.5, i < 3 ? 0x3e3b38 : 0x8a857d, 0.85);
     const mark = this.scorchUnder(at);
-    if (mark) this.decal({ x: at.x, y: mark.y, z: at.z }, { x: 0, y: 1, z: 0 }, mark.size, 0x1c1a18);
+    if (mark) this.scorch({ x: at.x, y: mark.y, z: at.z }, mark.size);
     const camera = this.camera();
     this.shake = Math.max(this.shake, Math.min(1, 9 / (1 + camera.distanceTo(new Vector3(at.x, at.y, at.z)))));
   }

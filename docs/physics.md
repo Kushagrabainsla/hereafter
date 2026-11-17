@@ -100,7 +100,7 @@ Fire is worked out twice a second by the coordinator and kept in its state (`ste
 
 **Hurting players.** Standing in flames costs 5 health every half second, whoever started the fire getting the credit if it kills. Blast damage is unchanged.
 
-**What it leaves.** Loose props and stalls blacken as they burn, and stay blackened if the fire is put out, until the round ends. Each fire that goes leaves a scorch mark on what it burned over. Both use a per-copy colour and the bullet-hole decals, so they add no draw calls.
+**What it leaves.** Loose props and stalls blacken as they burn, and stay blackened if the fire is put out, until the round ends. Each fire that goes leaves a scorch mark on what it burned over. The blackening is a per-copy colour, so it adds no draw call. Scorch marks are the bullet-hole crater drawn metres across, in a pool of their own: 32 marks and one draw call. Bullet holes have a pool of 1,024. Gunfire therefore never erases a scorch mark, and about 300 rounds no longer erase the first holes. Both pools are emptied when the market is rebuilt for a new round or a new room.
 
 **Putting it out.** A burst extinguisher's powder smothers every flame within 4.5 m and cools what they had heated. Fires also burn out by themselves, and a new round puts everything out.
 

@@ -999,7 +999,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     propTraffic(leading) { return physics.propTraffic(leading); },
     displacedProps() { return physics.displacedProps(); },
     applyPropStates(states, owner, rest, self) { physics.applyPropStates(states, owner, rest, self); },
-    resetWorld() { physics.resetProps(); ejecta.clear(); loot.clear(); },
+    resetWorld() { physics.resetProps(); ejecta.clear(); loot.clear(); effects.clearMarks(); },
     setOpen(open) {
       toggleState = { ...toggleDefaults, ...open };
       truck.setOpen(toggleState, toggleDefaults);
