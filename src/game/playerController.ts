@@ -3,7 +3,7 @@ import { type Arena, type ArenaData, terrainHeight } from "../world/arena";
 import { spawnPoint } from "../world/collision";
 import { PhysicsWorld, type Ledge } from "../world/physics";
 import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loadEffects, NO_SPRINT_LEG, RUSH_SPEED, type WeaponKind } from "./combatRules";
-import { LandingDip, Recoil } from "./gunFeel";
+import { AIM, LandingDip, Recoil } from "./gunFeel";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
 import { gameKey } from "../keys";
@@ -157,6 +157,11 @@ export class PlayerController {
   private aimHeld = false;
   private aim = 0;
   private zoom = 1;
+  // The sights' progress in time (0 to 1; `aim` is this, eased at both ends), how long they
+  // take to come up, and the view's own field of view without their zoom.
+  private aimRaw = 0;
+  private aimSeconds = 0.2;
+  private baseFov = 75;
   private crouching = false;
   private paused = false;
   private keys = new Set<string>();
@@ -227,14 +232,14 @@ export class PlayerController {
   // A shot kicks the view up and to a side, along the weapon's recoil pattern (gunFeel.ts). The
   // kick is an offset on top of the aim: it returns when the trigger rests.
   fireRecoil(weapon: WeaponKind): void {
-    this.recoil.fire(weapon, this.aim > 0.5, this.crouching);
+    this.recoil.fire(weapon, this.aim > AIM.ready, this.crouching);
   }
 
   // How far the recoil has the view off the aim now, in degrees up and to the right.
   recoilOffset(): { pitch: number; yaw: number } { return { pitch: this.recoil.pitch, yaw: this.recoil.yaw }; }
 
   motion(): PlayerMotion {
-    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed, aiming: this.aim > 0.5, aim: this.aim, exertion: this.exertion };
+    return { moving: this.moving, running: this.running, crouching: this.crouching, airborne: !this.grounded && !this.mantle && !this.climbing, sliding: this.sliding, mantling: this.mantle !== null, climbing: this.climbing !== null, speed: this.speed, aiming: this.aim > AIM.ready, aim: this.aim, exertion: this.exertion };
   }
 
   // The mass of everything carried, in kilograms (see loadEffects).
@@ -309,22 +314,24 @@ export class PlayerController {
       sliding: this.sliding,
       airborne: !this.grounded && !this.mantle,
       lean: Math.round(this.lean * 100) / 100,
-      aiming: this.aim > 0.5,
+      aiming: this.aim > AIM.ready,
       carrying: this.carried > 0,
     };
   }
 
-  // Hold to aim down the sights of a weapon that magnifies by zoom; false to stop.
-  setAiming(aiming: boolean, zoom = 1): void {
+  // Hold to aim down the sights of a weapon that magnifies by zoom and whose sights take
+  // `seconds` to come up; false to stop.
+  setAiming(aiming: boolean, zoom = 1, seconds = 0.2): void {
     this.aimHeld = aiming;
-    if (aiming) this.zoom = zoom;
+    if (aiming) { this.zoom = zoom; this.aimSeconds = seconds; }
   }
 
   // How far into the sights the view is, 0 to 1.
   aimAmount(): number { return this.aim; }
 
-  // The field of view without the sights' magnification, for drawing the weapon in hand.
-  handFov(): number { return this.camera.fov * (1 + this.aim * (this.zoom - 1)); }
+  // The field of view without the sights' magnification, for drawing the weapon in hand. It
+  // does not depend on the aim, so the gun keeps its size on screen as the sights come up.
+  handFov(): number { return this.baseFov; }
 
   setSpawnSlot(slot: number): void {
     if (slot === this.spawnSlot) return;
@@ -377,14 +384,19 @@ export class PlayerController {
     const working = this.running ? 0.11 : this.climbing ? 0.08 : this.moving ? -0.03 : -0.07;
     this.exertion = Math.max(0, Math.min(1, this.exertion + delta * (working > 0 ? working * this.load.inertia ** 2 : working)));
     this.tagged = Math.max(0, this.tagged - delta);
-    // Aiming brings the sights up in about a sixth of a second and magnifies the view.
+    // Aiming brings the sights up in the weapon's own time, eased at both ends, and magnifies
+    // the view (AIM in gunFeel.ts).
     const aiming = this.aimHeld && !this.sliding && !this.climbing && !this.mantle;
-    this.aim += (Number(aiming) - this.aim) * Math.min(1, delta * 14);
-    if (Math.abs(this.aim - Number(aiming)) < 0.002) this.aim = Number(aiming);
-    const baseFov = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
-    const targetFov = baseFov / (1 + this.aim * (this.zoom - 1));
-    if (Math.abs(this.camera.fov - targetFov) > 0.01) {
-      this.camera.fov += (targetFov - this.camera.fov) * Math.min(1, delta * 7);
+    this.aimRaw = Math.max(0, Math.min(1, this.aimRaw + (aiming ? delta : -delta) / this.aimSeconds));
+    this.aim = this.aimRaw * this.aimRaw * (3 - 2 * this.aimRaw);
+    // Only the view's own field of view eases (a sprint widens it, a crouch narrows it). The
+    // zoom of the sights follows the aim directly. Before, the zoomed view eased on its own
+    // behind the aim, and the gun, drawn without the zoom, shrank and grew again on the way up.
+    const baseTarget = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
+    this.baseFov += (baseTarget - this.baseFov) * Math.min(1, delta * AIM.fovRate);
+    const fov = this.baseFov / (1 + this.aim * (this.zoom - 1));
+    if (Math.abs(this.camera.fov - fov) > 0.001) {
+      this.camera.fov = fov;
       this.camera.updateProjectionMatrix();
     }
     this.applyPose();

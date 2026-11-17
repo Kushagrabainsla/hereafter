@@ -65,7 +65,8 @@ export interface MapViewerEvents {
   onStatus: (state: MapState, message: string) => void;
   onMetrics: (metrics: MapMetrics) => void;
   // Current hip-fire spread as a crosshair gap in CSS pixels.
-  onAim?: (spreadPixels: number, aiming: boolean) => void;
+  // The crosshair's gap in pixels, and how far the sights are up (0 to 1).
+  onAim?: (spreadPixels: number, aim: number) => void;
   // Loading progress from 0 to 1, with the step under way when it changes.
   // Building the world, step by step: textures, buildings, props, renderer, physics, shaders.
   onStep?: (step: BuildStep) => void;
@@ -630,7 +631,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   let readyAt = 0;
   let localBloom = 0;
   let lastLocalShot = 0;
-  let lastSpread = -1, lastAiming = false;
+  let lastSpread = -1, lastAim = 0;
   // Whether the aim button is held, and how much each gun's sights magnify the view.
   let aimWanted = false;
   const AIM_ZOOM: Record<WeaponKind, number> = { pistol: 1.25, rifle: 1.5 };
@@ -722,7 +723,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     weaponVisuals.update(delta, player.motion(), pose.heading, pose.pitch, eye, axes);
     // The sights come up only with a gun ready in hand, and drop for a reload or a switch.
     const dynamics = weaponVisuals.dynamics();
-    player.setAiming(aimWanted && !dynamics.hands && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active]);
+    player.setAiming(aimWanted && !dynamics.hands && dynamics.reload < 0.05 && dynamics.lower < 0.05, AIM_ZOOM[dynamics.active], GUN_FEEL[dynamics.active].aimSeconds);
     const inGrip = physics.heldThing();
     if (inGrip && handsOutOfView(inGrip.prop)) authoredViewModel.setHold("hidden");
     else if (inGrip) {
@@ -735,10 +736,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const motion = player.motion(), active = weaponVisuals.dynamics().active;
     const spread = spreadDegrees(active, motion, currentBloom(active, localBloom, (performance.now() - lastLocalShot) / 1000)) * armSpread(armWound);
     const spreadPixels = Math.tan(spread * Math.PI / 180) * (container.clientHeight / 2) / Math.tan(camera.fov * Math.PI / 360);
-    if (Math.abs(spreadPixels - lastSpread) > 0.25 || motion.aiming !== lastAiming) {
+    if (Math.abs(spreadPixels - lastSpread) > 0.25 || Math.abs(motion.aim - lastAim) > 0.004 || (motion.aim !== lastAim && (motion.aim === 0 || motion.aim === 1))) {
       lastSpread = spreadPixels;
-      lastAiming = motion.aiming;
-      events.onAim?.(spreadPixels, motion.aiming);
+      lastAim = motion.aim;
+      events.onAim?.(spreadPixels, motion.aim);
     }
     built.update(time / 1000);
     rainTime.value = time / 1000;

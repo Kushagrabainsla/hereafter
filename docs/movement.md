@@ -49,7 +49,7 @@ Shots leave inside a cone around the aim. The coordinating peer applies it when 
 
 Sustained fire blooms on top of that. Each shot adds 0.35° for the pistol and 0.2° for the carbine, up to 1.2° and 1.6°. After a 0.12 s rest, bloom recovers at 3.5° and 2.8° per second.
 
-Aiming down the sights, by holding the right button, halves the whole cone, bloom included. The sights come up in about a sixth of a second, magnifying the view 1.25 times for the pistol and 1.5 times for the carbine, with the look slowed in proportion and the weapon in hand drawn without the magnification. The gun moves so its sights sit on the centre of the view, its sway drops to a quarter and the walk's swing stops. The player walks at 55% of their pace and cannot sprint, and the sights drop for a reload or a weapon switch. Pose packets carry an `aiming` flag, protocol 17, which the coordinator applies to the cone. The crosshair hides while aiming.
+Aiming down the sights, by holding the right button, halves the whole cone, bloom included. The sights come up in 0.17 s for the pistol and 0.24 s for the carbine (`aimSeconds` in `gunFeel.ts`), eased at both ends, magnifying the view 1.25 times for the pistol and 1.5 times for the carbine, with the look slowed in proportion and the weapon in hand drawn without the magnification. The halved cone, the smaller recoil and the `aiming` flag start when the sights are 90% of the way up. The gun moves so its sights sit on the centre of the view, its sway drops to a quarter and the walk's swing stops. The player walks at 55% of their pace and cannot sprint, and the sights drop for a reload or a weapon switch. Pose packets carry an `aiming` flag, protocol 17, which the coordinator applies to the cone. The crosshair hides while aiming.
 
 The crosshair's four ticks open to the same spread every frame, converted to pixels from the camera's field of view, with a 3 px minimum. Pose packets carry new `sliding` and `airborne` flags for this. Older peers omit them, and those flags then count as false.
 
@@ -96,6 +96,17 @@ A mouse move against the recoil is taken out of the recoil first. A player who h
 | One pistol shot: roll of the view | 0° | 0.09° for about 90 ms |
 | Landing from a jump on the spot: dip of the eyes | 0 cm | 5.3 cm, lowest 42 ms after the landing, back after 330 ms |
 | Landing from a 2.5 m drop | 0 cm | 12.3 cm, lowest 58 ms after the landing, back after 350 ms |
+
+**Sights.** The zoom of the sights follows the aim (0 to 1) directly, and only the view's own field of view eases (wider in a sprint, narrower in a crouch; `AIM` in `gunFeel.ts`). The gun is drawn through a lens that depends on the aim alone. Before, the zoomed view eased on its own, behind the aim, and the gun's lens was worked out from both: on the way up, the gun shrank and then grew again, and the view went on zooming after the sights had arrived. The crosshair now fades out as the sights come up, and comes back as they go down.
+
+| Measured in play, every frame, carbine | Before | Now |
+|---|---|---|
+| Time for the sights to come up | 356 ms | 241 ms (pistol: 150 ms) |
+| Field of view the gun is drawn with, without the aim's own part: most it is off | 17.5° | 0.0° |
+| Gun size on screen on the way up | overshoots by 15.5% and comes back | changes one way only, no overshoot |
+| World zoom: time it goes on after the sights are up | 234 ms | 0 ms |
+| Crosshair opacity with the sights up | 1 | 0 |
+| "Aiming" (steadier aim) starts when the sights are | past 50% | past 90% |
 
 ## Leaning, hit reactions and climbing
 

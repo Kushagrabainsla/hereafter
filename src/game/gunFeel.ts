@@ -68,6 +68,8 @@ export interface WeaponFeel {
   flash: FlashFeel;
   // The camera trauma one shot adds (see SHAKE).
   shake: number;
+  // The time to bring the sights up, or to take them down, in seconds.
+  aimSeconds: number;
 }
 
 export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
@@ -89,6 +91,7 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
     kick: { back: 0.035, up: 0.012, pitch: 0.09, yaw: 0.02, roll: 0.035, peakMs: 28, vary: 0.2, aimed: 0.3 },
     flash: { ms: 30, size: [0.8, 1.3], stretch: 0.3, smokeSeconds: 0.45, smokeSize: 0.2, smokeDrift: 0.1, smokeOpacity: 0.85 },
     shake: 0.3,
+    aimSeconds: 0.17,
   },
   rifle: {
     recoil: {
@@ -112,7 +115,20 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
     kick: { back: 0.028, up: 0.008, pitch: 0.07, yaw: 0.012, roll: 0.03, peakMs: 26, vary: 0.25, aimed: 0.3 },
     flash: { ms: 28, size: [0.85, 1.35], stretch: 0.3, smokeSeconds: 0.55, smokeSize: 0.26, smokeDrift: 0.14, smokeOpacity: 0.9 },
     shake: 0.26,
+    aimSeconds: 0.24,
   },
+};
+
+// Aiming down the sights. The sights come up in the weapon's `aimSeconds`, eased at both ends.
+// The view's own field of view (wider in a sprint, narrower in a crouch) eases at `fovRate`, in
+// 1/s. The zoom of the sights does not ease on its own: it follows the aim (0 to 1) directly, and
+// so does the lens the gun is drawn through, so the gun never changes size on screen while the
+// sights come up. The crosshair fades out as the sights come up. The steadier aim, the smaller
+// recoil and the "aiming" flag sent to other players start when the sights are `ready` of the
+// way up.
+export const AIM = {
+  fovRate: 7,
+  ready: 0.9,
 };
 
 // The camera's shake. Anything violent adds "trauma" (0 to 1): a shot, a blast, a hit, a hard

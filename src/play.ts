@@ -1040,9 +1040,11 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
     onStep(step) { loading.begin(STEP_OF[step] ?? "world"); },
     onStepProgress(step, fraction) { loading.progress(STEP_OF[step] ?? "world", fraction); },
     onHardLanding(speed) { submit({ kind: "fall", speed }); ownMeme("hardLanding"); },
-    // The crosshair stays the same down the sights; its gap follows the spread.
-    onAim(spreadPixels) {
+    // The crosshair's gap follows the spread, and it fades out as the sights come up: down the
+    // sights the gun's own sights mark the aim.
+    onAim(spreadPixels, aim) {
       crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
+      if (crosshair) crosshair.style.opacity = (1 - aim).toFixed(2);
     },
     onMetrics(metrics) {
       performanceLabel.textContent = `${metrics.renderer} · ${QUALITY_LABEL[qualityLevel]} · ${metrics.fps} FPS`;
