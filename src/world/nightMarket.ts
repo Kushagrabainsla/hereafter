@@ -181,6 +181,20 @@ const stair: Stair = (() => {
 box(-30, 30, 0, 16, -40, -30, "brick", "concreteCap");
 box(-30, 30, 0, 15, 30, 40, "brick", "brickCap");
 
+// ---------- the city beyond: taller blocks seen over the roofs, softening into the haze ----------
+// They give the view the near, middle and far layers of Saltline's frames, where the alleys used
+// to end against one wall and the open sky. None stands due north of the alleys, where it would
+// shade them from the low dusk sun (timeOfDay.ts). Their walls are not baked (their own looks).
+// They show from the north end looking south and over the roofs; a blind test preferred them at
+// 4 spots of 36 and against them at 1 (the rest showed no difference).
+const BACKDROP: [x0: number, x1: number, z0: number, z1: number, height: number, look: string][] = [
+  [-28, -8, -62, -46, 30, "farPlaster"], [-4, 12, -60, -44, 36, "farConcrete"], [16, 34, -64, -46, 26, "farBrick"],
+  [-56, -38, -24, 2, 26, "farBrick"], [-54, -38, 8, 28, 32, "farPlaster"],
+  [36, 54, -28, -2, 28, "farConcrete"], [38, 56, 4, 24, 22, "farPlaster"],
+  [-50, -32, 46, 62, 30, "farConcrete"], [32, 50, 46, 64, 26, "farBrick"],
+];
+for (const [x0, x1, z0, z1, height, look] of BACKDROP) box(x0, x1, 0, height, z0, z1, "brick", look);
+
 const ladders: Ladder[] = [
   { foot: { x: -6.8, y: 0, z: -17 }, normal: { x: 1, z: 0 }, along: { x: 0, z: 1 }, top: 4.6 },
   { foot: { x: 15.1, y: 0, z: 2.25 }, normal: { x: -1, z: 0 }, along: { x: 0, z: 1 }, top: 4.2 },
@@ -203,6 +217,16 @@ const facades: Facade[] = [
   { face: "nx", at: 17, from: -2, to: 10, y0: 8.6, y1: 12, lit: 0.4 },
   { face: "pz", at: -30, from: -30, to: 30, y0: 5.2, y1: 14, lit: 0.35 },
   { face: "nz", at: 30, from: -30, to: 30, y0: 5.2, y1: 13, lit: 0.35 },
+  // The far blocks (BACKDROP), on the faces that look toward the market, above the near roofs.
+  { face: "pz", at: -46, from: -28, to: -8, y0: 16.5, y1: 28, lit: 0.3 },
+  { face: "pz", at: -44, from: -4, to: 12, y0: 16.5, y1: 34, lit: 0.3 },
+  { face: "pz", at: -46, from: 16, to: 34, y0: 16.5, y1: 24, lit: 0.3 },
+  { face: "px", at: -38, from: -24, to: 2, y0: 15.5, y1: 24, lit: 0.3 },
+  { face: "px", at: -38, from: 8, to: 28, y0: 15.5, y1: 30, lit: 0.3 },
+  { face: "nx", at: 36, from: -28, to: -2, y0: 13.5, y1: 26, lit: 0.3 },
+  { face: "nx", at: 38, from: 4, to: 24, y0: 13.5, y1: 20, lit: 0.3 },
+  { face: "nz", at: 46, from: -50, to: -32, y0: 16.5, y1: 28, lit: 0.3 },
+  { face: "nz", at: 46, from: 32, to: 50, y0: 16.5, y1: 24, lit: 0.3 },
 ];
 // Upper bar room windows, either side of the balcony door.
 // The rooms an unlit window may show (windowInterior kinds: curtains, blinds, half curtain, plant),
@@ -654,6 +678,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     brickWarm: brick(0xc9a48c), brickDark: brick(0x9b7d6a), brickRed: brick(0xb08a74), brickCap: brick(0xa88672),
     plasterCream: plaster(0xe6cfaa), plasterTeal: plaster(0xa8c0b9), plasterSand: plaster(0xd9b98f), plasterOchre: plaster(0xc9a46a), plasterInside: plaster(0xe8dcc6),
     concreteCap: concrete(0xb7b2aa), slab: concrete(0xbdb8b0),
+    farPlaster: plaster(0xc4b298), farConcrete: concrete(0xa9a49c), farBrick: brick(0x8e7262),
     shopGreen: wall({ color: 0x1d3b36, metalness: 0.1, roughness: 0.55 }), barRed: wall({ color: 0x5a1a1f, metalness: 0.1, roughness: 0.55 }), tile: std({ map: textures.tiles, normalMap: textures.tilesNormal, roughness: 0.3 }),
     floor: std({ map: textures.woodFloor, normalMap: textures.woodFloorNormal, roughness: 0.62 }),
     lampGlow: glow(0xffc27a, 4), sconce: glow(0xffb070, 3.5), bottle: glow(0x6fd0c0, 0.9),
