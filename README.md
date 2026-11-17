@@ -22,7 +22,7 @@ Nothing to install, no account, no game server.
 
 > **MAP 01 · NIGHT MARKET** &nbsp;·&nbsp; San Jose, SoFA district &nbsp;·&nbsp; Dusk &nbsp;·&nbsp; 60 m of back alley
 
-Everyone starts with a knife and a couple of grenades. Pistols, carbines and spare magazines lie around the market, and every magazine counts. Rounds punch through stalls, glass and crates. Doors come off their hinges, lights get shot out, and fuel drums explode.
+Everyone starts with a loaded pistol, two frag grenades and two smoke grenades. Carbines and spare magazines lie around the market, and every magazine counts. Rounds punch through stalls, glass and crates. Doors come off their hinges, lights get shot out, and fuel drums explode.
 
 It is a working prototype: the map, movement, combat, destruction, sound, rounds and peer-to-peer rooms are all playable.
 
@@ -59,7 +59,7 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 | **06** | **CONTENT** | Voice lines (off: only grunts and cries), 18+ lines (gaalis and swearing), and meme sounds |
 | **07** | **GRAPHICS** | Auto, high, medium or low |
 
-The map downloads while you choose. Press **DEPLOY**: the game goes full screen and the mouse locks for mouse look, the loading screen fetches only the sounds you picked and builds the world, and you spawn at one end of an alley with a knife. Find a gun, find magazines, and stay alive. Your choices are saved for next time.
+The map downloads while you choose. Press **DEPLOY**: the game goes full screen and the mouse locks for mouse look, the loading screen fetches only the sounds you picked and builds the world, and you spawn at one end of an alley with a pistol and the one magazine in it. Find a carbine, find magazines, and stay alive. Your choices are saved for next time.
 
 <table>
   <tr>
@@ -82,10 +82,9 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Crouch (while running: slide) | hold <kbd>C</kbd> or <kbd>Ctrl</kbd> |
 | Lean | hold <kbd>Q</kbd> or <kbd>E</kbd> |
 | Look | move the mouse: it locks, and the game goes full screen, when you deploy. <kbd>Esc</kbd> frees it and leaves full screen, a click brings both back; unlocked, drag to look |
-| Attack, or slash with the knife | click or <kbd>F</kbd> |
-| Stab with the knife | right-click or <kbd>V</kbd> |
-| Aim down the sights, with a gun | hold right-click (on a Mac trackpad, press and hold with two fingers) |
-| Knife, pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> |
+| Fire | click or <kbd>F</kbd> |
+| Aim down the sights | hold right-click (on a Mac trackpad, press and hold with two fingers) |
+| Pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> |
 | Reload | <kbd>R</kbd> |
 | Pick up, eat, open doors and hatches | <kbd>E</kbd> |
 | Lift what you look at, put it down | <kbd>E</kbd> |
@@ -102,8 +101,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 <img src="docs/images/night-market.jpg" alt="Down the lantern street at dusk with a pistol: wet paving mirroring the stalls and lanterns, the food truck and the city beyond, the corner HUD showing health, ammo and gear" width="100%">
 
 **▸ WEAPONS**
-- A field knife with two strokes. A slash sweeps across and stops at the first thing it meets. A stab lunges in for 100 to the head, and a stab in the back is fatal.
-- 9 mm pistols (12 rounds) and carbines (30 rounds), found on the map. Each comes with only the magazine in it.
+- A 9 mm pistol (12 rounds) in hand at the start of every life, and carbines (30 rounds) found on the map. Each comes with only the magazine in it.
 - Real magazines. A reload swaps in your fullest spare: a part-used one goes back in the pouch, an empty one drops to the ground. When the spares run out, the gun is empty.
 - Frag grenades that bounce, roll and throw players off their feet, and smoke grenades that pour out a 7 m grey wall.
 - Head, body and leg hit zones. Spread grows while moving, jumping or firing long bursts, and the crosshair shows it.
@@ -231,13 +229,14 @@ docs/              design and engineering notes
 - Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
 - The noodle bar, the tea house and the laundry cannot be entered yet; the other shops, the restaurant and the bar can.
 - No voice chat, and no computer opponents in single player yet.
+- No knife and no melee attack yet.
 - Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the next round.
 - The view-model animations are generated from a simple motion description. There are no reload, crouch or aim-down-sights clips yet.
 - The first frames build the market's shaders, which takes a few seconds on slower machines; the loading screen shows it happening.
 
 ## Credits
 
-- Textures, props, the knife and the pistol: [Poly Haven](https://polyhaven.com/) (CC0)
+- Textures, props and the pistol: [Poly Haven](https://polyhaven.com/) (CC0)
 - Arms and the third-person soldier: [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) (MIT)
 - Carbine: [AKM](https://opengameart.org/content/akm) by LonesomeDucky, OpenGameArt (CC0)
 - Sounds, all CC0: [The Free Firearm Sound Library](https://opengameart.org/content/the-free-firearm-sound-library), reload packs on OpenGameArt, and [Kenney](https://kenney.nl/)'s Impact Sounds and RPG Audio
