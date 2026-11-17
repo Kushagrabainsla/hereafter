@@ -111,7 +111,8 @@ export interface Ledge {
 
 export interface Vec3 { x: number; y: number; z: number }
 
-export interface SurfaceHit { distance: number; thickness: number; point: Vec3; normal: Vec3; material: Material; entity?: string }
+// entity is the world object struck, if any; mover is the door or hatch of the food truck struck.
+export interface SurfaceHit { distance: number; thickness: number; point: Vec3; normal: Vec3; material: Material; entity?: string; mover?: string }
 
 export interface GrenadePath { points: Vec3[]; bounces: { index: number; speed: number }[]; step: number }
 
@@ -131,7 +132,7 @@ export class PhysicsWorld {
   private halfHeight = STANDING_HALF_HEIGHT;
   private crouched = false;
   // What each collider is made of and which world entity, if any, it belongs to.
-  private tags = new Map<number, { material: Material; entity?: string }>();
+  private tags = new Map<number, { material: Material; entity?: string; mover?: string }>();
   private entityColliders = new Map<string, RAPIER.Collider>();
   private entities = new Map<string, WorldEntity>();
   // Ragdoll parts are cosmetic: they collide with the world but never block players,
@@ -277,6 +278,31 @@ export class PhysicsWorld {
   }
 
   propIds(): string[] { return [...this.props.keys()]; }
+
+  // Where a thing that can move is now: a loose prop, a door leaf, or a door or hatch of the food
+  // truck. Null for everything fixed, and for a prop that broke.
+  bodyPose(id: string): { position: Vec3; rotation: Quat } | null {
+    const prop = this.propPose(id);
+    if (prop) return prop;
+    const mover = this.movers.get(id);
+    if (!mover) return null;
+    const t = mover.translation(), r = mover.rotation();
+    return { position: { x: t.x, y: t.y, z: t.z }, rotation: { x: r.x, y: r.y, z: r.z, w: r.w } };
+  }
+
+  // The point on one object's surface under a point near it, and the surface's normal there. A
+  // round is resolved by the coordinating peer, where a moving prop can stand a few centimetres
+  // from where it stands here; this puts the bullet hole on the prop as this peer sees it.
+  surfaceOf(id: string, point: Vec3, normal: Vec3): { point: Vec3; normal: Vec3 } | null {
+    const collider = this.entityColliders.get(id) ?? this.movers.get(id);
+    if (!collider) return null;
+    const reach = 0.4;
+    const origin = { x: point.x + normal.x * reach, y: point.y + normal.y * reach, z: point.z + normal.z * reach };
+    const hit = collider.castRayAndGetNormal(new RAPIER.Ray(origin, { x: -normal.x, y: -normal.y, z: -normal.z }), reach * 2, false);
+    if (!hit) return null;
+    const toi = hit.timeOfImpact;
+    return { point: { x: origin.x - normal.x * toi, y: origin.y - normal.y * toi, z: origin.z - normal.z * toi }, normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z } };
+  }
 
   // Hangs a door leaf on its hinge: free to turn about the hinge line between shut and fully open,
   // and nothing else. A leaf shot off and put back for a new round is hung on the same hinge.
@@ -775,7 +801,7 @@ export class PhysicsWorld {
   // and turned with setMover. One that names its entity is worn down by rounds that strike it.
   addMover(id: string, half: [number, number, number], material: Material, entity?: string): void {
     const collider = this.world.createCollider(RAPIER.ColliderDesc.cuboid(...half).setCollisionGroups(STATIC_GROUPS));
-    this.tags.set(collider.handle, entity ? { material, entity } : { material });
+    this.tags.set(collider.handle, entity ? { material, entity, mover: id } : { material, mover: id });
     this.movers.set(id, collider);
   }
 
@@ -985,7 +1011,7 @@ export class PhysicsWorld {
       const inside = new RAPIER.Ray({ x: point.x + direction.x * 0.002, y: point.y + direction.y * 0.002, z: point.z + direction.z * 0.002 }, direction);
       const exit = hit.collider.castRay(inside, 20, false);
       const normal = { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z };
-      hits.push({ distance: toi, thickness: exit >= 0 ? exit + 0.002 : 0.02, point, normal, material: tag.material, entity: tag.entity });
+      hits.push({ distance: toi, thickness: exit >= 0 ? exit + 0.002 : 0.02, point, normal, material: tag.material, entity: tag.entity, mover: tag.mover });
       if (tag.material === "brick") {
         const window = windowAt(point);
         if (window) hits.push({ distance: Math.max(0, toi - 0.05), thickness: 0.01, point, normal, material: "glass", entity: window });

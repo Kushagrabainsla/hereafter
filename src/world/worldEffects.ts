@@ -5,7 +5,7 @@ import {
 import { terrainHeight, type ArenaData } from "./arena";
 import { type InstanceRef, type WorldEntity, type Vec3 } from "./entities";
 import { MATERIALS, type Material } from "./materials";
-import { type GrenadePath } from "./physics";
+import { type GrenadePath, type Quat } from "./physics";
 import { kitObject, type KitPiece } from "./kit";
 import { gameAudio } from "../game/gameAudio";
 
@@ -127,6 +127,15 @@ class ParticlePool {
 // Bullet holes kept at once; the oldest goes when another is made.
 const DECALS = 260;
 
+// What the effects ask of the physical world, so that a bullet hole stays on the object it is in.
+export interface EffectsWorld {
+  // Where a thing that can move is now (a loose prop, a door leaf, a door of the food truck);
+  // null for everything fixed.
+  pose(id: string): { position: Vec3; rotation: Quat } | null;
+  // The point on that thing's surface under a point near it, and the normal there.
+  surface(id: string, point: Vec3, normal: Vec3): { point: Vec3; normal: Vec3 } | null;
+}
+
 interface Smoke { mesh: Sprite; material: SpriteMaterial; age: number; life: number; growth: number; rise: number; base: number }
 
 // A soft round puff with a ragged edge, for smoke, dust clouds and the fireball.
@@ -187,6 +196,17 @@ export class WorldEffects {
   private glow: ParticlePool;
   private decals: InstancedMesh;
   private nextDecal = 0;
+  // The object each hole is in, by the hole's slot; the slots of each object's holes; and, for an
+  // object that moves, each hole's place in the object's own frame and where the object was when
+  // its holes were last placed.
+  private holeOwner = new Map<number, string>();
+  private holesOn = new Map<string, Set<number>>();
+  private riding = new Map<string, { local: Map<number, Matrix4>; at: Vector3; turn: Quaternion }>();
+  private world: EffectsWorld | null = null;
+  private frame = new Matrix4();
+  private bodyAt = new Vector3();
+  private bodyTurn = new Quaternion();
+  private one = new Vector3(1, 1, 1);
   private hidden = new Map<string, { ref: InstanceRef; matrix: Matrix4 }[]>();
   private smoke: Smoke[] = [];
   private flash = new PointLight(0xffb070, 0, 22, 1.6);
@@ -239,10 +259,26 @@ export class WorldEffects {
 
   private floor(at: Vec3): number { return terrainHeight(this.data, at.x, at.z) + 0.02; }
 
-  private decal(at: Vec3, normal: Vec3, size: number, tint = 0xffffff): void {
+  // The physical world, for holes in things that move.
+  setWorld(world: EffectsWorld): void { this.world = world; }
+
+  // A hole in `entity` belongs to it: it moves with a loose prop or a door, and goes when the
+  // object breaks or is taken away.
+  private decal(at: Vec3, normal: Vec3, size: number, tint = 0xffffff, entity?: string): void {
+    // A round that broke the object leaves no hole in it.
+    if (entity && this.hidden.has(entity)) return;
+    const pose = entity ? this.world?.pose(entity) ?? null : null;
+    if (entity && pose) {
+      // The object can stand a little off where the round's peer had it: use its surface here.
+      const surface = this.world?.surface(entity, at, normal);
+      if (!surface) return;
+      at = surface.point;
+      normal = surface.normal;
+    }
     const index = this.nextDecal;
     this.nextDecal = (this.nextDecal + 1) % DECALS;
     this.decals.count = Math.max(this.decals.count, index + 1);
+    this.forgetHole(index);
     const n = new Vector3(normal.x, normal.y, normal.z).normalize();
     this.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), n);
     this.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.random() * Math.PI * 2));
@@ -251,6 +287,57 @@ export class WorldEffects {
     this.decals.setColorAt(index, new Color(tint));
     this.decals.instanceMatrix.needsUpdate = true;
     if (this.decals.instanceColor) this.decals.instanceColor.needsUpdate = true;
+    if (!entity) return;
+    this.holeOwner.set(index, entity);
+    let holes = this.holesOn.get(entity);
+    if (!holes) { holes = new Set(); this.holesOn.set(entity, holes); }
+    holes.add(index);
+    if (!pose) return;
+    let ride = this.riding.get(entity);
+    if (!ride) { ride = { local: new Map(), at: new Vector3(), turn: new Quaternion() }; this.riding.set(entity, ride); }
+    ride.at.set(pose.position.x, pose.position.y, pose.position.z);
+    ride.turn.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
+    ride.local.set(index, new Matrix4().compose(ride.at, ride.turn, this.one).invert().multiply(this.matrix));
+  }
+
+  // A slot about to be used again no longer belongs to the object its old hole was in.
+  private forgetHole(index: number): void {
+    const owner = this.holeOwner.get(index);
+    if (owner === undefined) return;
+    this.holeOwner.delete(index);
+    const holes = this.holesOn.get(owner);
+    holes?.delete(index);
+    if (holes && !holes.size) this.holesOn.delete(owner);
+    const ride = this.riding.get(owner);
+    ride?.local.delete(index);
+    if (ride && !ride.local.size) this.riding.delete(owner);
+  }
+
+  // Takes away every hole in an object that broke or was taken away.
+  private clearHoles(entity: string): void {
+    const holes = this.holesOn.get(entity);
+    if (!holes) return;
+    this.matrix.makeScale(0, 0, 0);
+    for (const index of holes) { this.decals.setMatrixAt(index, this.matrix); this.holeOwner.delete(index); }
+    this.decals.instanceMatrix.needsUpdate = true;
+    this.holesOn.delete(entity);
+    this.riding.delete(entity);
+  }
+
+  // Moves the holes in each object that has moved since they were last placed.
+  private carryHoles(): void {
+    for (const [entity, ride] of this.riding) {
+      const pose = this.world?.pose(entity);
+      if (!pose) continue;
+      this.bodyAt.set(pose.position.x, pose.position.y, pose.position.z);
+      this.bodyTurn.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w);
+      if (this.bodyAt.equals(ride.at) && this.bodyTurn.equals(ride.turn)) continue;
+      ride.at.copy(this.bodyAt);
+      ride.turn.copy(this.bodyTurn);
+      this.frame.compose(this.bodyAt, this.bodyTurn, this.one);
+      for (const [index, local] of ride.local) this.decals.setMatrixAt(index, this.matrix.multiplyMatrices(this.frame, local));
+      this.decals.instanceMatrix.needsUpdate = true;
+    }
   }
 
   private puff(at: Vec3, size: number, life: number, rise: number, color = 0x77736c, opacity = 0.55): void {
@@ -262,7 +349,8 @@ export class WorldEffects {
   }
 
   // Where a round struck or broke through: particles by material and, on solid surfaces, a hole.
-  impact(point: Vec3, normal: Vec3, material: Material, exit = false): void {
+  // entity is the object struck, if the round struck one.
+  impact(point: Vec3, normal: Vec3, material: Material, exit = false, entity?: string): void {
     const style = IMPACT_STYLE[MATERIALS[material].impact];
     if (material === "boundary") return;
     const pool = STYLES[style].glow ? this.glow : this.solid;
@@ -270,7 +358,7 @@ export class WorldEffects {
     if (style === "dust") this.solid.spawn(point, normal, 3, "dust", this.floor(point), 1.2);
     if (material === "flesh" || material === "glass") return;
     const size = { wood: 0.05, timber: 0.06, "metal-thin": 0.035, "metal-solid": 0.03, plastic: 0.04, cardboard: 0.045, concrete: 0.07, brick: 0.065, ground: 0.09, rubber: 0.03, masonry: 0.07 }[material as Exclude<Material, "flesh" | "glass" | "boundary">] ?? 0.05;
-    this.decal(point, normal, exit ? size * 1.3 : size, material.startsWith("metal") ? 0x9aa0a0 : material === "wood" || material === "timber" ? 0xc8a070 : 0xffffff);
+    this.decal(point, normal, exit ? size * 1.3 : size, material.startsWith("metal") ? 0x9aa0a0 : material === "wood" || material === "timber" ? 0xc8a070 : 0xffffff, entity);
   }
 
   // A world object breaking apart: hide its instances and throw out matching debris.
@@ -286,6 +374,7 @@ export class WorldEffects {
     }
     this.hidden.set(entity.id, saved);
     for (const object of this.groups.get(entity.id) ?? []) object.visible = false;
+    this.clearHoles(entity.id);
     const at = entity.center, floor = this.floor(at), up = { x: 0, y: 1, z: 0 };
     if (entity.kind === "window" || entity.kind === "pane") {
       const out = { x: Math.sin(entity.yaw), y: -0.2, z: Math.cos(entity.yaw) };
@@ -370,6 +459,7 @@ export class WorldEffects {
       ref.mesh.instanceMatrix.needsUpdate = true;
     }
     this.hidden.set(id, saved);
+    this.clearHoles(id);
   }
 
   // The black mark a fire leaves on what it burned on.
@@ -479,6 +569,7 @@ export class WorldEffects {
     });
     this.solid.update(seconds);
     this.glow.update(seconds);
+    this.carryHoles();
     this.fireAge += seconds;
     if (this.fireball.visible) {
       const t = this.fireAge / 0.38;

@@ -554,6 +554,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     ejecta.ejectCase(gun, port, right, forward, eyeVelocity);
   };
   const effects = new WorldEffects(scene, data, refs, () => camera.position, groups, pieces);
+  effects.setWorld({ pose: (id) => physics.bodyPose(id), surface: (id, point, normal) => physics.surfaceOf(id, point, normal) });
   const breaches = new BreachViews(scene, built.surfaces, pieces);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
   const combatWorld: CombatWorld = {
@@ -965,7 +966,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
         }
         flashAt(new Vector3(at.x, at.y + 0.4, at.z), 4);
       }
-      for (const impact of event.impacts ?? []) effects.impact(impact, { x: impact.nx, y: impact.ny, z: impact.nz }, impact.material, impact.exit);
+      for (const impact of event.impacts ?? []) effects.impact(impact, { x: impact.nx, y: impact.ny, z: impact.nz }, impact.material, impact.exit, impact.entity);
       if (event.kind === "throw" && event.position && event.velocity && event.grenade !== undefined) {
         effects.throwGrenade(event.grenade, physics.grenadePath(event.position, event.velocity, (event.fuseMs ?? 2600) / 1000), event.smoke === true);
       }

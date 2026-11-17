@@ -103,7 +103,9 @@ export const VOICES = ["hi", "en", "grunts"];
 
 export type DamageCause = WeaponKind | "grenade" | "fall" | "struck" | "bleed" | "fire";
 
-export interface Impact { x: number; y: number; z: number; nx: number; ny: number; nz: number; material: Material; exit?: boolean }
+// entity is the world object, or the door or hatch of the food truck, that the round struck: the
+// bullet hole stays on it when it moves and goes when it breaks.
+export interface Impact { x: number; y: number; z: number; nx: number; ny: number; nz: number; material: Material; exit?: boolean; entity?: string }
 
 export interface CombatEvent {
   id: number;
@@ -192,7 +194,7 @@ export type CombatDelta = StateParts & {
 export interface SentState { revision: number; players: Record<string, Record<string, string>>; entities: Record<string, number>; shared: Record<string, string> }
 
 // What the coordinating peer asks of the physical world.
-export interface SurfaceHit { distance: number; thickness: number; point: Vec3; normal: Vec3; material: Material; entity?: string }
+export interface SurfaceHit { distance: number; thickness: number; point: Vec3; normal: Vec3; material: Material; entity?: string; mover?: string }
 export interface CombatWorld {
   clearShot(ray: ShotRay): boolean;
   traceBullet(ray: ShotRay): SurfaceHit[];
@@ -259,7 +261,8 @@ function validEvent(event: CombatEvent): boolean {
     && (event.damage === undefined || (finite(event.damage) && event.damage >= 0 && event.damage <= 200))
     && (!event.weapon || ["pistol", "rifle"].includes(event.weapon))
     && (!event.cause || CAUSES.includes(event.cause))
-    && (!event.impacts || (Array.isArray(event.impacts) && event.impacts.length <= 24 && event.impacts.every((impact) => validVec(impact) && finite(impact.nx, impact.ny, impact.nz) && MATERIAL_NAMES.includes(impact.material))))
+    && (!event.impacts || (Array.isArray(event.impacts) && event.impacts.length <= 24 && event.impacts.every((impact) => validVec(impact) && finite(impact.nx, impact.ny, impact.nz) && MATERIAL_NAMES.includes(impact.material)
+      && (impact.entity === undefined || (typeof impact.entity === "string" && impact.entity.length < 64)))))
     && validVec(event.from) && validVec(event.position) && validVec(event.velocity)
     && (event.fuseMs === undefined || (finite(event.fuseMs) && event.fuseMs >= 0 && event.fuseMs <= 10_000))
     && (event.item === undefined || ["gun", "magazines", "drop", "food", "extinguisher"].includes(event.item))
@@ -901,7 +904,8 @@ export class MatchState {
       const surface = item.surface;
       const rule = MATERIALS[surface.material];
       if (surface.material === "boundary") continue;
-      impacts.push({ ...surface.point, nx: surface.normal.x, ny: surface.normal.y, nz: surface.normal.z, material: surface.material });
+      const struck = surface.entity ?? surface.mover, on = struck ? { entity: struck } : {};
+      impacts.push({ ...surface.point, nx: surface.normal.x, ny: surface.normal.y, nz: surface.normal.z, material: surface.material, ...on });
       if (surface.entity) {
         const strength = BULLET_IMPULSE[weapon] * Math.max(0.3, share);
         this.damageEntity(actor, surface.entity, WEAPONS[weapon].damage * share * rule.bullet, surface.point, { x: direction.x * strength, y: direction.y * strength, z: direction.z * strength });
@@ -910,7 +914,7 @@ export class MatchState {
       if (power <= cost) { end = surface.distance; stopped = true; break; }
       power -= cost;
       const exit = surface.distance + surface.thickness;
-      impacts.push({ x: ray.origin.x + direction.x * exit, y: ray.origin.y + direction.y * exit, z: ray.origin.z + direction.z * exit, nx: direction.x, ny: direction.y, nz: direction.z, material: surface.material, exit: true });
+      impacts.push({ x: ray.origin.x + direction.x * exit, y: ray.origin.y + direction.y * exit, z: ray.origin.z + direction.z * exit, nx: direction.x, ny: direction.y, nz: direction.z, material: surface.material, exit: true, ...on });
     }
     this.emit({ kind: "shot", actor, weapon, shot: { ...ray, distance: end }, impact: stopped, impacts: impacts.slice(0, 24) });
     for (const hit of hits) this.hurt(hit.target!, hit.damage ?? 0, hit);
