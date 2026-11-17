@@ -46,9 +46,26 @@ export interface KickFeel {
   aimed: number;
 }
 
+export interface FlashFeel {
+  // How long the flash shows, in milliseconds. It always shows for one whole frame, so at 60
+  // frames a second 30 ms is two frames.
+  ms: number;
+  // The flash is drawn between these sizes (1 is the modelled size), at a random roll about the
+  // barrel, and stretched along the barrel by up to `stretch` more or less.
+  size: [number, number];
+  stretch: number;
+  // The puff of smoke left at the muzzle: how long it lasts (s), how wide it grows (m), how far
+  // it drifts forward and up (m), and how dense it starts (0 to 1).
+  smokeSeconds: number;
+  smokeSize: number;
+  smokeDrift: number;
+  smokeOpacity: number;
+}
+
 export interface WeaponFeel {
   recoil: RecoilFeel;
   kick: KickFeel;
+  flash: FlashFeel;
 }
 
 export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
@@ -68,6 +85,7 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
       crouched: 0.8,
     },
     kick: { back: 0.035, up: 0.012, pitch: 0.09, yaw: 0.02, roll: 0.035, peakMs: 28, vary: 0.2, aimed: 0.3 },
+    flash: { ms: 30, size: [0.8, 1.3], stretch: 0.3, smokeSeconds: 0.45, smokeSize: 0.2, smokeDrift: 0.1, smokeOpacity: 0.85 },
   },
   rifle: {
     recoil: {
@@ -89,6 +107,7 @@ export const GUN_FEEL: Record<WeaponKind, WeaponFeel> = {
       crouched: 0.8,
     },
     kick: { back: 0.028, up: 0.008, pitch: 0.07, yaw: 0.012, roll: 0.03, peakMs: 26, vary: 0.25, aimed: 0.3 },
+    flash: { ms: 28, size: [0.85, 1.35], stretch: 0.3, smokeSeconds: 0.55, smokeSize: 0.26, smokeDrift: 0.14, smokeOpacity: 0.9 },
   },
 };
 

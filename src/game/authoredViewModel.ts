@@ -1,9 +1,10 @@
 import {
-  AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3,
+  AnimationMixer, CanvasTexture, Group, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, PerspectiveCamera, Quaternion, Sprite, SpriteMaterial, Texture, Vector3,
   type AnimationAction,
 } from "three/webgpu";
 import { loadWeaponFile, type ViewFile } from "./weaponModels";
 import { type WeaponKind } from "./combatRules";
+import { GUN_FEEL } from "./gunFeel";
 import { HandRig } from "./handPose";
 import { toolHold, type Hold } from "./holding";
 import { type PlayerMotion } from "./playerController";
@@ -20,7 +21,27 @@ function wornSteel(source: MeshStandardMaterial): MeshStandardNodeMaterial {
   return material;
 }
 
-interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null; aim: Vector3; hands: HandRig }
+// muzzle carries the flash's geometry; flashRest is how that node is turned as authored.
+interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null; flashRest: Quaternion; aim: Vector3; hands: HandRig }
+
+// The puffs of smoke a shot leaves at the muzzle, drawn at once.
+const PUFFS = 4;
+const BARREL = new Vector3(0, 0, 1);
+
+// A soft round puff, densest at its centre.
+function puffTexture(): CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 64;
+  const context = canvas.getContext("2d")!, gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, "rgba(255,255,255,0.9)");
+  gradient.addColorStop(0.5, "rgba(255,255,255,0.35)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  return new CanvasTexture(canvas);
+}
+
+interface Puff { sprite: Sprite; age: number; life: number; size: number; drift: Vector3; opacity: number }
 
 const ATTACKS = ["fire"];
 // Aiming down the sights: how far the sights stand above the bore, so they rather than the
@@ -54,7 +75,13 @@ export class AuthoredViewModel {
   private active: ViewFile = "pistol";
   private locomotion = "";
   private disposed = false;
-  private attacking: AnimationAction | null = null;
+  // The muzzle flash of the last shot: how long it still shows (s), whether a frame has drawn it,
+  // and its size, stretch along the barrel and roll about it, new for each shot.
+  private flash = { left: 0, drawn: true, size: 1, stretch: 1, roll: 0 };
+  private puffs: Puff[] = [];
+  private nextPuff = 0;
+  private puffMap = puffTexture();
+  private turn = new Quaternion();
   // The bare arms stand in for hands on something else; this is what they hold when that is an
   // extinguisher.
   private tool: Object3D | null = null;
@@ -64,6 +91,14 @@ export class AuthoredViewModel {
   private framing: Framing = FRAMING.pistol;
   private aimed = 0;
   constructor(private camera: PerspectiveCamera) {
+    // The smoke puffs are always in the scene, at no size, so their shader is built at load.
+    for (let i = 0; i < PUFFS; i += 1) {
+      const sprite = new Sprite(new SpriteMaterial({ map: this.puffMap, color: 0x9a9792, transparent: true, opacity: 0, depthWrite: false }));
+      sprite.scale.setScalar(0.0001);
+      sprite.renderOrder = 60;
+      camera.add(sprite);
+      this.puffs.push({ sprite, age: 1, life: 1, size: 0, drift: new Vector3(), opacity: 0 });
+    }
     for (const kind of ["hands", "pistol", "rifle"] as const) {
       void loadWeaponFile(kind).then((gltf) => {
         if (!gltf) return;
@@ -87,20 +122,10 @@ export class AuthoredViewModel {
         const clips = new Map<string, AnimationAction>();
         for (const source of gltf.animations) {
           const name = source.name.toLowerCase();
-          let clip = source;
-          if (ATTACKS.includes(name)) {
-            // Attack clips start on the neutral pose, so they layer over whichever
-            // locomotion clip is playing instead of averaging with it. Each is cloned first:
-            // exporters share one accessor between identical constant tracks of different
-            // clips, and makeClipAdditive subtracts from the track arrays in place.
-            clip = AnimationUtils.makeClipAdditive(source.clone());
-            // Only the muzzle flash is taken from the fire clip. The kick of the gun itself comes
-            // from a spring (GunKick in gunFeel.ts): the clip's keys were the same for every shot.
-            clip.tracks = clip.tracks.filter((track) => track.name.startsWith("muzzle."));
-          }
-          const action = mixer.clipAction(clip);
-          if (ATTACKS.includes(name)) { action.setLoop(LoopOnce, 1); action.clampWhenFinished = false; }
-          clips.set(name, action);
+          // The fire clip is not played. The kick of the gun comes from a spring and the muzzle
+          // flash is timed in code (gunFeel.ts): the clip was the same for every shot.
+          if (ATTACKS.includes(name)) continue;
+          clips.set(name, mixer.clipAction(source));
         }
         root.visible = false;
         const rig = new Group();
@@ -108,7 +133,9 @@ export class AuthoredViewModel {
         camera.add(rig);
         const muzzle = root.getObjectByName("muzzle") ?? null;
         const aim = kind !== "hands" ? this.straighten(root, rig, mixer, clips, muzzle, SIGHTS[kind]) : new Vector3();
-        this.models.set(kind, { root, rig, mixer, clips, muzzle, aim, hands });
+        const flashRest = muzzle ? muzzle.quaternion.clone() : new Quaternion();
+        muzzle?.scale.setScalar(0);
+        this.models.set(kind, { root, rig, mixer, clips, muzzle, flashRest, aim, hands });
         this.locomotion = "";
       }).catch((error: unknown) => console.warn(`Could not load the ${kind} view model; it will not be drawn.`, error));
     }
@@ -164,17 +191,33 @@ export class AuthoredViewModel {
     at.y *= scale;
     return at;
   }
-  // The muzzle flash of a shot (the fire clip's one remaining part).
-  fire(): void {
-    const action = this.models.get(this.active)?.clips.get("fire");
-    if (!action) return;
-    this.attacking?.stop();
-    action.reset().setEffectiveWeight(1).play();
-    this.attacking = action;
+  // The muzzle flash of a shot and the puff of smoke it leaves (the `flash` rows of GUN_FEEL):
+  // the flash shows for a frame or two, at a new size and roll each time. aim is how far the
+  // sights are up; the smoke is thinner in the line of sight.
+  fire(weapon: WeaponKind, aim = 0): void {
+    const feel = GUN_FEEL[weapon].flash, flash = this.flash;
+    flash.left = feel.ms / 1000;
+    flash.drawn = false;
+    flash.size = feel.size[0] + Math.random() * (feel.size[1] - feel.size[0]);
+    flash.stretch = 1 + (Math.random() * 2 - 1) * feel.stretch;
+    flash.roll = Math.random() * Math.PI * 2;
+    const muzzle = this.models.get(this.active)?.muzzle;
+    if (!muzzle) return;
+    const puff = this.puffs[this.nextPuff];
+    this.nextPuff = (this.nextPuff + 1) % PUFFS;
+    this.camera.worldToLocal(muzzle.getWorldPosition(puff.sprite.position));
+    puff.age = 0;
+    puff.life = feel.smokeSeconds;
+    puff.size = feel.smokeSize * (0.8 + Math.random() * 0.4);
+    puff.opacity = feel.smokeOpacity * (1 - 0.6 * aim);
+    // Forward (away from the eye), up, and a little to a random side.
+    puff.drift.set((Math.random() - 0.5) * 0.3, 0.45, -1).multiplyScalar(feel.smokeDrift / feel.smokeSeconds);
+    puff.sprite.material.rotation = Math.random() * Math.PI * 2;
   }
   update(seconds: number, motion: PlayerMotion, dynamics: ViewDynamics): void {
     const wanted: ViewFile = dynamics.hands ? "hands" : dynamics.active;
-    if (wanted !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.locomotion = ""; this.attacking = null; this.active = wanted; }
+    if (wanted !== this.active) { this.models.get(this.active)?.mixer.stopAllAction(); this.models.get(this.active)?.muzzle?.scale.setScalar(0); this.locomotion = ""; this.flash.left = 0; this.active = wanted; }
+    this.drift(seconds);
     for (const [kind, model] of this.models) model.root.visible = kind === this.active && !(dynamics.hands && !this.toolShown && this.hold === "hidden");
     const model = this.models.get(this.active);
     if (!model) return;
@@ -193,6 +236,16 @@ export class AuthoredViewModel {
       this.locomotion = next;
     }
     model.mixer.update(seconds);
+    // The flash, after the clips have had their say about the muzzle. The first frame after a
+    // shot always draws it; after that it lasts as long as the table says.
+    if (model.muzzle) {
+      const flash = this.flash;
+      if (flash.drawn) flash.left -= seconds; else flash.drawn = true;
+      if (flash.left > 0) {
+        model.muzzle.scale.set(flash.size, flash.size, flash.size * flash.stretch);
+        model.muzzle.quaternion.copy(model.flashRest).multiply(this.turn.setFromAxisAngle(BARREL, flash.roll));
+      } else model.muzzle.scale.setScalar(0);
+    }
     // Switching, the spring sway and breathing come from the procedural state in
     // weaponVisuals.ts. A reload cants the weapon and tips the muzzle up, with a small kick
     // as the magazine seats and the action closes; the root pivots at the camera, so offsets
@@ -218,6 +271,19 @@ export class AuthoredViewModel {
     model.root.rotation.z += kick.roll;
     if (dynamics.hands) this.handsOn(model, lower);
   }
+  // Each puff of muzzle smoke drifts forward and up, grows and thins out.
+  private drift(seconds: number): void {
+    for (const puff of this.puffs) {
+      if (puff.age >= puff.life) continue;
+      puff.age += seconds;
+      const t = Math.min(1, puff.age / puff.life);
+      if (t >= 1) { puff.sprite.material.opacity = 0; puff.sprite.scale.setScalar(0.0001); continue; }
+      puff.sprite.position.addScaledVector(puff.drift, seconds * (1 - 0.6 * t));
+      puff.sprite.scale.setScalar(puff.size * (0.25 + 0.75 * Math.sqrt(t)));
+      puff.sprite.material.opacity = puff.opacity * (1 - t) ** 1.5;
+    }
+  }
+
   // Puts the hands on what they hold, once the arms have been posed. They arrive as the arms come
   // up, from wherever the animation had them.
   private handsOn(model: Model, lower: number): void {
@@ -252,5 +318,7 @@ export class AuthoredViewModel {
     this.disposed = true;
     for (const model of this.models.values()) { model.mixer.stopAllAction(); model.mixer.uncacheRoot(model.root); this.camera.remove(model.rig); this.release(model.root); }
     this.models.clear();
+    for (const puff of this.puffs) { this.camera.remove(puff.sprite); puff.sprite.material.dispose(); }
+    this.puffMap.dispose();
   }
 }

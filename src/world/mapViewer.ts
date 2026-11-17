@@ -1026,7 +1026,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       if (!dead) deathView = null;
     },
     playAttack(weapon) {
-      authoredViewModel.fire();
+      authoredViewModel.fire(weapon, player.aimAmount());
       weaponVisuals.fire(weapon, player.aimAmount());
       gameAudio.fire(weapon);
       const now = performance.now();

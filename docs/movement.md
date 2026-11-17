@@ -77,6 +77,14 @@ A mouse move against the recoil is taken out of the recoil first. A player who h
 | Time until the gun is home | about 250 ms | about 160 ms |
 | Pistol, aiming: share of the hip-fire travel | 116% | 28% |
 
+**Flash and smoke.** The muzzle flash (`flash` in the table) shows for `ms` milliseconds, and always for one whole frame. Each shot draws it at a new size between the two numbers of `size`, stretched along the barrel by up to `stretch`, and at a random roll about the barrel. Before, the fire clip showed one shape at one size for about 95 ms. Each shot also leaves a puff of smoke at the muzzle that drifts forward and up, grows to `smokeSize` metres and thins out in `smokeSeconds`. It starts at the density `smokeOpacity`, and is thinner while the player aims, so it does not hide the target.
+
+| Measured in play, the flash every frame | Before | Now |
+|---|---|---|
+| Time the flash shows | 88 to 101 ms | one frame: 15 to 36 ms at the test's frame rate |
+| Size of the flash over five shots | 1, 1, 1, 1, 1 | 0.80 to 1.33 |
+| Roll about the barrel over five shots | the same | different for each shot |
+
 ## Leaning, hit reactions and climbing
 
 Hold Q or E to lean left or right while standing or walking. The lean starts after the key is held for 150 ms (`LEAN_HOLD` in `playerController.ts`), because E is also the interact key: a tap of E to take a pickup or open a door does not tilt the view. A press of E that interacts with something does not lean at all, however long the key stays down. The eyes move 0.32 m to the side and drop slightly, the view tilts 8°, and walking slows to 70%. A wall at the side limits how far the lean goes. Shots leave from the leaned eyes, and a leaning player's head and chest boxes move with them, so peeking exposes less of the body. Other players lean visibly: the body rolls a little and the upper body bends the rest of the way.
