@@ -1082,7 +1082,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     },
     startReload(weapon, durationMs) {
       weaponVisuals.reload(weapon, durationMs);
-      gameAudio.reload(weapon);
+      gameAudio.reload(weapon, durationMs);
     },
     cancelReload() {
       weaponVisuals.cancelReload();

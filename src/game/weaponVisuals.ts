@@ -1,7 +1,7 @@
 import { Box3, Group, MeshStandardMaterial, PointLight, Vector3, Scene, type Object3D } from "three/webgpu";
 import { terrainHeight, type ArenaData } from "../world/arena";
 import { glowing, kitObject, type KitPiece } from "../world/kit";
-import { type WeaponKind, type WeaponPickup } from "./combatRules";
+import { reloadMoment, type WeaponKind, type WeaponPickup } from "./combatRules";
 import { type PlayerMotion } from "./playerController";
 
 interface PickupView { root: Group; beamMaterial: MeshStandardMaterial; holder: Group; weapon: WeaponKind }
@@ -252,7 +252,9 @@ export class WeaponVisuals {
       else {
         this.reloadTilt = smoothstep(0, 0.16, progress) * (1 - smoothstep(0.84, 1, progress));
         for (const moment of RELOAD_JOLTS[this.reloadWeapon]) {
-          if (this.reloadElapsed >= moment) this.reloadJolt += Math.exp(-(this.reloadElapsed - moment) * 16);
+          // A slower reload moves each jolt with its sound.
+          const at = reloadMoment(this.reloadWeapon, moment, this.reloadDuration * 1000);
+          if (this.reloadElapsed >= at) this.reloadJolt += Math.exp(-(this.reloadElapsed - at) * 16);
         }
       }
     }

@@ -1,4 +1,4 @@
-import { type WeaponKind } from "./combatRules";
+import { RELOAD_CUTS, reloadMoment, WEAPONS, type WeaponKind } from "./combatRules";
 import voiceCatalog from "./voiceLines.json";
 import { type Material } from "../world/materials";
 import { assetFetch } from "../assetStore";
@@ -129,7 +129,7 @@ export class GameAudio {
   private reverb!: GainNode;
   private listenerAt: Vec3 = { x: 0, y: 0, z: 0 };
   private spatialVoices: { source: AudioBufferSourceNode; priority: "high" | "low" }[] = [];
-  private localReload: AudioBufferSourceNode | null = null;
+  private localReload: AudioBufferSourceNode[] = [];
   private slideVoice: { source: AudioBufferSourceNode; gain: GainNode } | null = null;
   private down = false;
   private muted = readMuted();
@@ -209,12 +209,32 @@ export class GameAudio {
 
   dryFire(): void { this.play("dry-fire", { gain: 0.14 }); }
 
-  reload(weapon: WeaponKind): void {
-    this.localReload?.stop();
-    this.localReload = this.play(weapon === "pistol" ? "reload-pistol" : "reload-rifle", { gain: 0.2 });
+  // The reload recording, played as its three actions (RELOAD_CUTS), each when it happens in a
+  // reload that lasts durationMs: a wounded arm stretches the pauses between the actions, and the
+  // slide or bolt still closes as the reload ends. Short fades hide the cuts.
+  reload(weapon: WeaponKind, durationMs = WEAPONS[weapon].reloadMs): void {
+    this.cancelReload();
+    const context = this.live(), sample = this.pick(weapon === "pistol" ? "reload-pistol" : "reload-rifle");
+    if (!context || !sample) return;
+    const now = context.currentTime, [first, second] = RELOAD_CUTS[weapon], end = sample.buffer.duration, fade = 0.006;
+    for (const [from, to] of [[sample.offset, first], [first, second], [second, end]]) {
+      const start = now + reloadMoment(weapon, from, durationMs) - sample.offset, length = to - from;
+      const source = new AudioBufferSourceNode(context, { buffer: sample.buffer });
+      const gain = new GainNode(context, { gain: 0 });
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.2, start + fade);
+      gain.gain.setValueAtTime(0.2, start + length - fade);
+      gain.gain.linearRampToValueAtTime(0, start + length);
+      source.connect(gain).connect(this.mix);
+      source.start(start, from, length);
+      this.localReload.push(source);
+    }
   }
 
-  cancelReload(): void { this.localReload?.stop(); this.localReload = null; }
+  cancelReload(): void {
+    for (const source of this.localReload) source.stop();
+    this.localReload = [];
+  }
 
   // Holster during the first half of the 560 ms switch, then draw and a ready click.
   switchWeapon(weapon: WeaponKind): void {

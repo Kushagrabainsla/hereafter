@@ -237,6 +237,17 @@ export const armThrow = (arm: number): number => 1 - 0.3 * arm;
 export const armCarry = (arm: number): number => MAX_CARRY * (1 - 0.5 * arm);
 export const reloadTime = (weapon: WeaponKind, arm: number): number => Math.round(WEAPONS[weapon].reloadMs * (1 + 0.5 * arm));
 
+// Each reload recording holds three actions: the magazine comes out, the new one goes in, and the
+// slide or bolt closes. These are the two moments (seconds into the recording) that divide them,
+// each in a quiet gap. A reload slowed by a wounded arm lasts longer than its recording. The extra
+// time goes into the two gaps, half into each, so the action still closes as the reload ends.
+export const RELOAD_CUTS: Record<WeaponKind, [number, number]> = { pistol: [0.36, 0.85], rifle: [0.6, 1.31] };
+// When a moment of the reload recording happens in a reload that lasts durationMs, in seconds.
+export function reloadMoment(weapon: WeaponKind, moment: number, durationMs: number): number {
+  const extra = Math.max(0, (durationMs - WEAPONS[weapon].reloadMs) / 1000), [first, second] = RELOAD_CUTS[weapon];
+  return moment + (moment >= second ? extra : moment >= first ? extra / 2 : 0);
+}
+
 // How far a full lean moves the eyes sideways, and the head and chest with them.
 export const LEAN_OFFSET = 0.32;
 
