@@ -14,6 +14,7 @@ import { mapById } from "./maps";
 import { DefaultLoadingManager } from "three/webgpu";
 import { fillScreen } from "./mouseLock";
 import { gameKey } from "./keys";
+import { SoloTargets } from "./game/soloTargets";
 import { cheaper, drawnPixels, FPS_FLOOR, pickQuality, QUALITY, QUALITY_LABEL, type QualityLevel } from "./world/quality";
 
 // The game: the world, the match and everything on screen during play. main.ts loads this
@@ -92,6 +93,8 @@ const scoreboardFooter = element<HTMLElement>("scoreboard-footer");
 const deathCause = element<HTMLElement>("death-cause");
 let viewer: MapViewer | null = null;
 let peerRoom: PeerRoom | null = null;
+// The practice targets of a solo game; none while in a room.
+let soloTargets: SoloTargets | null = null;
 let match: MatchState | null = null;
 let lastEventId = 0;
 let lastLocalAttack = 0;
@@ -715,6 +718,8 @@ function enterRoom(rawCode: string): void {
     return;
   }
   try {
+    soloTargets?.clear();
+    soloTargets = null;
     match?.reset(selfId);
     viewer?.resetWorld();
     lastEventId = 0;
@@ -888,6 +893,8 @@ window.setInterval(() => {
   const pose = viewer.playerPose();
   match.setPose(selfId, pose);
   peerRoom?.sendPose(pose);
+  // A solo game has practice targets to shoot at; a room has real players.
+  if (!peerRoom && launched) (soloTargets ??= new SoloTargets(match, viewer)).update();
   if (launched && (match.player(selfId)?.health ?? 0) > 0) movementMemes(pose);
 }, 33);
 
@@ -997,6 +1004,7 @@ export async function launch(chosen: Settings, loading: Loading): Promise<void> 
   launched = true;
   syncPause();
   if (peerRoom && chosen.room === "create") toast(`Room ${peerRoom.code} is open · press Room to copy the invite link`);
+  if (!peerRoom) toast("Practice · eight targets stand and walk in the market");
   // Files a model loads late can still use the downloads for a while; then they are freed.
   window.setTimeout(releaseAssets, 15_000);
 }

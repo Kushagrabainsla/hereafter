@@ -362,6 +362,8 @@ export class MatchState {
   private doused = new WeakMap<Fire, number>();
   // Players whose positions have arrived, so they are in the game rather than loading it.
   private present = new Set<string>();
+  // Practice targets: in the match, but never enough to start a round.
+  private dummies = new Set<string>();
   private now = 0;
 
   constructor(private data: ArenaData, private onChange: (snapshot: CombatSnapshot) => void, private world?: CombatWorld) {
@@ -383,6 +385,7 @@ export class MatchState {
     this.bandaging.clear();
     this.heat.clear();
     this.present.clear();
+    this.dummies.clear();
     this.onChange(this.snapshot);
   }
 
@@ -442,9 +445,20 @@ export class MatchState {
     return true;
   }
 
+  // A practice target of a solo game (soloTargets.ts): a player with no person behind it. It
+  // is in the match for shots, blasts and the score, but it does not count toward starting a
+  // round, and it only cries out: it has no voice lines.
+  addDummy(id: string, name: string): void {
+    this.dummies.add(id);
+    if (this.snapshot.players[id]) return;
+    this.snapshot.players[id] = { ...freshPlayer(), name: cleanName(name), voice: "grunts" };
+    this.changed();
+  }
+
   // A player who has left the room; the coordinator's next update tells everyone.
   removePlayer(id: string): void {
     this.present.delete(id);
+    this.dummies.delete(id);
     this.removePose(id);
     if (!this.snapshot.players[id]) return;
     delete this.snapshot.players[id];
@@ -1193,7 +1207,7 @@ export class MatchState {
   // next round. Fewer than two players in the game puts the room back in warm-up.
   private advanceRound(now: number): boolean {
     const round = this.snapshot.round;
-    const playing = Object.keys(this.snapshot.players).filter((id) => this.present.has(id)).length;
+    const playing = Object.keys(this.snapshot.players).filter((id) => this.present.has(id) && !this.dummies.has(id)).length;
     if (playing < 2) {
       if (round.phase === "warmup") return false;
       this.snapshot.round = { ...round, phase: "warmup", until: 0, winner: "" };

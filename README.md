@@ -51,7 +51,7 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 
 | # | Step | What you pick |
 |---|---|---|
-| **01** | **MODE** | Single player, or a room to create or join |
+| **01** | **MODE** | Single player, with eight practice targets in the market, or a room to create or join |
 | **02** | **MAP** | The Night Market, with more maps to come |
 | **03** | **TIME** | Dusk (a wet late afternoon, the low sun down the alleys) or day (dry and clear) |
 | **04** | **CALLSIGN** | Your name in the kill feed and on the scoreboard |
@@ -228,7 +228,7 @@ docs/              design and engineering notes
 - One map. Its layout is written in code, not built in an editor. The walls and ground are flat surfaces with photographed textures and baked light, and smoke, steam, fire, haze and tracers are particles; everything else is modelled in Blender (see the [asset pipeline](docs/asset-pipeline.md)).
 - Movement comes from each player's own browser. Distance and bounds checks reject impossible moves, but a modified client could still cheat, so this isn't ready for competitive play.
 - The noodle bar, the tea house and the laundry cannot be entered yet; the other shops, the restaurant and the bar can.
-- No voice chat, and no computer opponents in single player yet.
+- No voice chat. The practice targets in single player stand and walk, but they do not shoot back yet.
 - No knife and no melee attack yet.
 - Ragdolls, spent cases and dropped magazines aren't synced between players. Destroyed objects stay destroyed until the next round.
 - The view-model animations are generated from a simple motion description. There are no reload, crouch or aim-down-sights clips yet.
