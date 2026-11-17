@@ -1130,6 +1130,17 @@ export class PhysicsWorld {
     return hit ? { distance: hit.timeOfImpact, normal: { x: hit.normal.x, y: hit.normal.y, z: hit.normal.z } } : null;
   }
 
+  // How far below a point the first fixed part of the map is: the ground, a floor, a walkway or
+  // a roof. Null if there is none within `reach` metres. Loose props, stalls, doors and anything
+  // else that can move or break do not count, so a mark laid there never ends up in the air.
+  floorBelow(at: Vec3, reach: number): number | null {
+    const hit = this.world.castRay(new RAPIER.Ray(at, { x: 0, y: -1, z: 0 }), reach, true, undefined, undefined, this.collider, undefined, (collider) => {
+      const tag = this.tags.get(collider.handle);
+      return this.solid(collider) && !tag?.entity && !tag?.mover && tag?.material !== "boundary";
+    });
+    return hit ? hit.timeOfImpact : null;
+  }
+
   traceShot({ origin, direction, distance }: ShotRay): number {
     return this.world.castRay(new RAPIER.Ray(origin, direction), distance, true, undefined, undefined, this.collider, undefined, this.solid)?.timeOfImpact ?? distance;
   }

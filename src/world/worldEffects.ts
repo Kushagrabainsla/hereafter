@@ -134,7 +134,13 @@ export interface EffectsWorld {
   pose(id: string): { position: Vec3; rotation: Quat } | null;
   // The point on that thing's surface under a point near it, and the normal there.
   surface(id: string, point: Vec3, normal: Vec3): { point: Vec3; normal: Vec3 } | null;
+  // How far below a point the first fixed floor is, or null if none is within `reach` metres.
+  below(at: Vec3, reach: number): number | null;
 }
+
+// A blast's scorch mark, in metres across; and the smaller mark on a floor too narrow for it.
+const SCORCH_SIZE = 2.6;
+const SCORCH_NARROW = 1.3;
 
 interface Smoke { mesh: Sprite; material: SpriteMaterial; age: number; life: number; growth: number; rise: number; base: number }
 
@@ -522,6 +528,24 @@ export class WorldEffects {
     for (const object of this.groups.get(entity.id) ?? []) object.visible = true;
   }
 
+  // Where a blast leaves its scorch mark: on the floor it burst over, which on an upper floor is
+  // not the street below. A blast high in the air leaves none. On a narrow walkway or at a floor's
+  // edge the mark is smaller, so it does not hang over the side.
+  private scorchUnder(at: Vec3): { y: number; size: number } | null {
+    if (!this.world) return { y: this.floor(at), size: SCORCH_SIZE };
+    const from = at.y + 0.3, drop = this.world.below({ x: at.x, y: from, z: at.z }, 3);
+    if (drop === null) return null;
+    // A blast inside something solid, such as a cylinder in the food truck, marks the ground.
+    if (drop < 0.02) return { y: this.floor(at), size: SCORCH_SIZE };
+    let held = 0;
+    for (let k = 0; k < 8; k += 1) {
+      const angle = k * Math.PI / 4, far = this.world.below({ x: at.x + Math.cos(angle) * SCORCH_SIZE * 0.42, y: from, z: at.z + Math.sin(angle) * SCORCH_SIZE * 0.42 }, 3);
+      // The floor carries on at the same height there, or a wall stands there and hides the rest.
+      if (far !== null && (far < 0.02 || Math.abs(far - drop) < 0.15)) held += 1;
+    }
+    return { y: from - drop + 0.02, size: held === 8 ? SCORCH_SIZE : SCORCH_NARROW };
+  }
+
   explosion(at: Vec3): void {
     const floor = this.floor(at);
     this.flash.position.set(at.x, at.y + 0.6, at.z);
@@ -533,7 +557,8 @@ export class WorldEffects {
     this.solid.spawn({ ...at, y: at.y + 0.1 }, { x: 0, y: 1, z: 0 }, 36, "dust", floor, 1.4);
     this.solid.spawn({ ...at, y: at.y + 0.1 }, { x: 0, y: 1, z: 0 }, 14, "chunks", floor, 1.2);
     for (let i = 0; i < 10; i += 1) this.puff({ x: at.x + (Math.random() - 0.5) * 1.6, y: at.y + 0.4 + i * 0.22, z: at.z + (Math.random() - 0.5) * 1.6 }, 2.6 + Math.random() * 2.2, 3 + Math.random() * 1.5, 0.7 + Math.random() * 0.5, i < 3 ? 0x3e3b38 : 0x8a857d, 0.85);
-    this.decal({ x: at.x, y: floor, z: at.z }, { x: 0, y: 1, z: 0 }, 2.6, 0x1c1a18);
+    const mark = this.scorchUnder(at);
+    if (mark) this.decal({ x: at.x, y: mark.y, z: at.z }, { x: 0, y: 1, z: 0 }, mark.size, 0x1c1a18);
     const camera = this.camera();
     this.shake = Math.max(this.shake, Math.min(1, 9 / (1 + camera.distanceTo(new Vector3(at.x, at.y, at.z)))));
   }

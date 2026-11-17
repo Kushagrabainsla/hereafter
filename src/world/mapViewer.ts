@@ -554,7 +554,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     ejecta.ejectCase(gun, port, right, forward, eyeVelocity);
   };
   const effects = new WorldEffects(scene, data, refs, () => camera.position, groups, pieces);
-  effects.setWorld({ pose: (id) => physics.bodyPose(id), surface: (id, point, normal) => physics.surfaceOf(id, point, normal) });
+  effects.setWorld({ pose: (id) => physics.bodyPose(id), surface: (id, point, normal) => physics.surfaceOf(id, point, normal), below: (at, reach) => physics.floorBelow(at, reach) });
   const breaches = new BreachViews(scene, built.surfaces, pieces);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
   const combatWorld: CombatWorld = {
