@@ -97,10 +97,16 @@ export function withEdges(source: BufferGeometry): BufferGeometry {
       const corners = [p(t * 3), p(t * 3 + 1), p(t * 3 + 2)];
       const n: V = [normals[t * 3], normals[t * 3 + 1], normals[t * 3 + 2]];
       const centre: V = [(corners[0][0] + corners[1][0] + corners[2][0]) / 3, (corners[0][1] + corners[1][1] + corners[2][1]) / 3, (corners[0][2] + corners[1][2] + corners[2][2]) / 3];
+      const cornerKeys = new Set(corners.map((corner) => key(...corner)));
+      const ownSide = (edge: { a: V; b: V }): boolean => cornerKeys.has(key(...edge.a)) && cornerKeys.has(key(...edge.b));
       for (const kind of ["out", "in", "open"] as const) {
         // Only edges the triangle lies beside, not beyond an end: the line of a window opening's side
-        // would otherwise run on across the frame above and below it as a false edge.
-        const nearest = edges.filter((edge) => edge.kind === kind && beside(centre, edge.a, edge.b)).map((edge) => ({ edge, d: segmentDistance(centre, edge.a, edge.b) })).sort((x, y) => x.d - y.d).slice(0, 3);
+        // would otherwise run on across the frame above and below it as a false edge. A side of the
+        // triangle itself always counts, and first: a long thin triangle
+        // reaching in to a round opening (an air conditioner's fan) lies beside none of the opening's
+        // short sides, not even its own, and left pale wedges in the grime round the opening.
+        const nearest = edges.filter((edge) => edge.kind === kind && (ownSide(edge) || beside(centre, edge.a, edge.b)))
+          .map((edge) => ({ edge, d: segmentDistance(centre, edge.a, edge.b) - (ownSide(edge) ? 1e3 : 0) })).sort((x, y) => x.d - y.d).slice(0, 3);
         const target = kind === "out" ? outside : kind === "in" ? inside : open;
         nearest.forEach(({ edge }, slot) => {
           // In the face's plane, across the edge: distance from its line, never below zero.

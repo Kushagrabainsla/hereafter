@@ -1,5 +1,5 @@
 import { Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
-import { clamp, float, materialColor, materialRoughness, max, mix, normalWorld, positionGeometry, positionWorld, smoothstep, texture3D, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { clamp, float, materialColor, materialRoughness, max, min, mix, normalWorld, positionGeometry, positionWorld, select, smoothstep, texture3D, uniform, vec2, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { noiseVolume } from "./noiseVolume";
@@ -66,7 +66,16 @@ function weathered(source: MeshStandardMaterial, model?: PropModel, matrix?: Mat
   if (model && HEAVY.has(model.name)) {
     const P = uniform(matrix!).mul(vec4(positionGeometry, 1)).xyz;
     const height = model.size[1];
-    const runs = smoothstep(0.58, 0.85, texture3D(noiseVolume(), P.mul(vec3(4, 0.3, 4))).b).mul(float(1).sub(up)).mul(0.7);
+    // Runs start where water leaves a ledge (the top, and on a drum its two hoops) and stop at their
+    // own lengths, from 5 cm to 45 cm, and only in some stretches round the side: full-height runs
+    // at even spacing read as a regular stripe pattern.
+    const sources = model.name === "oil_drum" ? [height, height * 0.67, height * 0.33] : [height];
+    let fromSource: Node<"float"> = float(9);
+    for (const at of sources) fromSource = min(fromSource, select(P.y.lessThan(at), float(at).sub(P.y), float(9)));
+    const column = texture3D(noiseVolume(), vec3(P.x.mul(2.6), P.z.mul(2.6), P.y.mul(0.15))).b;
+    const reach = texture3D(noiseVolume(), vec3(P.x.mul(1.7), P.z.mul(1.7), float(0.37))).g.mul(0.4).add(0.05);
+    const some = smoothstep(0.4, 0.65, texture3D(noiseVolume(), P.mul(0.9).add(0.5)).r);
+    const runs = smoothstep(0.55, 0.8, column).mul(smoothstep(reach, reach.mul(0.3), fromSource)).mul(some).mul(float(1).sub(up));
     const film = smoothstep(0.35, 0.7, texture3D(noiseVolume(), P.mul(1 / 0.35)).r);
     color = color.mul(mix(vec3(1), GRIME.mul(0.7), clamp(runs.mul(0.6).add(film.mul(0.35)).add(up.mul(0.3)), 0, 1)));
     rough = rough.add(film.mul(0.1));
@@ -76,7 +85,9 @@ function weathered(source: MeshStandardMaterial, model?: PropModel, matrix?: Mat
       const band = (centre: number, half: number): Node<"float"> => smoothstep(float(half), float(0), P.y.sub(centre).abs().add(ragged));
       const rims = max(max(band(0, 0.06), band(height, 0.06)), max(band(height * 0.33, 0.03), band(height * 0.67, 0.03)));
       const lid = up.mul(smoothstep(0.2, 0.3, vec2(P.x, P.z).length()));
-      const rusty = clamp(max(rims, lid), 0, 1).mul(smoothstep(0.25, 0.65, patches.mul(0.5).add(speckle.mul(0.6))));
+      // The rust comes and goes round each ring, so no rim carries one even band.
+      const stretches = smoothstep(0.3, 0.6, texture3D(noiseVolume(), P.mul(1.6).add(0.21)).g);
+      const rusty = clamp(max(rims, lid), 0, 1).mul(smoothstep(0.25, 0.65, patches.mul(0.5).add(speckle.mul(0.6)))).mul(stretches);
       const below = runs.mul(smoothstep(0.35, 0.0, P.y.sub(height * 0.33).abs().min(P.y.sub(height * 0.67).abs())));
       color = mix(color, mix(vec3(0.17, 0.08, 0.04), vec3(0.36, 0.16, 0.06), speckle), rusty);
       color = mix(color, color.mul(vec3(0.72, 0.52, 0.38)), below.mul(0.7));
