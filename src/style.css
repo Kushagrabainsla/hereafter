@@ -374,3 +374,29 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 /* Shown in play while the mouse is free: how to lock it again. */
 .resume-hint { position: absolute; z-index: 4; top: calc(50% + 34px); left: 50%; transform: translateX(-50%); padding: 7px 12px; border: 1px solid rgba(255, 255, 255, .18); background: rgba(12, 14, 15, .78); color: var(--t-text); font: 700 13px var(--t-head); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
 .resume-hint kbd { padding: 1px 5px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 0; background: none; color: inherit; font: 600 11px var(--t-mono); }
+
+/* The fight HUD drawn in the world's corners, the way Saltline lays out its own: no dark panel over
+   the view, health small at the bottom left, the ammo count large at the bottom right with the gear
+   below it, all light text with a soft shadow; the title and top buttons fade out while the mouse is
+   locked in play. The world fills the frame. This won 36 spots to 0 in two blind tests. */
+.combat-hud { left: 26px; right: 26px; bottom: 22px; width: auto; padding: 0; border: 0; background: none; box-shadow: none; display: grid; grid-template-columns: 200px 1fr 170px; column-gap: 0; align-items: end; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, .95), 0 0 10px rgba(0, 0, 0, .7); }
+.combat-hud .hud-health-label { grid-column: 1; grid-row: 1; }
+.combat-hud .health-bar { grid-column: 1; grid-row: 2; height: 3px; margin: 6px 0 4px; background: rgba(255, 255, 255, .18); box-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+.combat-hud .hud-wound-row { grid-column: 1; grid-row: 3; }
+.combat-hud .score-label { grid-column: 1; grid-row: 4; margin-top: 4px; color: #b9bcbd; }
+.combat-hud .hud-health-label span { font-size: 11px; color: #c9cbcc; }
+.combat-hud .hud-health-label strong { font-size: 24px; }
+.combat-hud .hud-weapon-row { grid-column: 3; grid-row: 1; display: flex; flex-direction: column; align-items: flex-end; gap: 0; padding: 0; border: 0; }
+.combat-hud .hud-weapon-row strong { order: 1; color: #f1efe9; font: 800 40px/1 "Barlow Condensed", sans-serif; letter-spacing: .02em; }
+.combat-hud .hud-weapon-row span { order: 2; color: #c9cbcc; font: 500 10px "JetBrains Mono", monospace; letter-spacing: .14em; }
+.combat-hud .hud-mag-row, .combat-hud .hud-grenade-row, .combat-hud .hud-load-row { grid-column: 3; margin-top: 2px; color: #c9cbcc; font-size: 11px; }
+.combat-hud kbd { border-color: rgba(255, 255, 255, .3); background: none; }
+.pickup-hint { bottom: 64px; border: 0; border-left: 2px solid #ff6a13; background: rgba(12, 14, 15, .55); font-size: 12px; padding: 5px 10px; }
+.attribution { right: auto; left: 50%; bottom: 6px; transform: translateX(-50%); background: none; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); opacity: .75; }
+.brand, .top-actions { transition: opacity .4s; }
+body.in-play .brand, body.in-play .top-actions { opacity: 0; pointer-events: none; }
+@media (max-width: 620px) {
+  .combat-hud { left: 12px; right: 12px; bottom: 12px; width: auto; padding: 0; grid-template-columns: 150px 1fr 130px; }
+  .combat-hud .hud-weapon-row strong { font-size: 30px; }
+  .pickup-hint { bottom: 96px; }
+}

@@ -1,5 +1,5 @@
 import {
-  AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3,
+  AnimationMixer, AnimationUtils, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, PerspectiveCamera, Quaternion, Texture, Vector3,
   type AnimationAction,
 } from "three/webgpu";
 import { loadWeaponFile, type ViewFile } from "./weaponModels";
@@ -8,6 +8,17 @@ import { HandRig } from "./handPose";
 import { toolHold, type Hold } from "./holding";
 import { type PlayerMotion } from "./playerController";
 import { type ViewDynamics } from "./weaponVisuals";
+import { materialColor, materialRoughness } from "three/tsl";
+
+// Worn, satin gunmetal over the model's own steel: rougher (never below 0.3, where the polished
+// texture let it mirror the sky like chrome) and a little darker.
+function wornSteel(source: MeshStandardMaterial): MeshStandardNodeMaterial {
+  const material = new MeshStandardNodeMaterial();
+  material.copy(source);
+  material.roughnessNode = materialRoughness.mul(0.5).add(0.3);
+  material.colorNode = materialColor.mul(0.9);
+  return material;
+}
 
 interface Model { root: Group; rig: Group; mixer: AnimationMixer; clips: Map<string, AnimationAction>; muzzle: Object3D | null; aim: Vector3; hands: HandRig }
 
@@ -67,6 +78,9 @@ export class AuthoredViewModel {
             object.castShadow = true;
             object.receiveShadow = true;
             for (const material of Array.isArray(object.material) ? object.material : [object.material]) { material.depthTest = true; material.depthWrite = true; }
+            // The pistol's steel came out as polished chrome that mirrored the sky; a carried service
+            // pistol is worn, matte gunmetal, as the weapons in Saltline are.
+            if (!Array.isArray(object.material) && object.material.name === "service_pistol") object.material = wornSteel(object.material as MeshStandardMaterial);
           }
         });
         const mixer = new AnimationMixer(root);

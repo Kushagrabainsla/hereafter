@@ -213,6 +213,9 @@ function syncPause(): void {
   viewer?.setPaused(paused, dialogOpen());
   // With the mouse free in play, a hint says how to lock it again.
   resumeHint.hidden = !launched || dialogOpen() || dead || document.pointerLockElement !== null || !mouseLookOffered;
+  // In play with the mouse locked, the title and the top buttons fade out, so the world fills the
+  // screen; Esc frees the mouse and brings them back.
+  document.body.classList.toggle("in-play", launched && document.pointerLockElement !== null);
 }
 // Touch screens cannot lock a pointer, so they get no hint.
 const mouseLookOffered = matchMedia("(pointer: fine)").matches;
