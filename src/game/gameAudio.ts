@@ -84,6 +84,30 @@ function streetImpulse(context: BaseAudioContext): AudioBuffer {
   return impulse;
 }
 
+// A small shop or bar room: dense early reflections off walls 2 to 4 m away, then a short, dull
+// tail (about 0.4 s), where the street's echo rings on for over a second between tall walls.
+function roomImpulse(context: BaseAudioContext): AudioBuffer {
+  const length = Math.round(context.sampleRate * 0.6);
+  const impulse = context.createBuffer(2, length, context.sampleRate);
+  const reflections = [[0.006, 0.55], [0.011, 0.45], [0.014, 0.4], [0.019, 0.33], [0.024, 0.28], [0.031, 0.22], [0.038, 0.17]];
+  for (let channel = 0; channel < 2; channel += 1) {
+    const data = impulse.getChannelData(channel);
+    let low = 0;
+    for (let i = 0; i < length; i += 1) {
+      const t = i / context.sampleRate;
+      const noise = (Math.random() * 2 - 1) * Math.exp(-t / 0.085) * 0.45;
+      const damping = Math.min(0.9, 0.35 + t * 2.2);
+      low += (noise - low) * (1 - damping);
+      data[i] = low;
+    }
+    for (const [time, gain] of reflections) {
+      const index = Math.round((time + (channel ? 0.0017 : 0)) * context.sampleRate);
+      data[index] += gain * (Math.random() < 0.5 ? -1 : 1);
+    }
+  }
+  return impulse;
+}
+
 export class GameAudio {
   private context: AudioContext | null = null;
   private samples = new Map<SoundName, Sample[]>();
@@ -94,6 +118,10 @@ export class GameAudio {
   // Whether it rains (dusk) or is dry (day, timeOfDay.ts).
   private raining = true;
   private sheltered = false;
+  // The street echo and the room echo, and which the player hears.
+  private streetWet!: GainNode;
+  private roomWet: GainNode | null = null;
+  private indoors = false;
   private master!: GainNode;
   private muffle!: BiquadFilterNode;
   private mix!: GainNode;
@@ -428,8 +456,15 @@ export class GameAudio {
   }
 
   // Indoors the rain is heard through the roof: dull and quieter.
+  // Indoors the echo is a small room's: short and close, where outside it is the street's.
   setSheltered(sheltered: boolean): void {
     const context = this.live();
+    if (context && this.roomWet && sheltered !== this.indoors) {
+      this.indoors = sheltered;
+      const now = context.currentTime;
+      this.streetWet.gain.setTargetAtTime(sheltered ? 0.12 : 0.55, now, 0.3);
+      this.roomWet.gain.setTargetAtTime(sheltered ? 0.7 : 0, now, 0.3);
+    }
     if (!context || !this.rainShelter || !this.raining || sheltered === this.sheltered) return;
     this.sheltered = sheltered;
     const now = context.currentTime;
@@ -972,9 +1007,12 @@ export class GameAudio {
     this.ui = new GainNode(context, { gain: 1 });
     this.reverb = new GainNode(context, { gain: 1 });
     const convolver = new ConvolverNode(context, { buffer: streetImpulse(context) });
-    const wet = new GainNode(context, { gain: 0.55 });
+    this.streetWet = new GainNode(context, { gain: 0.55 });
     this.mix.connect(this.muffle);
-    this.reverb.connect(convolver).connect(wet).connect(this.muffle);
+    this.reverb.connect(convolver).connect(this.streetWet).connect(this.muffle);
+    // The room echo for indoors, silent until the player steps inside (setSheltered).
+    this.roomWet = new GainNode(context, { gain: 0 });
+    this.reverb.connect(new ConvolverNode(context, { buffer: roomImpulse(context) })).connect(this.roomWet).connect(this.muffle);
     this.muffle.connect(compressor);
     compressor.connect(this.master).connect(context.destination);
     // Hit confirmation joins after the limiter so a loud shot cannot push it down. The
