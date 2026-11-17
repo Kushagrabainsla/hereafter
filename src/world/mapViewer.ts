@@ -182,7 +182,7 @@ const EXPOSURE = 1.0;
 // The grade's tint for the shadows and for the highlights (mixed by brightness): cool, blue-grey
 // shadows and only a little warmth in the light, as in Saltline's frames. The lamps' sodium orange
 // is warm enough; warmer highlights and shadows turned whole walls orange in a blind test.
-export const GRADE = { shadows: uniform(new Vector3(0.78, 0.95, 1.28)), lights: uniform(new Vector3(1.0, 1.0, 0.99)) };
+export const GRADE = { shadows: uniform(new Vector3(0.78, 0.95, 1.28)), lights: uniform(new Vector3(1.0, 1.0, 0.99)), saturation: uniform(0.82) };
 // The first frames reveal the market in this many slices, building each slice's shaders.
 const WARM_SLICES = 16;
 // The sun's shadow map is redrawn once in this many frames.
@@ -229,8 +229,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   ATMOSPHERE.glow.value = look.haze.glow;
   ATMOSPHERE.tight.value = look.haze.tight;
   ATMOSPHERE.skyHaze.value = look.haze.skyHaze;
+  ATMOSPHERE.sun.value.set(...look.haze.sun);
+  ATMOSPHERE.shafts.value = look.haze.shafts;
   GRADE.shadows.value.set(...look.grade.shadows);
   GRADE.lights.value.set(...look.grade.lights);
+  GRADE.saturation.value = look.grade.saturation;
   BOUNCE.gain.value = look.bounce;
   const fill = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
   scene.add(fill);
@@ -482,7 +485,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   const grade = mix(GRADE.shadows, GRADE.lights, smoothstep(0.02, 0.5, brightness));
   // Colour a little below full strength: with so many warm lamps, full colour turns every
   // surface the same orange.
-  const graded = mix(vec3(brightness), glow, 0.82).mul(grade).max(0);
+  const graded = mix(vec3(brightness), glow, GRADE.saturation).mul(grade).max(0);
   const vignette = float(1).sub(smoothstep(0.32, 0.95, screenUV.sub(0.5).length()).mul(0.42));
   pipeline.outputColorTransform = false;
   const output = renderOutput(vec4(graded.mul(vignette), 1));

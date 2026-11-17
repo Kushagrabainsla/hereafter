@@ -20,10 +20,11 @@ export interface Look {
   // Whether the outdoor lamps and signs burn.
   lamps: boolean;
   // The haze: per metre at ground level, the metres in front of the eye it leaves clear, its own
-  // colour, and how strongly it lights up toward the sun.
-  haze: { density: number; clear: number; color: [number, number, number]; glow: number; tight: number; skyHaze: number };
+  // colour, how strongly it lights up toward the sun, the sun's colour and strength in it (also the
+  // sun's disc), and the light shafts' strength.
+  haze: { density: number; clear: number; color: [number, number, number]; glow: number; tight: number; skyHaze: number; sun: [number, number, number]; shafts: number };
   // The grade's tint for the shadows and for the highlights (mapViewer.ts, GRADE).
-  grade: { shadows: [number, number, number]; lights: [number, number, number] };
+  grade: { shadows: [number, number, number]; lights: [number, number, number]; saturation: number };
   // How strongly the baked bounce light shows (lightmap.ts, BOUNCE).
   bounce: number;
 }
@@ -31,15 +32,19 @@ export interface Look {
 export const LOOKS: Record<TimeOfDay, Look> = {
   dusk: {
     time: "dusk",
-    sun: { offset: [-90, 110, 200], color: 0xffc690, intensity: 4.4 },
-    fill: { sky: 0x9aa8c8, ground: 0x2c2a2c, intensity: 0.38 },
+    // The sun lies straight up the north-south alleys (about 29° high), so it reaches the street and
+    // casts long shadows down them, and the player looking north sees the alley backlit; from the
+    // north-northwest the walls hid it and the many lamps lit the scene alike. It won 15 spots to 10
+    // with the dimmer, smaller glow round the sun below (a bright glow blew the sky and street white).
+    sun: { offset: [0, 110, 200], color: 0xffc690, intensity: 3.6 },
+    fill: { sky: 0x9aa8c8, ground: 0x2c2a2c, intensity: 0.5 },
     environment: 0.55,
     wet: true,
     lamps: true,
     // The haze starts 6 m out and thickens faster beyond, so near walls stay dark and clear and the
     // far ends of the alleys fade; it won a blind test 10 spots to none against haze from the eye.
-    haze: { density: 0.012, clear: 6, color: [0.02, 0.026, 0.04], glow: 0.4, tight: 0.6, skyHaze: 0.08 },
-    grade: { shadows: [0.78, 0.95, 1.28], lights: [1.0, 1.0, 0.99] },
+    haze: { density: 0.012, clear: 6, color: [0.02, 0.026, 0.04], glow: 0.3, tight: 0.3, skyHaze: 0.04, sun: [0.35, 0.25, 0.16], shafts: 0.6 },
+    grade: { shadows: [0.78, 0.95, 1.28], lights: [1.0, 1.0, 0.99], saturation: 0.82 },
     bounce: 0.72,
   },
   day: {
@@ -55,10 +60,10 @@ export const LOOKS: Record<TimeOfDay, Look> = {
     lamps: false,
     // A warm cream haze that washes the far ends of the alleys out toward the sun.
     // The haze glows strongly toward the sun (1.5), so the far ends of the alleys soften in it.
-    haze: { density: 0.006, clear: 0, color: [0.34, 0.31, 0.26], glow: 1.5, tight: 1.5, skyHaze: 0.06 },
+    haze: { density: 0.006, clear: 0, color: [0.34, 0.31, 0.26], glow: 1.5, tight: 1.5, skyHaze: 0.06, sun: [1.0, 0.72, 0.45], shafts: 0.6 },
     // Slightly warm and lifted in the shade, so brick keeps its detail: the blue sky light already
     // cools it, and navy shade read as night. With the stronger sun haze this won 6 spots of 18 to 0.
-    grade: { shadows: [1.1, 1.06, 1.0], lights: [1.02, 1.0, 0.97] },
+    grade: { shadows: [1.1, 1.06, 1.0], lights: [1.02, 1.0, 0.97], saturation: 0.82 },
     // Sunlight bounced off the walls and street fills a narrow alley's shade far more than the
     // little sky it sees; 2.6 times the dusk gain won a blind test.
     bounce: 2.6,
