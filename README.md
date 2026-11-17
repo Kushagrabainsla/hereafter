@@ -28,20 +28,20 @@ It is a working prototype: the map, movement, combat, destruction, sound, rounds
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/two-players.jpg" alt="Another player, a soldier with a carbine, standing between the stalls in a two-player room"></td>
-    <td width="50%"><img src="docs/images/grenade.jpg" alt="A grenade bursting in the market alley"></td>
+    <td width="50%"><img src="docs/images/service-alley.jpg" alt="The service alley at dusk, backlit by the low sun at its far end, the wet street shining under the wall lamps"></td>
+    <td width="50%"><img src="docs/images/grenade.jpg" alt="A grenade bursting between the stalls, smoke rolling over the wet street and the lanterns knocked out"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>CONTACT</b> · another player across the stalls</sub></td>
-    <td align="center"><sub><b>FRAG OUT</b> · a grenade bursting in the alley</sub></td>
+    <td align="center"><sub><b>LOW SUN</b> · the service alley backlit at dusk</sub></td>
+    <td align="center"><sub><b>FRAG OUT</b> · a grenade bursting between the stalls</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/food-truck.jpg" alt="The Bao and Buns food truck closing the north end of the market, under the SoFA Night Market banner"></td>
-    <td><img src="docs/images/service-alley.jpg" alt="The service alley behind the market, with dumpsters and the bar's neon sign"></td>
+    <td><img src="docs/images/food-truck.jpg" alt="The Bao and Buns food truck at the end of the market alley, under the SoFA Night Market banner, with the stalls lit beside it"></td>
+    <td><img src="docs/images/day.jpg" alt="The lantern street on a dry afternoon: stalls, paper lanterns and the city's taller blocks beyond the market"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>NORTH END</b> · the food truck under the market banner</sub></td>
-    <td align="center"><sub><b>SERVICE ALLEY</b> · dumpsters and the bar's back door</sub></td>
+    <td align="center"><sub><b>THE TRUCK</b> · the food truck under the market banner</sub></td>
+    <td align="center"><sub><b>BY DAY</b> · the same market in the afternoon sun</sub></td>
   </tr>
 </table>
 
@@ -53,15 +53,17 @@ Open the [live game](https://kushagrabainsla.github.io/hereafter/) in a desktop 
 |---|---|---|
 | **01** | **MODE** | Single player, or a room to create or join |
 | **02** | **MAP** | The Night Market, with more maps to come |
-| **03** | **CALLSIGN** | Your name in the kill feed and on the scoreboard |
-| **04** | **LANGUAGE** | हिन्दी or English |
-| **05** | **CONTENT** | Voice lines (off: only grunts and cries), 18+ lines (gaalis and swearing), and meme sounds |
+| **03** | **TIME** | Dusk (a wet late afternoon, the low sun down the alleys) or day (dry and clear) |
+| **04** | **CALLSIGN** | Your name in the kill feed and on the scoreboard |
+| **05** | **LANGUAGE** | हिन्दी or English |
+| **06** | **CONTENT** | Voice lines (off: only grunts and cries), 18+ lines (gaalis and swearing), and meme sounds |
+| **07** | **GRAPHICS** | Auto, high, medium or low |
 
 The map downloads while you choose. Press **DEPLOY**: the game goes full screen and the mouse locks for mouse look, the loading screen fetches only the sounds you picked and builds the world, and you spawn at one end of an alley with a knife. Find a gun, find magazines, and stay alive. Your choices are saved for next time.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/setup.jpg" alt="The match setup screen: mode, map, callsign, voice and content choices beside the Hereafter title"></td>
+    <td width="50%"><img src="docs/images/setup.jpg" alt="The match setup screen: mode, map, time, callsign, language, content and graphics choices beside the Hereafter title, over the lantern street at dusk"></td>
     <td width="50%"><img src="docs/images/loading.jpg" alt="The loading screen: steps ticked off beside the Hereafter title, with an orange progress bar"></td>
   </tr>
   <tr>
@@ -97,7 +99,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 
 ## 04 · Loadout
 
-<img src="docs/images/night-market.jpg" alt="Down the market alley with a carbine: string lights and lanterns over wooden stalls, the food truck at the far end, the HUD showing health, ammo, magazines, grenades and load" width="100%">
+<img src="docs/images/night-market.jpg" alt="Down the lantern street at dusk with a pistol: wet paving mirroring the stalls and lanterns, the food truck and the city beyond, the corner HUD showing health, ammo and gear" width="100%">
 
 **▸ WEAPONS**
 - A field knife with two strokes. A slash sweeps across and stops at the first thing it meets. A stab lunges in for 100 to the head, and a stab in the back is fatal.
@@ -138,8 +140,10 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 **▸ LOOK AND SOUND**
 - Rendered with Three.js on WebGPU, falling back to WebGL 2. On WebGPU every lamp, bulb string and sign is a real light.
 - The market's lamps, signs, stalls, windows, furniture and street dressing are modelled in Blender, beside scanned props from Poly Haven. Light bouncing off walls and floors is baked offline in Cycles, and wet paving reflects the lamps.
+- Dusk is a wet late afternoon: a low sun shines straight down the alleys through damp haze, the street is damp with a few puddles, and the city's taller blocks stand beyond the roofs. Day is a dry, clear afternoon. Choose either on the setup screen.
+- Surfaces age in code: walls weather in patches and darken at the foot, rust grows along edges and seams, and the air conditioners and drums yellow, grime over and rust at their rims. Windows show rooms with depth behind the glass.
 - Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
-- A market that sounds alive: traffic beyond the walls, whirring air conditioners, and music thumping from the bar.
+- A market that sounds alive: traffic beyond the walls, whirring air conditioners, and music thumping from the bar. Inside the shops, shots and steps echo like a small room.
 
 ## 05 · Squad up
 
