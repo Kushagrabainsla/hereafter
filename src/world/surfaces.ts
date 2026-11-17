@@ -17,12 +17,13 @@ import { outdoorNode, WEATHER } from "./wetness";
 //
 // Each material is given a kind from its name in the model files (docs/asset-pipeline.md).
 // Signs stay clean: they are lit and kept up.
-export const SurfaceKind = { plain: 0, painted: 1, stone: 2, wood: 3, metal: 4, rusted: 5, fabric: 6 } as const;
+export const SurfaceKind = { plain: 0, painted: 1, stone: 2, wood: 3, metal: 4, rusted: 5, fabric: 6, appliance: 7 } as const;
 
 export function surfaceKind(name: string): number {
   const n = name.toLowerCase();
   if (n.startsWith("glow_") || n.startsWith("card_") || n.startsWith("sign_")) return SurfaceKind.plain;
   if (n.includes("rust")) return SurfaceKind.rusted;
+  if (n === "paint_ac") return SurfaceKind.appliance;
   if (/paint|enamel|lacquer|dumpster|bld_sash|bld_shop|extinguisher|fuel_red|hazard|street_lid|valve|teal|propane|^trim$|^red$|stencil/.test(n)) return SurfaceKind.painted;
   if (/stone|bld_trim|concrete|mortar|fx_brick|insulation/.test(n)) return SurfaceKind.stone;
   if (/wood|plywood|pallet|cedar|walnut|oak|bamboo|panel|butcher|wicker|cue|stall/.test(n)) return SurfaceKind.wood;
@@ -36,15 +37,16 @@ export function surfaceKind(name: string): number {
 //   grain   wood grain              dirt   dust and grime          relief  surface relief
 //   rough   roughness variation     edge   wear on outside edges  cavity  dirt in inside corners
 //   soak    how much darker the surface turns when wet (porous ones most)
-const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity", "soak"] as const;
+const LAYERS = ["mottle", "chips", "rust", "grain", "dirt", "relief", "rough", "edge", "cavity", "soak", "grime"] as const;
 const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
-  [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6, soak: 0.15 },
-  [SurfaceKind.painted]: { mottle: 0.1, chips: 0.38, rust: 0.05, grain: 0, dirt: 1, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12 },
-  [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1, soak: 0.45 },
-  [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1, soak: 0.4 },
-  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.55, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1 },
-  [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1, soak: 0.3 },
-  [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8, soak: 0.5 },
+  [SurfaceKind.plain]: { mottle: 0.05, chips: 0, rust: 0, grain: 0, dirt: 0.25, relief: 0.15, rough: 0.15, edge: 0.25, cavity: 0.6, soak: 0.15, grime: 0 },
+  [SurfaceKind.painted]: { mottle: 0.1, chips: 0.38, rust: 0.05, grain: 0, dirt: 1, relief: 0.6, rough: 0.4, edge: 1, cavity: 1, soak: 0.12, grime: 0 },
+  [SurfaceKind.stone]: { mottle: 0.18, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 1.2, rough: 0.2, edge: 0.7, cavity: 1, soak: 0.45, grime: 0 },
+  [SurfaceKind.wood]: { mottle: 0.14, chips: 0, rust: 0, grain: 1, dirt: 0.55, relief: 0.9, rough: 0.35, edge: 0.7, cavity: 1, soak: 0.4, grime: 0 },
+  [SurfaceKind.metal]: { mottle: 0.08, chips: 0, rust: 0.55, grain: 0, dirt: 0.5, relief: 0.4, rough: 0.7, edge: 0.8, cavity: 0.9, soak: 0.1, grime: 0 },
+  [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1, soak: 0.3, grime: 0 },
+  [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8, soak: 0.5, grime: 0 },
+  [SurfaceKind.appliance]: { mottle: 0.08, chips: 0.15, rust: 0.05, grain: 0, dirt: 1, relief: 0.4, rough: 0.4, edge: 0.3, cavity: 1, soak: 0.12, grime: 1 },
 };
 
 type FloatNode = Node<"float">;
@@ -184,6 +186,17 @@ export function layered(source: ColorNode, roughness: FloatNode, metalness: Floa
   color = color.mul(float(1).add(rubbed.mul(float(1).sub(painted)).mul(0.08)));
   const crease = smoothstep(0.05, 0.0, insideCorner.add(medium.mul(0.02))).mul(cavityAmount);
   color = mix(color, color.mul(CREASE), crease.mul(0.5));
+  // Appliances left out on a wall for years (the air conditioners): the white paint yellows in
+  // patches, dirt runs down the faces from the top, and grime packs dark into the edges and round
+  // the grille, where the rubbed-pale edge wear of other paint would look new. Won 45 spots to 0 in
+  // four blind tests, together with the heavier weathering of the drums in props.ts.
+  const grime = amount(kind, "grime");
+  const aged = mix(vec3(1), vec3(0.93, 0.86, 0.72), smoothstep(-0.6, 0.6, coarse).mul(0.5).add(0.5));
+  color = mix(color, color.mul(aged), grime);
+  const runsDown = smoothstep(0.1, 0.5, wear.r).mul(float(1).sub(up));
+  const edgeGrime = smoothstep(0.05, 0.0, min(outsideEdge, insideCorner).add(flecks.mul(0.012)));
+  const grimed = clamp(runsDown.mul(0.7).add(edgeGrime.mul(0.8)).add(up.mul(0.5)), 0, 1).mul(grime);
+  color = mix(color, color.mul(GRIME.mul(0.75)), grimed);
   // Rust patches painted on a piece (street_rust, bld_rust) are flat shapes with cut outlines, and
   // bright rust against clean paint read as a sticker. Toward its outline each patch turns to the
   // dark, dull brown that rings real rust, ragged with fine noise, so it fades into the paint.

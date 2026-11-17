@@ -1,5 +1,6 @@
 import { Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
-import { clamp, float, materialColor, materialRoughness, mix, normalWorld, positionGeometry, positionWorld, smoothstep, texture3D, vec3 } from "three/tsl";
+import { clamp, float, materialColor, materialRoughness, max, mix, normalWorld, positionGeometry, positionWorld, smoothstep, texture3D, uniform, vec2, vec3, vec4 } from "three/tsl";
+import type { Node } from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { noiseVolume } from "./noiseVolume";
 import { outdoorNode, WEATHER } from "./wetness";
@@ -45,7 +46,13 @@ const SHADOWLESS = new Set(["cardboard_box", "plastic_crate", "water_bottle", "c
 // tops and lower sides darken and turn glossy. The patches follow each prop's own shape, so a prop
 // keeps them when it is knocked over; the splash band stays at the street, wherever the prop lies.
 const GRIME = vec3(0.55, 0.49, 0.41);
-function weathered(source: MeshStandardMaterial): MeshStandardNodeMaterial {
+// The drums, the trash can and the scanned air conditioner stand out in the weather longest and
+// age harder: dirt runs down their sides, a grime film in patches, and on the drums rust in rings
+// at the rims and hoops, where water and knocks reach, with rust runs below the hoops. The bands
+// are measured in the model's own frame (its file puts the base at zero), so they follow the drum
+// when it is knocked over.
+const HEAVY = new Set(["oil_drum", "trash_can", "aircon_unit"]);
+function weathered(source: MeshStandardMaterial, model?: PropModel, matrix?: Matrix4): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial();
   material.copy(source);
   const patches = texture3D(noiseVolume(), positionGeometry.mul(1 / 0.7)).g;
@@ -54,8 +61,30 @@ function weathered(source: MeshStandardMaterial): MeshStandardNodeMaterial {
   const up = smoothstep(0.5, 0.95, normalWorld.y);
   const dirty = clamp(low.mul(0.6).add(up.mul(0.35)).add(smoothstep(0.45, 0.75, patches).mul(0.35)), 0, 1).mul(speckle.mul(0.5).add(0.5)).mul(0.7);
   const wet = clamp(up.mul(0.7).add(low.mul(0.6)), 0, 1).mul(smoothstep(0.97, 1, outdoorNode(positionWorld))).mul(WEATHER.wet);
-  material.colorNode = materialColor.mul(mix(vec3(1), GRIME, dirty)).mul(float(1).sub(wet.mul(0.22)));
-  material.roughnessNode = clamp(materialRoughness.add(dirty.mul(0.15)).mul(float(1).sub(wet.mul(0.5))), 0.05, 1);
+  let color: Node<"vec3"> = materialColor.mul(mix(vec3(1), GRIME, dirty));
+  let rough: Node<"float"> = materialRoughness.add(dirty.mul(0.15));
+  if (model && HEAVY.has(model.name)) {
+    const P = uniform(matrix!).mul(vec4(positionGeometry, 1)).xyz;
+    const height = model.size[1];
+    const runs = smoothstep(0.58, 0.85, texture3D(noiseVolume(), P.mul(vec3(4, 0.3, 4))).b).mul(float(1).sub(up)).mul(0.7);
+    const film = smoothstep(0.35, 0.7, texture3D(noiseVolume(), P.mul(1 / 0.35)).r);
+    color = color.mul(mix(vec3(1), GRIME.mul(0.7), clamp(runs.mul(0.6).add(film.mul(0.35)).add(up.mul(0.3)), 0, 1)));
+    rough = rough.add(film.mul(0.1));
+    // Rust at the bottom and top rims, the two rolling hoops and round the edge of the lid.
+    if (model.name === "oil_drum") {
+      const ragged = speckle.mul(0.03);
+      const band = (centre: number, half: number): Node<"float"> => smoothstep(float(half), float(0), P.y.sub(centre).abs().add(ragged));
+      const rims = max(max(band(0, 0.06), band(height, 0.06)), max(band(height * 0.33, 0.03), band(height * 0.67, 0.03)));
+      const lid = up.mul(smoothstep(0.2, 0.3, vec2(P.x, P.z).length()));
+      const rusty = clamp(max(rims, lid), 0, 1).mul(smoothstep(0.25, 0.65, patches.mul(0.5).add(speckle.mul(0.6))));
+      const below = runs.mul(smoothstep(0.35, 0.0, P.y.sub(height * 0.33).abs().min(P.y.sub(height * 0.67).abs())));
+      color = mix(color, mix(vec3(0.17, 0.08, 0.04), vec3(0.36, 0.16, 0.06), speckle), rusty);
+      color = mix(color, color.mul(vec3(0.72, 0.52, 0.38)), below.mul(0.7));
+      rough = rough.add(rusty.mul(0.4));
+    }
+  }
+  material.colorNode = color.mul(float(1).sub(wet.mul(0.22)));
+  material.roughnessNode = clamp(rough.mul(float(1).sub(wet.mul(0.5))), 0.05, 1);
   return material;
 }
 
@@ -102,7 +131,7 @@ export class PropViews {
         gltf.scene.traverse((object) => {
           if (!(object instanceof Mesh)) return;
           const source = object.material as SurfaceMaterial;
-          const material = source instanceof MeshStandardMaterial && !source.transparent ? weathered(source) : source;
+          const material = source instanceof MeshStandardMaterial && !source.transparent ? weathered(source, model, object.matrixWorld.clone()) : source;
           parts.push({ geometry: object.geometry, material, matrix: object.matrixWorld.clone() });
         });
         this.parts.set(model.name, parts);
