@@ -6,7 +6,7 @@ import { MatchState, type CombatDelta, type CombatIntent, type CombatSnapshot, t
 
 const APP_ID = "io.github.kushagrabainsla.hereafter.v2";
 // Version 5 carries open doors and hatches and venting gas cylinders, so it does not mix with 4.
-const PROTOCOL_VERSION = 27;
+const PROTOCOL_VERSION = 28;
 // The Nostr relays that pass connection messages between players, the same for everyone. Left to
 // itself Trystero takes five of its 29 public relays, picked by the app id; in November 2026 two
 // of the five it picked failed or took seconds to pass a message on, and the rest took 135 to
@@ -152,6 +152,9 @@ const trimNumber = (_key: string, value: unknown): unknown =>
 
 // Peers only exchange packets for the same map and protocol.
 const MAP_KEY = "night-market-v1";
+// The highest a player's feet can be above the ground, in metres. The highest floor is the fire
+// escape at 4.6 m; a jump from a crate on it, or a blast, lifts a player a little more.
+const MAX_HEIGHT = 8;
 
 function validPose(value: unknown, expectedMap: string): value is PosePacket {
   if (typeof value !== "object" || value === null) return false;
@@ -163,7 +166,7 @@ function validPose(value: unknown, expectedMap: string): value is PosePacket {
     && Number.isFinite(packet.north) && Math.abs(packet.north ?? Infinity) <= 350
     && Number.isFinite(packet.heading) && (packet.heading ?? -1) >= 0 && (packet.heading ?? 361) <= 360
     && Number.isFinite(packet.pitch) && Math.abs(packet.pitch ?? Infinity) <= 80
-    && Number.isFinite(packet.jumpHeight) && (packet.jumpHeight ?? -1) >= 0 && (packet.jumpHeight ?? 11) <= 2.5
+    && Number.isFinite(packet.jumpHeight) && (packet.jumpHeight ?? -1) >= 0 && (packet.jumpHeight ?? 11) <= MAX_HEIGHT
     && typeof packet.moving === "boolean" && typeof packet.running === "boolean" && typeof packet.crouching === "boolean"
     && (packet.sliding === undefined || typeof packet.sliding === "boolean") && (packet.airborne === undefined || typeof packet.airborne === "boolean")
     && (packet.lean === undefined || (Number.isFinite(packet.lean) && Math.abs(packet.lean) <= 1))
