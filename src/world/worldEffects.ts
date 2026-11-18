@@ -9,6 +9,7 @@ import { type GrenadePath, type Quat } from "./physics";
 import { kitObject, type KitPiece } from "./kit";
 import { gameAudio } from "../game/gameAudio";
 import { SHAKE } from "../game/gunFeel";
+import { type Blaze } from "./blaze";
 
 type Style = "dust" | "sparks" | "splinters" | "shards" | "puff" | "blood" | "chunks" | "soil" | "leaves" | "embers";
 
@@ -226,15 +227,17 @@ export class WorldEffects {
   private hidden = new Map<string, { ref: InstanceRef; matrix: Matrix4 }[]>();
   private smoke: Smoke[] = [];
   private flash = new PointLight(0xffb070, 0, 22, 1.6);
-  private fireball: Sprite;
+  // The fireball of a blast is drawn in the clouds' scene (blaze.ts).
+  private blaze: Blaze | null = null;
   private puffMap = puffTexture();
-  private fireAge = 9;
   // Burning jets from shot fuel drums, following the drum until they run out.
   private jets: { sprite: Sprite; follow: () => Vec3 | null; until: number }[] = [];
   private jetMap = flameTexture();
   private flames: InstancedMesh;
   private flameSpots: FlameSpot[] = [];
   private nextBurnSound = 0;
+  // The fires near the viewer that have not yet sounded in this second.
+  private burnQueue: { at: Vec3; gain: number; time: number }[] = [];
   private grenades = new Map<number, FlyingGrenade>();
   private matrix = new Matrix4();
   private quaternion = new Quaternion();
@@ -263,9 +266,6 @@ export class WorldEffects {
       mesh.frustumCulled = false;
       scene.add(mesh);
     }
-    this.fireball = new Sprite(new SpriteMaterial({ map: this.puffMap, color: 0xffa54a, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
-    this.fireball.visible = false;
-    scene.add(this.fireball);
     this.flames = new InstancedMesh(new PlaneGeometry(1, 1).translate(0, 0.5, 0), new MeshBasicMaterial({ map: this.jetMap, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }), FLAME_TONGUES);
     this.flames.setColorAt(0, FIRE_TINT);
     hideAll(this.flames);
@@ -281,6 +281,9 @@ export class WorldEffects {
   }
 
   private floor(at: Vec3): number { return terrainHeight(this.data, at.x, at.z) + 0.02; }
+
+  // Where a blast's fireball is drawn.
+  setStage(blaze: Blaze): void { this.blaze = blaze; }
 
   // The physical world, for holes in things that move.
   setWorld(world: EffectsWorld): void { this.world = world; }
@@ -515,15 +518,18 @@ export class WorldEffects {
     }
   }
 
-  // Flames face the viewer, each flickering in its own time. The fire nearest the viewer lights
-  // its surroundings with the blast light, so burning costs no extra light, and is the one heard.
+  // Flames face the viewer, each flickering in its own time. The three fires nearest the viewer
+  // share the blast light: it stands between them, nearer the nearer ones, and is brighter for
+  // each fire. So burning costs no extra light, and two fires side by side both light the street.
+  // The same three are heard, one after the other through each second.
   private drawFlames(seconds: number): void {
     const time = performance.now() / 1000, camera = this.camera();
-    let drawn = 0, nearest: FlameSpot | null = null, closest = Infinity;
+    const near: { spot: FlameSpot; distance: number }[] = [];
+    let drawn = 0;
     for (let s = 0; s < this.flameSpots.length; s += 1) {
       const spot = this.flameSpots[s];
       const distance = Math.hypot(spot.x - camera.x, spot.z - camera.z);
-      if (distance < closest && !spot.gas) { closest = distance; nearest = spot; }
+      if (!spot.gas && distance <= 34) near.push({ spot, distance });
       this.quaternion.setFromAxisAngle(FLAME_UP, Math.atan2(camera.x - spot.x, camera.z - spot.z));
       const tongues = distance > 28 ? 3 : Math.max(3, Math.min(8, Math.ceil(4 * (spot.wide + spot.deep) + 2)));
       for (let k = 0; k < tongues && drawn < FLAME_TONGUES; k += 1, drawn += 1) {
@@ -541,14 +547,21 @@ export class WorldEffects {
     }
     if (drawn) { this.flames.count = drawn; this.flames.instanceMatrix.needsUpdate = true; if (this.flames.instanceColor) this.flames.instanceColor.needsUpdate = true; this.flames.userData.live = true; }
     else if (this.flames.userData.live) { hideAll(this.flames); this.flames.userData.live = false; }
-    if (!nearest || closest > 34) return;
-    if (this.flash.intensity < 7) {
-      this.flash.position.set(nearest.x, nearest.y + nearest.high * 0.7, nearest.z);
-      this.flash.intensity = 5 + Math.sin(time * 17) * 0.8 + Math.sin(time * 41) * 0.6;
+    // The fires' sounds that are due.
+    while (this.burnQueue.length && this.burnQueue[0].time <= time) { const due = this.burnQueue.shift()!; gameAudio.fireBurn(due.at, due.gain); }
+    if (!near.length) return;
+    near.sort((a, b) => a.distance - b.distance);
+    near.length = Math.min(3, near.length);
+    if (this.flash.intensity < 7 + near.length * 2) {
+      let x = 0, y = 0, z = 0, total = 0;
+      for (const { spot, distance } of near) { const weight = 1 / (1 + distance); x += spot.x * weight; y += (spot.y + spot.high * 0.7) * weight; z += spot.z * weight; total += weight; }
+      this.flash.position.set(x / total, y / total, z / total);
+      this.flash.intensity = (5 + Math.sin(time * 17) * 0.8 + Math.sin(time * 41) * 0.6) * (1 + 0.4 * (near.length - 1));
     }
     if (time >= this.nextBurnSound) {
       this.nextBurnSound = time + 1;
-      gameAudio.fireBurn({ x: nearest.x, y: nearest.y + 0.5, z: nearest.z }, Math.min(1, 0.45 + this.flameSpots.length * 0.08));
+      const gain = Math.min(1, 0.45 + this.flameSpots.length * 0.08);
+      near.forEach(({ spot }, k) => this.burnQueue.push({ at: { x: spot.x, y: spot.y + 0.5, z: spot.z }, gain: gain * (k ? 0.5 : 1), time: time + k / 3 }));
     }
   }
 
@@ -588,9 +601,7 @@ export class WorldEffects {
     const floor = this.floor(at);
     this.flash.position.set(at.x, at.y + 0.6, at.z);
     this.flash.intensity = 90;
-    this.fireAge = 0;
-    this.fireball.position.set(at.x, at.y + 0.35, at.z);
-    this.fireball.visible = true;
+    this.blaze?.fireball(at);
     this.glow.spawn({ ...at, y: at.y + 0.2 }, { x: 0, y: 1, z: 0 }, 40, "embers", floor, 1.3);
     this.solid.spawn({ ...at, y: at.y + 0.1 }, { x: 0, y: 1, z: 0 }, 36, "dust", floor, 1.4);
     this.solid.spawn({ ...at, y: at.y + 0.1 }, { x: 0, y: 1, z: 0 }, 14, "chunks", floor, 1.2);
@@ -633,15 +644,7 @@ export class WorldEffects {
     this.solid.update(seconds);
     this.glow.update(seconds);
     this.carryHoles();
-    this.fireAge += seconds;
-    if (this.fireball.visible) {
-      const t = this.fireAge / 0.38;
-      if (t >= 1) this.fireball.visible = false;
-      else {
-        this.fireball.scale.setScalar(0.8 + 4.2 * Math.min(1, t * 2.4));
-        this.fireball.material.opacity = 1 - t;
-      }
-    }
+    this.blaze?.update(seconds);
     this.flash.intensity *= Math.exp(-seconds * 14);
     if (this.flash.intensity < 0.05) this.flash.intensity = 0;
     this.drawFlames(seconds);

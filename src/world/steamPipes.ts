@@ -110,6 +110,10 @@ function grainTexture(): DataTexture {
   return texture;
 }
 
+// The one picture of grain, shared by the clouds and the fireball (blaze.ts). It lasts as long as the page.
+let grainShared: DataTexture | null = null;
+export function cloudGrain(): DataTexture { return grainShared ??= grainTexture(); }
+
 // Where a cloud comes from: the point it blows from, the wall behind it and which way it faces.
 interface Source { source: Vector3; wall: Vector3; out: Vector3; style: CloudStyle }
 interface Leak extends Source { age: number; spawn: number }
@@ -161,7 +165,7 @@ export class SteamPipes {
   private sources = new Map<string, Source>();
   private leaks = new Map<string, Leak>();
   private map = puffTexture();
-  private grain = grainTexture();
+  private grain = cloudGrain();
   private puffs: Puff[] = Array.from({ length: PUFFS }, () => ({ cloud: null, position: new Vector3(), velocity: new Vector3(), age: 1, life: 1, t: 1, lift: 0, size: 1, scale: 0, opacity: 0, fade: 0, shown: 0, albedo: 0.5, turn: 0, sun: 0, far: 0 }));
   // For each copy drawn: its centre and size, and its opacity, shade, turn and share of sun.
   private places = new InstancedBufferAttribute(new Float32Array(PUFFS * 4), 4);
@@ -428,6 +432,5 @@ export class SteamPipes {
     this.mesh?.geometry.dispose();
     (this.mesh?.material as MeshBasicNodeMaterial | undefined)?.dispose();
     this.map.dispose();
-    this.grain.dispose();
   }
 }

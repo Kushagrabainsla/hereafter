@@ -15,6 +15,7 @@ import { QUALITY, type GraphicsQuality } from "./quality";
 import { puddleNode, rainTime, setWet } from "./wetness";
 import { LOOKS, type TimeOfDay } from "./timeOfDay";
 import { lampLight, Rain } from "./rain";
+import { Blaze } from "./blaze";
 import { LampHaze } from "./lampHaze";
 import { moveShopGlass } from "./shopGlass";
 import { drawWearTextures } from "./wearTextures";
@@ -570,6 +571,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   const viewShake = new ViewShake();
   const effects = new WorldEffects(scene, data, refs, () => camera.position, groups, pieces);
+  // A blast's fireball is drawn in the clouds' scene (blaze.ts).
+  const blaze = new Blaze(cloudScene, worldPass.getTextureNode("depth"));
+  effects.setStage(blaze);
   effects.setWorld({ pose: (id) => physics.bodyPose(id), surface: (id, point, normal) => physics.surfaceOf(id, point, normal), below: (at, reach) => physics.floorBelow(at, reach) });
   const breaches = new BreachViews(scene, built.surfaces, pieces);
   // What the coordinating peer asks of this world when it resolves shots and blasts.
@@ -1176,6 +1180,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       disposeScene(viewScene);
       textures.dispose();
       built.dispose();
+      blaze.dispose();
       truck.dispose();
       sky.dispose();
       pipeline.dispose();
