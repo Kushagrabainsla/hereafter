@@ -101,7 +101,10 @@ export class Doors {
       const pivot = new Object3D();
       pivot.position.set(leaf.hinge.x, leaf.hinge.y, leaf.hinge.z);
       pivot.rotation.y = leaf.yaw + (leaf.door.open ? leaf.turn * OPEN : 0);
-      pivot.add(kitObject(pieces.get(leaf.model.piece), leaf.door.tint));
+      const model = kitObject(pieces.get(leaf.model.piece), leaf.door.tint);
+      // A door leaf casts the sun's shadow, so an open door shades the step behind it.
+      model.traverse((part) => { part.castShadow = true; });
+      pivot.add(model);
       parent.add(pivot);
       this.leaves.set(leaf.id, { leaf, pivot });
       this.groups.set(leaf.id, [pivot]);

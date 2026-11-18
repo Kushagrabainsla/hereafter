@@ -194,6 +194,9 @@ export const GRADE = { shadows: uniform(new Vector3(0.78, 0.95, 1.28)), lights: 
 const WARM_SLICES = 16;
 // The sun's shadow map is redrawn once in this many frames.
 const SHADOW_EVERY = 4;
+// And once in this many while another player moves in view. Every frame cost 1.8 frames a second
+// with running players in view; every second frame costs about a third of that.
+const SHADOW_EVERY_MOVING = 2;
 
 export type BuildStep = "textures" | "buildings" | "props" | "renderer" | "physics" | "shaders";
 
@@ -252,13 +255,20 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   sun.shadow.camera.right = 55;
   sun.shadow.camera.top = 55;
   sun.shadow.camera.bottom = -55;
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 700;
+  // The shadow camera's depth runs only from just in front of the market to just behind it
+  // (no corner of the market is more than 65 m from its middle). The bias is a share of that
+  // depth: over the 699 m the camera had before, it was 14 cm, and shadows began that far from
+  // the foot of what cast them. Over 160 m it is 3 cm.
+  const sunDistance = sunOffset.length();
+  sun.shadow.camera.near = Math.max(1, sunDistance - 80);
+  sun.shadow.camera.far = sunDistance + 80;
   sun.shadow.bias = -0.0002;
   sun.shadow.normalBias = 0.035;
   // The shadow map covers the whole map from a fixed place and is redrawn every fourth frame
-  // (SHADOW_EVERY), so shoved props, swinging doors and players cast moving shadows. Redrawing it
-  // every frame took about 150 objects through the renderer each frame, a fifth of its work.
+  // (SHADOW_EVERY), so shoved props and swinging doors cast moving shadows. Redrawing it every
+  // frame took about 150 objects through the renderer each frame, a fifth of its work. It is
+  // redrawn every second frame while a player moves in view (SHADOW_EVERY_MOVING): at one frame
+  // in four, a running player's shadow moved in steps behind the player.
   sun.shadow.autoUpdate = false;
   sun.shadow.needsUpdate = true;
   scene.add(sun, sun.target);
@@ -616,6 +626,19 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     const at = entities.locate(entity), [wide, high, deep] = shape.type === "box" ? shape.half : [shape.radius, shape.halfHeight, shape.radius];
     return { x: at.x, y: at.y - high, z: at.z, wide, deep, high: Math.min(3.2, high * 2 + 0.7) };
   });
+  // Whether another player who moves is in front of the viewer and within 45 m: their shadow
+  // then needs a new shadow map more often.
+  const viewForward = new Vector3();
+  const playerMovesInView = (): boolean => {
+    let found = false;
+    camera.getWorldDirection(viewForward);
+    remotePlayers.each((_id, feet, pose, dead) => {
+      if (found || dead || !(pose.moving || pose.running || pose.airborne)) return;
+      const dx = feet.x - camera.position.x, dy = feet.y - camera.position.y, dz = feet.z - camera.position.z, distance = Math.hypot(dx, dy, dz);
+      if (distance < 45 && (distance < 2 || (dx * viewForward.x + dy * viewForward.y + dz * viewForward.z) / distance > 0.35)) found = true;
+    });
+    return found;
+  };
   // The first-person view drops and rolls when eliminated, from the pose at that moment.
   let deathView: { position: Vector3; quaternion: Quaternion; time: number } | null = null;
   const rendererName = isWebGPU ? "WebGPU" : "WebGL 2";
@@ -785,7 +808,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     viewCamera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     viewLighting.update(Math.min(delta, 0.1), camera);
-    if (sun.castShadow && renderedFrames % SHADOW_EVERY === 0) sun.shadow.needsUpdate = true;
+    if (sun.castShadow && renderedFrames % (playerMovesInView() ? SHADOW_EVERY_MOVING : SHADOW_EVERY) === 0) sun.shadow.needsUpdate = true;
     pipeline.render();
     frames += 1;
     renderedFrames += 1;
