@@ -83,6 +83,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Lean | hold <kbd>Q</kbd> or <kbd>E</kbd> |
 | Look | move the mouse: it locks, and the game goes full screen, when you deploy. <kbd>Esc</kbd> frees it and leaves full screen, a click brings both back; unlocked, drag to look |
 | Pause menu | <kbd>Esc</kbd> opens it: Resume, Settings, Controls, Invite and Leave match. A solo game waits while it is open; a room's match goes on |
+| Settings | in the pause menu: mouse speed, mouse speed while aiming, field of view (60° to 100°), invert up and down, and sound. The game keeps them in the browser |
 | Fire | click or <kbd>F</kbd> |
 | Aim down the sights | hold right-click (on a Mac trackpad, press and hold with two fingers) |
 | Pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> |

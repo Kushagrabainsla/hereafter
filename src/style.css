@@ -110,6 +110,9 @@ h1 { margin: 6px 0 0; font-size: 28px; letter-spacing: -.04em; }
 .pause-dialog { width: min(340px, calc(100vw - 32px)); }
 .pause-actions { display: grid; gap: 9px; margin: 6px 0 4px; }
 .pause-actions .room-button { width: 100%; min-height: 42px; }
+.setting-row { display: flex; justify-content: space-between; align-items: baseline; margin-top: 14px; color: var(--t-text, #edf5f7); font-size: 13px; }
+.setting-row output { color: var(--t-accent, #4fc8c4); font-variant-numeric: tabular-nums; }
+.setting-slider { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--t-accent, #4fc8c4); cursor: pointer; }
 .settings-dialog .room-label { margin-top: 18px; }
 .settings-dialog .room-button { margin-top: 4px; }
 .room-status { min-height: 18px; margin: 17px 0 0; color: #9ac1c8; font-size: 12px; line-height: 1.5; }

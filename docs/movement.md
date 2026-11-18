@@ -10,6 +10,19 @@ Ctrl is a crouch key, so every action key also works with Ctrl held: a crouched 
 
 **Pause menu.** When the mouse comes free in play, the pause menu opens (`openPause` in `src/play.ts`). That happens on Escape, and also when another window takes the keyboard. With the mouse already free, Escape opens the menu. The menu has Resume, Settings, Controls, Invite and Leave match. Resume locks the mouse again; the click on the button is the gesture that the browser asks for. A second Escape only closes the menu, because the browser does not accept Escape as that gesture. Settings, Controls and Invite go back to the menu when they close. In a solo game the practice targets stand still while any dialog is open, but the clock of the world does not stop: a fire burns on and a wound bleeds on. In a room the match goes on, and the menu says so. Leave match leaves the room and continues solo. In a solo game that button goes to the setup screen, where graphics, time of day and mode are set.
 
+**Input settings.** The Settings dialog has four input settings (`src/inputSettings.ts`). The game keeps them in the browser, and a change applies at once.
+
+| Setting | Range | First value | What it does |
+| --- | --- | --- | --- |
+| Mouse speed | 0.2 to 3 | 1 | Multiplies the game's 0.18° of turn for each count of the mouse |
+| Mouse speed while aiming | 0.3 to 1.5 | 1 | Multiplies the mouse speed when fully aimed. The zoom of the sights slows the view too, so 1 keeps the same hand movement for the same distance on the screen |
+| Field of view | 60° to 100° | 75° | The view's height angle when you stand still. A sprint adds 5°, a slide adds 7° and a crouch takes off 3° |
+| Invert up and down | on or off | off | Moving the mouse away looks down |
+
+The hands and the gun keep their own field of view of 75°, so the gun has the same size at every setting. The mouse lock asks the browser for the mouse's own movement, without the pointer acceleration of the operating system (`unadjustedMovement` in `src/mouseLock.ts`). A browser or system that cannot give that gets the plain lock.
+
+Measured in the running game (`i2.mjs`): a movement of 100 counts turns the view 18.0° at speed 1 and 36.0° at speed 2. Aimed with the pistol (zoom 1.25), it turns 14.4° at aim speed 1 and 7.2° at 0.5. At a field of view of 95°, the view has 95.0° and the hands 75.0°. The values are the same after a reload.
+
 ## Slide
 
 Press C or Ctrl while running to slide. The slide keeps the direction you were running, adds 1.8 m/s on top of your speed (at most 10.5 m/s) and bleeds off 8.5 m/s every second. It ends when you let go of crouch, leave the ground, drop below 3.2 m/s, hit a wall or after 1.3 s. A full slide covers about 5 m in 0.8 s. Strafe keys steer it slightly, and the view stays free.

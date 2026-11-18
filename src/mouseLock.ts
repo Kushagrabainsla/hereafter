@@ -3,12 +3,25 @@ import { GAME_KEY_CODES } from "./keys";
 // Locks the mouse to an element for mouse look. Browsers allow it only during a click or key
 // press, refuse it for about a second after the player pressed Esc, and older Safari returns
 // nothing instead of a promise.
+//
+// The lock asks for the mouse's own movement, without the pointer acceleration of the operating
+// system (`unadjustedMovement`), so the same hand movement always turns the view the same angle.
+// A browser or system that cannot give that refuses the request; the lock is then asked for again
+// in the plain way.
 export function lockMouse(element: HTMLElement): void {
+  const plain = (): void => {
+    try {
+      const request = element.requestPointerLock() as Promise<void> | undefined;
+      request?.catch?.(() => undefined);
+    } catch {
+      // Pointer lock is unavailable; drag to look still works.
+    }
+  };
   try {
-    const request = element.requestPointerLock() as Promise<void> | undefined;
-    request?.catch?.(() => undefined);
+    const request = (element.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | undefined).call(element, { unadjustedMovement: true });
+    if (request?.catch) request.catch((error: unknown) => { if ((error as { name?: string } | null)?.name === "NotSupportedError") plain(); });
   } catch {
-    // Pointer lock is unavailable; drag to look still works.
+    plain();
   }
 }
 

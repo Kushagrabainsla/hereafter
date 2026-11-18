@@ -6,6 +6,7 @@ import { BODY_MASS, CARRY_SPRINT_LIMIT, carrySpeed, LEAN_OFFSET, legEffects, loa
 import { AIM, LandingDip, Recoil } from "./gunFeel";
 import { type Ladder } from "../world/climbing";
 import { lockMouse } from "../mouseLock";
+import { HAND_FOV, INPUT } from "../inputSettings";
 import { gameKey } from "../keys";
 
 export interface PlayerMotion {
@@ -161,7 +162,7 @@ export class PlayerController {
   // take to come up, and the view's own field of view without their zoom.
   private aimRaw = 0;
   private aimSeconds = 0.2;
-  private baseFov = 75;
+  private baseFov = INPUT.fov;
   private crouching = false;
   private paused = false;
   private keys = new Set<string>();
@@ -331,7 +332,9 @@ export class PlayerController {
 
   // The field of view without the sights' magnification, for drawing the weapon in hand. It
   // does not depend on the aim, so the gun keeps its size on screen as the sights come up.
-  handFov(): number { return this.baseFov; }
+  // The hands keep their own field of view, so the gun has the same size at every setting. It
+  // widens and narrows with the view in a sprint or a crouch, as before.
+  handFov(): number { return HAND_FOV + this.baseFov - INPUT.fov; }
 
   setSpawnSlot(slot: number): void {
     if (slot === this.spawnSlot) return;
@@ -392,7 +395,8 @@ export class PlayerController {
     // Only the view's own field of view eases (a sprint widens it, a crouch narrows it). The
     // zoom of the sights follows the aim directly. Before, the zoomed view eased on its own
     // behind the aim, and the gun, drawn without the zoom, shrank and grew again on the way up.
-    const baseTarget = this.sliding ? 82 : this.running ? 80 : this.crouching ? 72 : 75;
+    // The player's own field of view (inputSettings.ts) is the view's when standing still.
+    const baseTarget = INPUT.fov + (this.sliding ? 7 : this.running ? 5 : this.crouching ? -3 : 0);
     this.baseFov += (baseTarget - this.baseFov) * Math.min(1, delta * AIM.fovRate);
     const fov = this.baseFov / (1 + this.aim * (this.zoom - 1));
     if (Math.abs(this.camera.fov - fov) > 0.001) {
@@ -620,11 +624,15 @@ export class PlayerController {
   }
 
   private turn(dx: number, dy: number, mode: "drag" | "locked"): void {
-    // Looking down magnifying sights, the view turns slower in proportion.
-    const direction = mode === "drag" ? 1 : -1, rate = 0.18 / (1 + this.aim * (this.zoom - 1));
+    // Looking down magnifying sights, the view turns slower in proportion. The player's own speed
+    // and their speed while aimed come from the settings (inputSettings.ts), as does which way up
+    // and down go.
+    const direction = mode === "drag" ? 1 : -1;
+    const rate = 0.18 * INPUT.sensitivity * (1 + this.aim * (INPUT.aimSensitivity - 1)) / (1 + this.aim * (this.zoom - 1));
+    const upDown = INPUT.invertY ? -1 : 1;
     // A turn against the recoil is taken out of the recoil first, so holding the sights down
     // through a burst does not leave the view thrown downward when the recoil returns.
-    const turned = this.recoil.absorb(dy * rate * direction, -dx * rate * direction);
+    const turned = this.recoil.absorb(dy * rate * direction * upDown, -dx * rate * direction);
     this.heading = (this.heading - turned.right + 360) % 360;
     this.pitch = Math.max(-80, Math.min(80, this.pitch + turned.up));
     this.applyPose();

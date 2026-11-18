@@ -13,6 +13,7 @@ import { assetUrl, releaseAssets } from "./assetStore";
 import { mapById } from "./maps";
 import { DefaultLoadingManager } from "three/webgpu";
 import { fillScreen } from "./mouseLock";
+import { INPUT, INPUT_RANGE, setInput } from "./inputSettings";
 import { gameKey } from "./keys";
 import { SoloTargets } from "./game/soloTargets";
 import { cheaper, drawnPixels, FPS_FLOOR, pickQuality, QUALITY, QUALITY_LABEL, type QualityLevel } from "./world/quality";
@@ -869,6 +870,22 @@ pauseLeaveButton.addEventListener("click", () => {
 closeSettingsButton.addEventListener("click", () => settingsDialog.close());
 settingsDialog.addEventListener("close", afterDialog);
 settingSound.addEventListener("change", () => gameAudio.setMuted(!settingSound.checked));
+// The input settings: each slider shows its value, and a change applies and is saved at once.
+const inputSliders: { key: "sensitivity" | "aimSensitivity" | "fov"; slider: HTMLInputElement; value: HTMLElement; show: (value: number) => string }[] = [
+  { key: "sensitivity", slider: element<HTMLInputElement>("setting-sensitivity"), value: element<HTMLElement>("setting-sensitivity-value"), show: (value) => value.toFixed(2) },
+  { key: "aimSensitivity", slider: element<HTMLInputElement>("setting-aim"), value: element<HTMLElement>("setting-aim-value"), show: (value) => value.toFixed(2) },
+  { key: "fov", slider: element<HTMLInputElement>("setting-fov"), value: element<HTMLElement>("setting-fov-value"), show: (value) => `${Math.round(value)}°` },
+];
+for (const { key, slider, value, show } of inputSliders) {
+  const range = INPUT_RANGE[key];
+  slider.min = String(range.min); slider.max = String(range.max); slider.step = String(range.step);
+  slider.value = String(INPUT[key]);
+  value.textContent = show(INPUT[key]);
+  slider.addEventListener("input", () => { setInput({ [key]: Number(slider.value) }); value.textContent = show(INPUT[key]); });
+}
+const settingInvert = element<HTMLInputElement>("setting-invert");
+settingInvert.checked = INPUT.invertY;
+settingInvert.addEventListener("change", () => setInput({ invertY: settingInvert.checked }));
 settingSetupButton.addEventListener("click", () => window.location.assign(window.location.pathname + window.location.search));
 createRoomButton.addEventListener("click", () => enterRoom(newRoomCode()));
 joinRoomButton.addEventListener("click", () => enterRoom(roomCodeInput.value));
