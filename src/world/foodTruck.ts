@@ -3,6 +3,7 @@ import {
   SRGBColorSpace, Sprite, SpriteMaterial, Vector3, type Material as SurfaceMaterial,
 } from "three/webgpu";
 import { float, materialColor, materialMetalness, materialRoughness, mix, mx_fractal_noise_float, positionWorld, smoothstep, vec3 } from "three/tsl";
+import { skyShade } from "./skyVolume";
 import { layered, SurfaceKind, surfaceKind } from "./surfaces";
 import { withEdges } from "./edges";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
@@ -126,6 +127,8 @@ function canvas(width: number, height: number, draw: (g: CanvasRenderingContext2
 function weathered(source: MeshStandardMaterial, kind: number): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial();
   material.copy(source);
+  // The sky lights the truck only as much as it reaches each part: its inside is dark (skyVolume.ts).
+  material.aoNode = skyShade(positionWorld);
   const layers = layered(materialColor, materialRoughness, materialMetalness, float(kind));
   const p = positionWorld;
   const patches = mx_fractal_noise_float(p.mul(vec3(1.3, 0.9, 1.3))).mul(0.5).add(0.5).clamp(0, 1);

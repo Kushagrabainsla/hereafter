@@ -1,5 +1,6 @@
 import { Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
 import { clamp, float, materialColor, materialRoughness, max, min, mix, normalWorld, positionGeometry, positionWorld, select, smoothstep, texture3D, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { skyShade } from "./skyVolume";
 import type { Node } from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { noiseVolume } from "./noiseVolume";
@@ -55,6 +56,8 @@ const HEAVY = new Set(["oil_drum", "trash_can", "aircon_unit"]);
 function weathered(source: MeshStandardMaterial, model?: PropModel, matrix?: Matrix4): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial();
   material.copy(source);
+  // The sky lights a prop only as much as it reaches the place where the prop stands (skyVolume.ts).
+  material.aoNode = skyShade(positionWorld);
   const patches = texture3D(noiseVolume(), positionGeometry.mul(1 / 0.7)).g;
   const speckle = texture3D(noiseVolume(), positionGeometry.mul(1 / 0.12)).b;
   const low = float(1).sub(smoothstep(0.02, 0.6, positionWorld.y));

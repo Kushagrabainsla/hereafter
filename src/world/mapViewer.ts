@@ -16,6 +16,7 @@ import { puddleNode, rainTime, setWet } from "./wetness";
 import { LOOKS, type TimeOfDay } from "./timeOfDay";
 import { lampLight, Rain } from "./rain";
 import { Blaze } from "./blaze";
+import { bakeSky } from "./skyVolume";
 import { LampHaze } from "./lampHaze";
 import { moveShopGlass } from "./shopGlass";
 import { drawWearTextures } from "./wearTextures";
@@ -366,6 +367,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   }
   physicsReady = physics;
   truck.setOpen(toggleState, toggleDefaults, true);
+  // How much sky reaches each place, for the light on everything that is not baked (skyVolume.ts).
+  physics.takeIn();
+  await bakeSky((at) => physics.skyVisible(at));
   // A pipe that burst before this peer's first health table only leaks.
   let healthSeen = false;
   // A fuel drum gone up: its body and collider go; the blast draws the rest.

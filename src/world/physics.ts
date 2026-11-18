@@ -22,6 +22,12 @@ const RAGDOLL_GROUPS = (0x0004 << 16) | 0x0001;
 // other, so a leaf turns in its frame against its hinge's stops alone, while it still meets
 // loose props, which meet everything as before.
 const STATIC_GROUPS = (0x0001 << 16) | 0xffff;
+// Twelve directions spread evenly over the upper half of a sphere, for skyVisible. The whole grid
+// takes about 0.8 s as the map loads; sixteen directions took 1.1 s and looked the same.
+const SKY_RAYS = Array.from({ length: 12 }, (_, i) => {
+  const y = 0.08 + 0.92 * (i + 0.5) / 12, flat = Math.sqrt(1 - y * y), turn = i * 2.399963;
+  return { x: Math.cos(turn) * flat, y, z: Math.sin(turn) * flat };
+});
 const DOOR_GROUPS = (0x0008 << 16) | (0xffff & ~0x0001 & ~0x0008);
 // A hinge has some friction. A shut leaf is latched: held still against anything short of a kick,
 // a blast or a hand on the handle. A hand swings a leaf at this speed, in radians a second, which
@@ -1139,6 +1145,30 @@ export class PhysicsWorld {
       return this.solid(collider) && !tag?.entity && !tag?.mover && tag?.material !== "boundary";
     });
     return hit ? { distance: hit.timeOfImpact, material: this.tags.get(hit.collider.handle)?.material ?? "ground" } : null;
+  }
+
+  // Takes in the solids added since the last step, so that rays meet them. The sky grid is worked
+  // out before the first frame, when the stalls and the truck have just been added.
+  takeIn(): void { this.world.step(); }
+
+  // The share of the sky that reaches a point, 0 to 1, for the sky grid (skyVolume.ts): rays over
+  // the upper half of a sphere, each counted by how steeply it rises, against the fixed parts of
+  // the map. Loose props, doors and players do not count, nor glass, nor the unseen walls round
+  // the map. A solid that holds the point itself does not count either, so a thing is not shaded
+  // by its own body.
+  skyVisible(at: Vec3): number {
+    const inside: number[] = [];
+    this.world.intersectionsWithPoint(at, (collider) => { inside.push(collider.handle); return true; });
+    const counts = (collider: { handle: number; parent(): { isFixed(): boolean } | null }): boolean => {
+      const tag = this.tags.get(collider.handle), body = collider.parent();
+      return (!body || body.isFixed()) && !tag?.mover && tag?.material !== "boundary" && tag?.material !== "glass" && !inside.includes(collider.handle);
+    };
+    let open = 0, total = 0;
+    for (const direction of SKY_RAYS) {
+      total += direction.y;
+      if (!this.world.castRay(new RAPIER.Ray(at, direction), 45, true, undefined, undefined, undefined, undefined, counts)) open += direction.y;
+    }
+    return open / total;
   }
 
   traceShot({ origin, direction, distance }: ShotRay): number {

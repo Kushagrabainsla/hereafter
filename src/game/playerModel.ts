@@ -1,4 +1,6 @@
-import { AnimationMixer, Color, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3, type AnimationAction, type AnimationClip } from "three/webgpu";
+import { AnimationMixer, Color, Group, LoopOnce, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, Quaternion, SkinnedMesh, Texture, Vector3, type AnimationAction, type AnimationClip } from "three/webgpu";
+import { positionWorld } from "three/tsl";
+import { SKY_SHADE, skyShade } from "../world/skyVolume";
 import { type HeldGrip } from "./weaponModels";
 import { HandRig, SUPPORT, TRIGGER } from "./handPose";
 import { type Hold } from "./holding";
@@ -80,7 +82,7 @@ export class PlayerModelInstance {
   // While a ragdoll drives the bones the animation is stopped; the pose before it is kept
   // so animation resumes cleanly on respawn.
   private frozen: { bone: Object3D; position: Vector3; quaternion: Quaternion; scale: Vector3 }[] | null = null;
-  private materials: MeshStandardMaterial[] = [];
+  private materials: MeshStandardNodeMaterial[] = [];
   private scratch = new Quaternion();
   // The right upper arm and forearm, for the kick of a shot without a gun held to the shoulder.
   private arm: Object3D[] = [];
@@ -107,7 +109,12 @@ export class PlayerModelInstance {
         // Textures stay shared; only the material object is per peer so it can carry the tint.
         const materials = (Array.isArray(object.material) ? object.material : [object.material]) as MeshStandardMaterial[];
         const tinted = materials.map((material) => {
-          const copy = material.clone();
+          // A node material, so that the sky lights the player less where it reaches the place
+          // less (skyVolume.ts): a player in a shop is not sky-bright. A player takes half of the
+          // shade that a prop takes, so that an enemy in a dark place stays easy to see.
+          const copy = new MeshStandardNodeMaterial();
+          copy.copy(material);
+          copy.aoNode = skyShade(positionWorld, SKY_SHADE.players);
           if (material.name.startsWith("body") || material.name.startsWith("equipment")) copy.color.copy(tint);
           this.materials.push(copy);
           return copy;

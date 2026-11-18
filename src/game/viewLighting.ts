@@ -1,5 +1,6 @@
 import { Color, DirectionalLight, HemisphereLight, PerspectiveCamera, PointLight, Scene, Vector3 } from "three/webgpu";
 import { MARKET_FILL } from "../world/nightMarket";
+import { SKY_SHADE, skyAt } from "../world/skyVolume";
 
 // [x, y, z, colour, intensity, distance] of a lamp in the world (see BuiltMap.lightSources).
 export type LightSource = [number, number, number, number, number, number];
@@ -25,6 +26,8 @@ export class ViewLighting {
   private ambient = new HemisphereLight(MARKET_FILL.sky, MARKET_FILL.ground, MARKET_FILL.intensity);
   // The fill light's strength, before the lamps that are not slots join it.
   fill = MARKET_FILL.intensity;
+  // The share of the sky's light that reaches the hands now (1 in the open).
+  private skyShare = 1;
   private flashLight = new PointLight(0xffc27a, 0, 3, 2);
   private visibility: number[];
   private visible: number[];
@@ -119,7 +122,12 @@ export class ViewLighting {
     if (rest > 0) this.extra.multiplyScalar(1 / rest);
     // Only a little: lamps further off light the hands from above and the sides, not evenly.
     this.ambient.color.setHex(MARKET_FILL.sky).lerp(this.extra, Math.min(0.5, rest * 0.3));
-    this.ambient.intensity = this.fill + Math.min(0.4, rest * 0.2);
+    // The sky lights the hands only as much as it reaches the place where the player stands, as it
+    // does the props there (skyVolume.ts). The share eases, so the hands do not jump in brightness
+    // at a doorway.
+    const share = 1 - SKY_SHADE.strength.value * (1 - skyAt(hands.x, hands.y, hands.z));
+    this.skyShare += (share - this.skyShare) * Math.min(1, seconds * 5);
+    this.ambient.intensity = this.fill * this.skyShare + Math.min(0.4, rest * 0.2);
     const sun = this.scratch.copy(this.sunDirection).transformDirection(toView);
     this.sun.position.copy(sun).multiplyScalar(5);
     this.sun.intensity = this.sunIntensity * this.sunVisible;

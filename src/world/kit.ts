@@ -1,5 +1,6 @@
 import { BufferAttribute, BufferGeometry, Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Object3D, type Material as SurfaceMaterial } from "three/webgpu";
-import { attribute, float, materialColor, materialMetalness, materialRoughness } from "three/tsl";
+import { attribute, float, materialColor, materialMetalness, materialRoughness, positionWorld } from "three/tsl";
+import { skyShade } from "./skyVolume";
 import { layered, SurfaceKind, surfaceKind } from "./surfaces";
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
@@ -41,6 +42,8 @@ merged.name = "kit:merged";
   merged.roughnessNode = layers.roughness;
   merged.metalnessNode = layers.metalness;
   merged.normalNode = layers.normal;
+  // The sky lights a piece only as much as it reaches the place where the piece stands (skyVolume.ts).
+  merged.aoNode = skyShade(positionWorld);
 }
 
 // The materials a piece keeps apart (paint taking each copy's colour, textured parts) are
@@ -59,6 +62,7 @@ function layeredCopy(material: SurfaceMaterial): SurfaceMaterial {
     node.roughnessNode = layers.roughness;
     node.metalnessNode = layers.metalness;
     node.normalNode = layers.normal;
+    node.aoNode = skyShade(positionWorld);
     copy = node;
     layeredCopies.set(material, copy);
   }
