@@ -21,6 +21,7 @@ import { moveShopGlass } from "./shopGlass";
 import { drawWearTextures } from "./wearTextures";
 import { PlayerController, type PlayerPose } from "../game/playerController";
 import { RemotePlayers } from "../game/remotePlayers";
+import { FootShadows, type ShadowCaster } from "../game/footShadows";
 import { AuthoredViewModel } from "../game/authoredViewModel";
 import { PlayerModelLibrary } from "../game/playerModel";
 import { ShotEffects } from "../game/shotEffects";
@@ -378,6 +379,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   player.setLadders(ladders);
   const playerModels = new PlayerModelLibrary();
   const remotePlayers = new RemotePlayers(scene, data, playerModels, physics);
+  const footShadows = new FootShadows(scene);
+  const shadowCasters: ShadowCaster[] = [];
+  const sunAbove = sunOffset.clone().normalize();
+  const shadowWorld = {
+    floorBelow: (at: { x: number; y: number; z: number }, reach: number) => physics.floorBelow(at, reach),
+    sunlit: (at: { x: number; y: number; z: number }) => physics.clearShot({ origin: at, direction: { x: sunAbove.x, y: sunAbove.y, z: sunAbove.z }, distance: 80 }),
+  };
   // Sounds behind buildings and cover are dulled: one ray from the listener toward the source.
   gameAudio.occlusion = (from, to) => {
     const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
@@ -727,6 +735,10 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       camera.quaternion.copy(deathView.quaternion).multiply(new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), 1.15 * eased));
     }
     remotePlayers.update(delta, camera);
+    // A soft patch under each living player who stands out of the sun (footShadows.ts).
+    shadowCasters.length = 0;
+    remotePlayers.each((id, feet, pose, dead) => { if (!dead) shadowCasters.push({ id, x: feet.x, y: feet.y, z: feet.z, crouching: pose.crouching }); });
+    footShadows.update(shadowCasters, shadowWorld, sun.castShadow);
     soundStage.update(camera, player.gait(), player.motion(), remotePlayers);
     const gait = player.gait();
     if (gait.landings !== lastLandings) {
@@ -1204,6 +1216,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       textures.dispose();
       built.dispose();
       blaze.dispose();
+      footShadows.dispose();
       truck.dispose();
       sky.dispose();
       pipeline.dispose();
