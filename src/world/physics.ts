@@ -1152,6 +1152,13 @@ export class PhysicsWorld {
     return hit ? { distance: hit.timeOfImpact, material: this.tags.get(hit.collider.handle)?.material ?? "ground" } : null;
   }
 
+  // The material of whatever is under a point, within about a metre: for the sound of a footfall.
+  // Unlike floorBelow, this counts things that can move or break, such as the truck's floor.
+  materialUnder(at: Vec3): Material | null {
+    const hit = this.world.castRay(new RAPIER.Ray({ x: at.x, y: at.y + 0.5, z: at.z }, { x: 0, y: -1, z: 0 }), 1.6, true, undefined, undefined, this.collider, undefined, this.solid);
+    return hit ? this.tags.get(hit.collider.handle)?.material ?? "ground" : null;
+  }
+
   // How much of a sound is lost on its way between two points, 0 (a clear line) to 1 (behind a
   // wall). Three rays go from the listener toward the source: one to it, and one to a point 0.4 m
   // to each side of it. Each ray loses by what it meets first (SOUND_LOSS): little through glass,

@@ -16,7 +16,18 @@ export interface Vec3 { x: number; y: number; z: number }
 // conditioner's fan, or music playing in the bar. (The neon signs' mains hum was taken out: a
 // steady 120 Hz buzz that players heard as a fault.)
 export interface AmbientSource { id: string; kind: "condenser" | "music"; at: Vec3 }
-export type Surface = "hard" | "soft";
+// What a foot comes down on: paving or concrete, the plank floor of a room, or steel (the fire
+// escape, a stair, the truck). "soft" is kept for a map that has earth or carpet.
+export type Surface = "hard" | "soft" | "wood" | "metal";
+// How a footfall sounds on each: which recorded step it plays, at what level and pitch, and how
+// strong the sound added to it is (a wooden knock on planks, a short ring on steel), as a share
+// of the step's own level.
+export const FOOTFALL: Record<Surface, { sample: "step-hard" | "step-soft"; gain: number; rate: number; accent: number }> = {
+  hard: { sample: "step-hard", gain: 1, rate: 1, accent: 0 },
+  soft: { sample: "step-soft", gain: 1, rate: 1, accent: 0 },
+  wood: { sample: "step-soft", gain: 1.15, rate: 0.92, accent: 0.5 },
+  metal: { sample: "step-hard", gain: 0.8, rate: 1.12, accent: 0.7 },
+};
 export type Gait = "walk" | "run" | "crouch";
 
 const BANK = {
@@ -257,8 +268,47 @@ export class GameAudio {
   // A footfall; in standing water (wet near 1) it also splashes.
   step(surface: Surface, gait: Gait, side: number, wet = 0): void {
     const gain = gait === "run" ? 0.16 : gait === "walk" ? 0.1 : 0.045;
-    this.play(surface === "hard" ? "step-hard" : "step-soft", { gain, rate: 0.94 + Math.random() * 0.1, pan: side * 0.14 });
+    this.footfall(surface, gain, 0.94 + Math.random() * 0.1, null, side * 0.14);
     if (wet > 0.3) this.splash(null, gain * 1.6 * wet, side * 0.14);
+  }
+
+  // One footfall on a surface: the recorded step, and on planks or steel the sound of the floor
+  // itself. The floor's sound is made here: a low knock for wood, three ringing tones for steel.
+  // `at` places it in the world; without it, the footfall is the player's own.
+  private footfall(surface: Surface, gain: number, rate: number, at: Vec3 | null, pan = 0, when?: number, loss?: number, ref = 2, rolloff = 1.6): void {
+    const foot = FOOTFALL[surface];
+    if (at) this.spatial(foot.sample, at, { gain: gain * foot.gain, ref, rolloff, rate: rate * foot.rate, loss, when });
+    else this.play(foot.sample, { gain: gain * foot.gain, rate: rate * foot.rate, pan, when });
+    const context = this.live();
+    if (!foot.accent || !context || (at && this.distanceTo(at) > 30)) return;
+    const start = when ?? context.currentTime, level = gain * foot.accent * (at ? 1 - 0.45 * (loss ?? 0) : 1);
+    const out = new GainNode(context, { gain: 1 });
+    if (at) out.connect(this.heard(at, ref, rolloff));
+    else out.connect(new StereoPannerNode(context, { pan })).connect(this.mix);
+    if (surface === "wood") {
+      // A hollow knock: a low tone that drops a little and dies in a tenth of a second.
+      const tone = new OscillatorNode(context, { type: "sine", frequency: 150 + Math.random() * 40 });
+      tone.frequency.exponentialRampToValueAtTime(95, start + 0.09);
+      const body = new GainNode(context, { gain: 0.0001 });
+      body.gain.setValueAtTime(0.0001, start);
+      body.gain.exponentialRampToValueAtTime(Math.max(0.0002, level * 1.6), start + 0.006);
+      body.gain.exponentialRampToValueAtTime(0.0001, start + 0.11);
+      tone.connect(body).connect(out);
+      tone.start(start);
+      tone.stop(start + 0.13);
+    } else {
+      // Steel rings: three tones that are not in tune with each other, each with its own decay.
+      for (const [frequency, share, seconds] of [[610, 1, 0.16], [1470, 0.55, 0.11], [2390, 0.3, 0.07]]) {
+        const tone = new OscillatorNode(context, { type: "sine", frequency: frequency * (0.96 + Math.random() * 0.08) });
+        const ring = new GainNode(context, { gain: 0.0001 });
+        ring.gain.setValueAtTime(0.0001, start);
+        ring.gain.exponentialRampToValueAtTime(Math.max(0.0002, level * share * 0.5), start + 0.004);
+        ring.gain.exponentialRampToValueAtTime(0.0001, start + seconds);
+        tone.connect(ring).connect(out);
+        tone.start(start);
+        tone.stop(start + seconds + 0.02);
+      }
+    }
   }
 
   // A foot coming down in a puddle: a short burst of water noise, brighter for a harder step.
@@ -278,7 +328,7 @@ export class GameAudio {
   }
 
   jump(surface: Surface): void {
-    this.play(surface === "hard" ? "step-hard" : "step-soft", { gain: 0.09, rate: 1.08 });
+    this.footfall(surface, 0.09, 1.08, null);
     this.play("cloth", { gain: 0.07, rate: 1.1 });
   }
 
@@ -286,8 +336,8 @@ export class GameAudio {
     const strength = Math.max(0.2, Math.min(1, (speed - 2.5) / 6));
     const now = this.time();
     this.play("land", { gain: 0.4 * strength });
-    this.play(surface === "hard" ? "step-hard" : "step-soft", { gain: 0.2 * strength, pan: -0.12, when: now });
-    this.play(surface === "hard" ? "step-hard" : "step-soft", { gain: 0.17 * strength, pan: 0.12, when: now + 0.03 });
+    this.footfall(surface, 0.2 * strength, 1, null, -0.12, now);
+    this.footfall(surface, 0.17 * strength, 1, null, 0.12, now + 0.03);
   }
 
   // Sliding: a scrape that dulls and fades as the slide bleeds off speed.
@@ -708,13 +758,13 @@ export class GameAudio {
 
   remoteStep(at: Vec3, surface: Surface, gait: Gait, loss: number, wet = 0): void {
     const gain = gait === "run" ? 0.45 : gait === "walk" ? 0.3 : 0.08;
-    this.spatial(surface === "hard" ? "step-hard" : "step-soft", at, { gain, ref: 2, rolloff: 1.6, rate: 0.94 + Math.random() * 0.1, loss });
+    this.footfall(surface, gain, 0.94 + Math.random() * 0.1, at, 0, undefined, loss);
     if (wet > 0.3) this.splash(at, gain * 0.9 * wet * (1 - 0.5 * loss));
   }
 
   remoteLand(at: Vec3, surface: Surface): void {
     this.spatial("land", at, { gain: 0.4, ref: 2, rolloff: 1.5 });
-    this.spatial(surface === "hard" ? "step-hard" : "step-soft", at, { gain: 0.3, ref: 2, rolloff: 1.5 });
+    this.footfall(surface, 0.3, 1, at, 0, undefined, undefined, 2, 1.5);
   }
 
   remoteSlide(at: Vec3, surface: Surface): void {
@@ -1206,7 +1256,7 @@ export class GameAudio {
     if (!context || !this.noise) return null;
     const now = context.currentTime;
     const source = new AudioBufferSourceNode(context, { buffer: this.noise, loop: true });
-    const hard = surface === "hard";
+    const hard = surface === "hard" || surface === "metal";
     const filter = new BiquadFilterNode(context, { type: hard ? "bandpass" : "lowpass", frequency: hard ? 1500 : 750, Q: hard ? 0.9 : 0.6 });
     filter.frequency.setValueAtTime(hard ? 1500 : 750, now);
     filter.frequency.exponentialRampToValueAtTime(hard ? 700 : 420, now + 0.85);

@@ -392,7 +392,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   };
   // Sounds behind buildings and cover are dulled, by how much stands in the way (physics.soundLoss).
   gameAudio.occlusion = (from, to) => physics.soundLoss(from, to);
-  const soundStage = new SoundStage((peerId) => remotePlayers.position(peerId));
+  const soundStage = new SoundStage((peerId) => remotePlayers.position(peerId), (at) => physics.materialUnder(at));
   scene.add(camera);
   const viewScene = new Scene();
   viewScene.environment = scene.environment;

@@ -25,18 +25,28 @@ export class SoundStage {
   private forward = new Vector3();
   private up = new Vector3();
 
-  constructor(private positionOf: (peerId: string) => Vec3 | null) {
+  // `floorOf` gives the material of what is under a point, from the physics world.
+  constructor(private positionOf: (peerId: string) => Vec3 | null, private floorOf: (at: Vec3) => string | null = () => null) {
   }
 
-  // The market is paved or floored everywhere.
-  surfaceAt(): Surface { return "hard"; }
+  // What a foot comes down on at a point (the feet's place). Steel is the fire escape, the bar's
+  // stair and the truck's floor. Wood is a wooden thing, or the ground under a roof: every room
+  // of the market has a plank floor. Everything else is paving or concrete.
+  surfaceAt(at: Vec3): Surface {
+    const material = this.floorOf(at);
+    if (material?.startsWith("metal")) return "metal";
+    if (material === "wood" || material === "timber") return "wood";
+    if ((material === "ground" || material === null) && at.y < 0.6 && !outdoorAt(at.x, at.z)) return "wood";
+    return "hard";
+  }
 
   update(camera: PerspectiveCamera, gait: PlayerGait, motion: PlayerMotion, remotes: RemoteSource): void {
     camera.getWorldDirection(this.forward);
     this.up.copy(UP).applyQuaternion(camera.quaternion);
     gameAudio.listen(camera.position, this.forward, this.up);
     gameAudio.setSheltered(!outdoorAt(camera.position.x, camera.position.z));
-    const surface = (): Surface => this.surfaceAt();
+    // The player's feet are about 1.6 m under the eyes (less in a crouch; the floor test reaches down).
+    const surface = (): Surface => this.surfaceAt({ x: camera.position.x, y: camera.position.y - 1.55, z: camera.position.z });
     // The head bob is lowest when stride sits at 3/4 pi past a multiple of pi: one footfall.
     // Feet on the street splash where water stands (wetness.ts); the ground is at height zero.
     const index = Math.floor((gait.stride - 0.75 * Math.PI) / Math.PI);
@@ -66,11 +76,11 @@ export class SoundStage {
       const chest = { x: feet.x, y: feet.y + 1.1, z: feet.z };
       const at = { x: feet.x, y: feet.y + 0.05, z: feet.z };
       const head = { x: feet.x, y: feet.y + 1.6, z: feet.z };
-      if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) { gameAudio.remoteLand(at, this.surfaceAt()); if (state.height > 1.4) gameAudio.effort("climb", head); }
+      if (state.height > 0.45 && pose.jumpHeight < 0.1 && !dead) { gameAudio.remoteLand(at, this.surfaceAt(feet)); if (state.height > 1.4) gameAudio.effort("climb", head); }
       // Another player leaving the ground grunts now and then.
       if (state.height < 0.05 && pose.jumpHeight > 0.12 && pose.airborne && !dead && Math.random() < 0.4) gameAudio.effort("jump", head);
       state.height = pose.jumpHeight;
-      if (pose.sliding && !state.sliding && !dead) gameAudio.remoteSlide(at, this.surfaceAt());
+      if (pose.sliding && !state.sliding && !dead) gameAudio.remoteSlide(at, this.surfaceAt(feet));
       state.sliding = pose.sliding === true;
       // Respawns and corrections jump several metres in a frame; they are not footsteps.
       if (dead || moved > 2.5 || !pose.moving || pose.sliding || pose.jumpHeight > 0.15) { if (moved > 2.5) state.stride = 0; return; }
@@ -79,7 +89,7 @@ export class SoundStage {
       if (state.stride < 1) return;
       state.stride %= 1;
       if (gameAudio.distanceTo(at) > 40) return;
-      gameAudio.remoteStep(at, this.surfaceAt(), gaitName, gameAudio.occlusion(camera.position, chest), feet.y < 0.3 ? puddleAt(feet.x, feet.z) : 0);
+      gameAudio.remoteStep(at, this.surfaceAt(feet), gaitName, gameAudio.occlusion(camera.position, chest), feet.y < 0.3 ? puddleAt(feet.x, feet.z) : 0);
     });
     for (const peerId of this.remote.keys()) if (!seen.has(peerId)) this.remote.delete(peerId);
   }
