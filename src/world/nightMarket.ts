@@ -1275,7 +1275,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const doors = new Doors(root, kit);
   for (const [id, objects] of doors.groups) groups.set(id, objects);
   stallViews.show();
-  const pipes = new SteamPipes(root);
+  const pipes = new SteamPipes();
   for (const item of extinguishers) pipes.addSource(item.id, item.source, item.wall, item.out, POWDER);
 
   // Puddles stay off the floors indoors.

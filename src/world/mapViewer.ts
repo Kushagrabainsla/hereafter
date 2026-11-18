@@ -14,7 +14,7 @@ import { FixedGridLighting } from "./fixedClusters";
 import { QUALITY, type GraphicsQuality } from "./quality";
 import { puddleNode, rainTime, setWet } from "./wetness";
 import { LOOKS, type TimeOfDay } from "./timeOfDay";
-import { Rain } from "./rain";
+import { lampLight, Rain } from "./rain";
 import { LampHaze } from "./lampHaze";
 import { moveShopGlass } from "./shopGlass";
 import { drawWearTextures } from "./wearTextures";
@@ -458,7 +458,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     occluded = occluded.add(streaks.mul(2 / total));
   }
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
-  built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"));
+  // The clouds are lit by the scene's own sun and sky and by the lamps' light in the air.
+  const toSun = sunOffset.clone().normalize();
+  built.pipes.setStage(cloudScene, worldPass.getTextureNode("depth"), {
+    lamps: lampLight(built.lightSources),
+    sun: { direction: toSun, color: sun.color, intensity: sun.intensity },
+    sky: { color: fill.color, ground: fill.groundColor, intensity: fill.intensity },
+    sunlit: (at) => physics.clearShot({ origin: { x: at.x, y: at.y, z: at.z }, direction: { x: toSun.x, y: toSun.y, z: toSun.z }, distance: 80 }),
+  });
   moveShopGlass(scene, cloudScene, worldPass.getTextureNode("depth"));
   // Rain round the player (rain.ts), in the clouds' scene too; how many drops depends on the preset.
   const rain = look.wet ? new Rain(cloudScene, quality.raindrops, worldPass.getTextureNode("depth"), built.lightSources) : null;
@@ -477,7 +484,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
   // Both the opening and its blur are drawn at a quarter of the resolution: the beams are soft anyway.
   const opening = rtt(vec4(vec3(isSky.mul(sunward(lookDirection))), 1), null, null, { resolutionScale: 0.25 });
   const shafts = (rtt(radialBlur(opening, { center: ATMOSPHERE.sunScreen, count: int(24), weight: float(0.85), decay: float(0.96), exposure: float(1.6) }), null, null, { resolutionScale: 0.25 }) as unknown as Node<"vec4">).r.mul(ATMOSPHERE.sunInView);
-  const lit = atmosphere(smoked, length(viewAt), lookDirection, eyeHeight, isSky, shafts);
+  // Where a cloud covers the view, the haze is that of the short way to the cloud, not of the long
+  // way to the world behind it, and the sun's disc does not show. Without this the far buildings
+  // and the lanterns drew faint outlines on thick smoke.
+  const hazeDistance = mix(length(viewAt), length(viewAt).min(8), clouds.a);
+  const lit = atmosphere(smoked, hazeDistance, lookDirection, eyeHeight, isSky.mul(float(1).sub(clouds.a)), shafts);
   const held = pass(viewScene, viewCamera, { samples: quality.viewSamples }).getTextureNode("output");
   const picture = lit.mul(float(1).sub(held.a)).add(held.rgb);
   // A tight glow, so lit windows and signs keep their frames readable, and a wide halo that only
@@ -749,10 +760,13 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     reflectFrom.world.value.copy(camera.matrixWorld);
     eyeHeight.value = camera.position.y;
     aimShafts(camera);
+    built.pipes.watchFrom(camera.position);
     hazeLevel += (built.pipes.fogAt(camera.position) - hazeLevel) * Math.min(1, delta * 6);
     haze.visible = hazeLevel > 0.01;
     if (haze.visible) {
       (haze.material as MeshBasicMaterial).opacity = hazeLevel;
+      // The haze has the colour of the cloud round the eye, lit as the cloud is there.
+      built.pipes.colourAt(camera.position, 0.55, (haze.material as MeshBasicMaterial).color);
       haze.quaternion.copy(camera.quaternion);
       haze.position.copy(camera.position).add(new Vector3(0, 0, -0.2).applyQuaternion(camera.quaternion));
       haze.scale.set(0.2 * Math.tan(camera.fov * Math.PI / 360) * 2 * camera.aspect * 1.2, 0.2 * Math.tan(camera.fov * Math.PI / 360) * 2 * 1.2, 1);

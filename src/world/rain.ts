@@ -31,6 +31,28 @@ export const RAIN = {
   // The view's size of one pixel at 1 m, set each frame (follow).
   pixel: uniform(0.0015),
 };
+// The grid is worked out once for each list of lamps: the rain and the smoke (steamPipes.ts)
+// read the same one.
+let shared: { sources: unknown; volume: Data3DTexture } | null = null;
+export function lampLight(sources: [number, number, number, number, number, number][]): Data3DTexture {
+  if (shared?.sources !== sources) shared = { sources, volume: lampVolume(sources) };
+  return shared.volume;
+}
+
+// The lamps' light at a point of the world, read from the grid on the graphics card.
+export function lampLightNode(volume: Data3DTexture, position: Node<"vec3">): Node<"vec3"> {
+  const stored = texture3D(volume, vec3(position.x.sub(GRID.x0).div(GRID.nx), position.y.sub(GRID.y0).div(GRID.ny), position.z.sub(GRID.z0).div(GRID.nz))).rgb;
+  return stored.div(max(vec3(1).sub(stored), vec3(0.02)));
+}
+
+// The same on the CPU, at the nearest cell: [red, green, blue].
+export function lampLightAt(volume: Data3DTexture, x: number, y: number, z: number): [number, number, number] {
+  const data = volume.image.data as Uint8Array;
+  const i = Math.max(0, Math.min(GRID.nx - 1, Math.floor(x - GRID.x0))), j = Math.max(0, Math.min(GRID.ny - 1, Math.floor(y - GRID.y0))), k = Math.max(0, Math.min(GRID.nz - 1, Math.floor(z - GRID.z0)));
+  const at = ((k * GRID.ny + j) * GRID.nx + i) * 4, light = (byte: number): number => { const stored = byte / 255; return stored / Math.max(1 - stored, 0.02); };
+  return [light(data[at]), light(data[at + 1]), light(data[at + 2])];
+}
+
 function lampVolume(sources: [number, number, number, number, number, number][]): Data3DTexture {
   const data = new Uint8Array(GRID.nx * GRID.ny * GRID.nz * 4);
   for (let k = 0; k < GRID.nz; k += 1) for (let j = 0; j < GRID.ny; j += 1) for (let i = 0; i < GRID.nx; i += 1) {
@@ -77,7 +99,7 @@ export class Rain {
   // no depth buffer of its own there, it is hidden behind walls by the world's depth (`worldDepth`).
   constructor(parent: Object3D, count: number, worldDepth: TextureNode, lamps: [number, number, number, number, number, number][] = []) {
     const eye = this.eye, box = vec3(BOX.x, BOX.y, BOX.z);
-    const volume = lampVolume(lamps);
+    const volume = lampLight(lamps);
     // How far in front of the world's surface at this pixel a fragment lies, in metres.
     const clearance = positionView.z.sub(perspectiveDepthToViewZ(worldDepth.sample(screenUV), cameraNear, cameraFar));
     {
