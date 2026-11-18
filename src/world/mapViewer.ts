@@ -83,6 +83,8 @@ export interface MapViewer {
   lockPointer: () => void;
   playerPose: () => PlayerPose;
   clearShot: (ray: ShotRay) => boolean;
+  // Whether smoke, steam or powder hides one point from another (it stops no rounds).
+  cloudBetween: (from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }) => boolean;
   traceShot: (ray: ShotRay) => number;
   showShot: (event: CombatEvent, local: boolean) => void;
   setSpawnSlot: (slot: number) => void;
@@ -831,6 +833,9 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     showShot(event, local) { shotEffects.show(event, local ? authoredViewModel.muzzleOnScreen(viewCamera.fov, camera.fov)?.applyMatrix4(camera.matrixWorld) : remotePlayers.muzzle(event.actor) ?? undefined); },
     clearShot(ray) {
       return physics.clearShot(ray);
+    },
+    cloudBetween(from, to) {
+      return built.pipes.hides(from, to);
     },
     setSpawnSlot(slot) {
       player.setSpawnSlot(slot);

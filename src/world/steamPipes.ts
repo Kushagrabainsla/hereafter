@@ -393,6 +393,21 @@ export class SteamPipes {
     return Math.min(0.95, 1 - Math.exp(-2.2 * sum));
   }
 
+  // Whether the clouds hide one point from another: the line between them passes through as much
+  // cloud as 1.4 m of the thickest smoke. So the middle of a cloud hides, and its thin rim does not.
+  hides(from: Vec3, to: Vec3): boolean {
+    if (!this.leaks.size) return false;
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, length = Math.hypot(dx, dy, dz);
+    const steps = Math.min(48, Math.ceil(length / 0.5)), step = length / Math.max(1, steps);
+    let cover = 0;
+    for (let i = 0; i < steps; i += 1) {
+      const k = (i + 0.5) / steps;
+      cover += this.fogAt({ x: from.x + dx * k, y: from.y + dy * k, z: from.z + dz * k }) * step;
+      if (cover > 1.4) return true;
+    }
+    return false;
+  }
+
   // The colour of a cloud seen from inside it at a point, lit as its billows are there: for the
   // haze the view lays over the world.
   colourAt(point: Vec3, albedo = 0.55, target = new Color()): Color {

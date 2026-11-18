@@ -85,6 +85,7 @@ export interface TargetWorld {
   setRemotePose(id: string, pose: PlayerPose, sentAt: number): void;
   removeRemotePeer(id: string): void;
   clearShot(ray: ShotRay): boolean;
+  cloudBetween(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }): boolean;
   playerPose(): PlayerPose;
 }
 
@@ -193,7 +194,9 @@ export class SoloTargets {
       const toPlayer = Math.atan2(dx, dz) * 180 / Math.PI;
       const ahead = Math.abs(((toPlayer - target.heading + 540) % 360) - 180) <= BOT.cone;
       const sees = selfAlive && !grace && far <= BOT.sight && far > 0.5 && (alert || ahead)
-        && this.world.clearShot({ origin: eye, direction: { x: dx / far, y: dy / far, z: dz / far }, distance: Math.max(0, far - 0.4) });
+        && this.world.clearShot({ origin: eye, direction: { x: dx / far, y: dy / far, z: dz / far }, distance: Math.max(0, far - 0.4) })
+        // Smoke, steam and powder hide the player from it, as they hide it from the player.
+        && !this.world.cloudBetween(eye, { x: self.east, y: selfChest, z: self.north });
       if (sees) {
         if (!target.seenSince) { target.seenSince = now; target.fireAt = now + between(BOT.reaction) * 1000; }
         target.alertUntil = now + BOT.memory * 1000;
