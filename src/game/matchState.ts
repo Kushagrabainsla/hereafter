@@ -3,7 +3,7 @@ import {
   targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime, burnSeconds, catchesAt, EXTINGUISHER_RETURN_MS, POWDER_SECONDS, SPRAY_MS, SPRAY_REACH, BURN_DAMAGE, BURN_MS,
   DOUSE_RADIUS, EXPLOSIVE_CATCHES, FIRE_DAMAGE, FIRE_HEAT, FIRE_REACH, FIRE_STEP_MS, FRAG_HEAT, FRAG_LIGHTS, FUEL_HEAT, MAX_FIRES, POOL_MS, POOL_RADIUS, SCRAPS_MS, SCRAPS_RADIUS,
   ARM_WOUND_DAMAGE, BANDAGE_MS, BANDAGES_PER_LIFE, BLEED_DRIP_MS, BLEED_LONGEST_MS, BLEED_MIN_DAMAGE, BLEED_PER_WOUND_MS, LEG_WOUND_DAMAGE,
-  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS,
+  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, FIRE_TOLERANCE_MS,
   type FoodKind, type GunKind, type HitZone, type WeaponKind, type WeaponPickup,
 } from "./combatRules";
 import { type ShotRay } from "../world/physics";
@@ -764,14 +764,19 @@ export class MatchState {
       if (aim && (!finite(aim.heading, aim.pitch) || Math.abs(aim.pitch) > 80)) return false;
       if (!pose || !fresh || pose.running) return false;
       const last = this.lastAttack.get(actor) ?? 0;
-      if (now - last < WEAPONS[weapon].cooldownMs || player.ammo[weapon] <= 0) return false;
+      // A shot may come up to FIRE_TOLERANCE_MS early: a held trigger fires on an even beat, and
+      // the network and the shooter's timer move single shots a little off it. Without this, the
+      // host refused shots that the shooter had already seen and heard.
+      if (now - last < WEAPONS[weapon].cooldownMs - FIRE_TOLERANCE_MS || player.ammo[weapon] <= 0) return false;
       // Spread follows how the shooter was moving and how fast they have been firing.
       const sinceLast = (now - last) / 1000;
       const bloom = currentBloom(weapon, this.bloom.get(actor) ?? 0, sinceLast);
       const spread = spreadDegrees(weapon, { moving: pose.moving, crouching: pose.crouching, airborne: !!pose.airborne, sliding: !!pose.sliding, aiming: !!pose.aiming }, bloom) * armSpread(player.arm);
       this.bloom.set(actor, bloomAfterShot(weapon, this.bloom.get(actor) ?? 0, sinceLast));
       const origin = { ...pose, ...deviateAim(aim ?? pose, spread) };
-      this.lastAttack.set(actor, now);
+      // An early shot counts from the moment it was due, so nobody fires faster than the weapon
+      // over a burst by always shooting early.
+      this.lastAttack.set(actor, Math.max(now, last + WEAPONS[weapon].cooldownMs));
       player.ammo[weapon] -= 1;
       this.resolveShot(actor, weapon, origin, intent.seen);
       this.changed();

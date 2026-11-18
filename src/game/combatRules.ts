@@ -18,6 +18,9 @@ export interface WeaponDefinition {
   reloadMs: number;
 }
 
+// How many milliseconds early the host accepts a shot (see the attack rule in matchState.ts).
+export const FIRE_TOLERANCE_MS = 25;
+
 export const WEAPONS: Record<WeaponKind, WeaponDefinition> = {
   pistol: { label: "9 mm pistol", damage: 25, range: 55, cooldownMs: 330, magazine: 12, reloadMs: 1200 },
   rifle: { label: "Carbine", damage: 18, range: 95, cooldownMs: 135, magazine: 30, reloadMs: 1700 },

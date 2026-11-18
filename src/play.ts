@@ -126,9 +126,12 @@ for (const type of ["pointerdown", "keydown", "touchstart"]) window.addEventList
 window.addEventListener("pointerup", (event) => { if (event.buttons === 0) { triggerHeld = false; sprayHeld = false; viewer?.setAiming(false); viewer?.releaseThrow(); } });
 window.addEventListener("blur", () => { triggerHeld = false; sprayHeld = false; viewer?.setAiming(false); viewer?.cancelThrow(); });
 document.addEventListener("pointerlockchange", () => { triggerHeld = false; sprayHeld = false; viewer?.cancelThrow(); });
+// The held trigger of an automatic weapon: how often the game looks if the next shot is due, and
+// how late a shot may be and still keep the beat (later than that, the beat starts again).
+const FIRE_BEAT = { tick: 8, late: 40 };
 window.setInterval(() => {
   if (triggerHeld && document.pointerLockElement && match?.player(selfId)?.active === "rifle") attack();
-}, 16);
+}, FIRE_BEAT.tick);
 let toastTimer = 0;
 const arena = MARKET_ARENA;
 
@@ -701,7 +704,11 @@ function attack(): void {
     }
     return;
   }
-  lastLocalAttack = now;
+  // A held trigger fires on an even beat. The timer that fires it is always a little late, and
+  // counting each shot from that late moment made the carbine's 135 ms into 135 to 166 ms. So the
+  // next shot counts from the moment this one was due, if that was within the last FIRE_BEAT.late.
+  const due = lastLocalAttack + WEAPONS[weapon].cooldownMs;
+  lastLocalAttack = now - due < FIRE_BEAT.late ? due : now;
   const { heading, pitch } = viewer.playerPose();
   submit({ kind: "attack", weapon, aim: { heading, pitch }, seen: viewer.seenTimes() });
   viewer.playAttack(weapon);
