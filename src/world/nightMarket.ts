@@ -721,9 +721,12 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const sideLights = new Map(SIDE_ROOMS.map((room) => [room.id, light([roomX(room, 3.0), 3.0, (room.z0 + room.z1) / 2, room.tint, SHOP_LIGHT, 5.5])]));
   light([-13.4, 3.1, -2, 0xfff0dd, 4, 6]);
   light([-13.4, 3.1, 9, 0xfff0dd, 4, 6]);
-  const barLight = light([20.1, 3.4, 8.5, 0xff9ab0, 5, 7]);
-  light([21.5, 3.4, 1.5, 0xffb070, 4, 6]);
-  light([20.5, 6.9, 4, 0xffc887, 4, 7]);
+  // The bar and the room above it. They had lights of strength 4 and 5, the shops have 40: the
+  // upper room was almost black on every graphics setting, and a player in it could not be seen.
+  // The upper room's light also hung 0.5 m under the ceiling and lit little but the ceiling.
+  const barLight = light([20.1, 3.4, 8.5, 0xff9ab0, 20, 7]);
+  light([21.5, 3.4, 1.5, 0xffb070, 20, 6.5]);
+  light([20.5, 6.3, 4, 0xffc887, 24, 8]);
   light([-3.6, 1.9, -24.0, 0xffdca8, 4, 5]);
   light([-4.6, 2.7, -26.0, 0xfff1dc, 1.6, 2.4]);
   const lamps = new Lamps(many);
