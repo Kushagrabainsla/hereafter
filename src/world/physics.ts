@@ -22,6 +22,11 @@ const RAGDOLL_GROUPS = (0x0004 << 16) | 0x0001;
 // other, so a leaf turns in its frame against its hinge's stops alone, while it still meets
 // loose props, which meet everything as before.
 const STATIC_GROUPS = (0x0001 << 16) | 0xffff;
+// How much of a sound each material takes when it stands between the sound and the listener
+// (soundLoss): 0 none, 1 all that cover can take. A material that is not listed takes all.
+const SOUND_LOSS: Partial<Record<Material, number>> = {
+  glass: 0.2, cardboard: 0.25, flesh: 0.25, plastic: 0.3, rubber: 0.4, wood: 0.5, "metal-thin": 0.55, timber: 0.7, "metal-solid": 0.85, boundary: 0,
+};
 // Twelve directions spread evenly over the upper half of a sphere, for skyVisible. The whole grid
 // takes about 0.8 s as the map loads; sixteen directions took 1.1 s and looked the same.
 const SKY_RAYS = Array.from({ length: 12 }, (_, i) => {
@@ -1145,6 +1150,36 @@ export class PhysicsWorld {
       return this.solid(collider) && !tag?.entity && !tag?.mover && tag?.material !== "boundary";
     });
     return hit ? { distance: hit.timeOfImpact, material: this.tags.get(hit.collider.handle)?.material ?? "ground" } : null;
+  }
+
+  // How much of a sound is lost on its way between two points, 0 (a clear line) to 1 (behind a
+  // wall). Three rays go from the listener toward the source: one to it, and one to a point 0.4 m
+  // to each side of it. Each ray loses by what it meets first (SOUND_LOSS): little through glass,
+  // about half through a stall, a door or thin metal, all through a wall. A loose thing such as a
+  // chair or a crate takes little, because sound goes round it. The loss is the mean of the three
+  // rays, so a source that is half round a corner is half muffled.
+  soundLoss(from: Vec3, to: Vec3): number {
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
+    if (Math.hypot(dx, dy, dz) < 1.5) return 0;
+    const flat = Math.hypot(dx, dz) || 1, sideX = -dz / flat * 0.4, sideZ = dx / flat * 0.4;
+    let loss = 0;
+    for (const side of [0, 1, -1]) {
+      const rx = dx + sideX * side, rz = dz + sideZ * side, distance = Math.hypot(rx, dy, rz);
+      const ray = new RAPIER.Ray(from, { x: rx / distance, y: dy / distance, z: rz / distance });
+      // The ray goes on through each thing it meets, up to four, and their losses add up: a
+      // window with a wall behind it takes all, not only the window's share.
+      const met: number[] = [];
+      let taken = 0;
+      while (taken < 1 && met.length < 4) {
+        const hit = this.world.castRay(ray, distance - 0.4, true, undefined, undefined, this.collider, undefined, (collider) => this.solid(collider) && !met.includes(collider.handle));
+        if (!hit) break;
+        met.push(hit.collider.handle);
+        const through = SOUND_LOSS[this.tags.get(hit.collider.handle)?.material ?? "concrete"] ?? 1;
+        taken += hit.collider.parent()?.isDynamic() ? Math.min(through, 0.25) : through;
+      }
+      loss += Math.min(1, taken);
+    }
+    return loss / 3;
   }
 
   // Takes in the solids added since the last step, so that rays meet them. The sky grid is worked

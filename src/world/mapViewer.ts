@@ -390,13 +390,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     floorBelow: (at: { x: number; y: number; z: number }, reach: number) => physics.floorBelow(at, reach),
     sunlit: (at: { x: number; y: number; z: number }) => physics.clearShot({ origin: at, direction: { x: sunAbove.x, y: sunAbove.y, z: sunAbove.z }, distance: 80 }),
   };
-  // Sounds behind buildings and cover are dulled: one ray from the listener toward the source.
-  gameAudio.occlusion = (from, to) => {
-    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
-    const distance = Math.hypot(dx, dy, dz);
-    if (distance < 1.5) return false;
-    return !physics.clearShot({ origin: { x: from.x, y: from.y, z: from.z }, direction: { x: dx / distance, y: dy / distance, z: dz / distance }, distance: distance - 0.4 });
-  };
+  // Sounds behind buildings and cover are dulled, by how much stands in the way (physics.soundLoss).
+  gameAudio.occlusion = (from, to) => physics.soundLoss(from, to);
   const soundStage = new SoundStage((peerId) => remotePlayers.position(peerId));
   scene.add(camera);
   const viewScene = new Scene();
@@ -1208,7 +1203,7 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       renderer.setAnimationLoop(null);
       gameAudio.setAmbience([]);
       observer.disconnect();
-      gameAudio.occlusion = () => false;
+      gameAudio.occlusion = () => 0;
       player.destroy();
       physics.dispose();
       shotEffects.dispose();

@@ -36,7 +36,8 @@ type SoundName = keyof typeof BANK;
 
 interface Sample { buffer: AudioBuffer; offset: number }
 interface PlayOptions { gain?: number; rate?: number; when?: number; pan?: number; reverb?: number; bus?: AudioNode }
-interface SpatialOptions extends PlayOptions { ref?: number; rolloff?: number; occluded?: boolean; priority?: "high" | "low" }
+// `loss` is how much cover takes from the sound, 0 to 1; left out, the world is asked.
+interface SpatialOptions extends PlayOptions { ref?: number; rolloff?: number; loss?: number; priority?: "high" | "low" }
 
 const STORAGE_KEY = "hereafter.muted";
 const SAMPLE_RATE = 48000;
@@ -55,7 +56,7 @@ const MUSIC_CHORDS = [[57, 60, 64, 67], [53, 57, 60, 64], [48, 52, 55, 59], [55,
 const MUSIC_BASS = [[45, 0, 45, 52, 0, 45, 55, 52], [41, 0, 41, 48, 0, 41, 45, 48], [36, 0, 36, 43, 0, 36, 40, 43], [43, 0, 43, 50, 0, 43, 47, 38]];
 const midi = (note: number): number => 440 * 2 ** ((note - 69) / 12);
 
-interface AmbientVoice { out: GainNode; cover: BiquadFilterNode; shade: GainNode; nodes: AudioScheduledSourceNode[]; occluded: boolean }
+interface AmbientVoice { out: GainNode; cover: BiquadFilterNode; shade: GainNode; nodes: AudioScheduledSourceNode[]; loss: number }
 
 function readMuted(): boolean {
   try { return window.localStorage.getItem(STORAGE_KEY) === "1"; } catch { return false; }
@@ -142,7 +143,9 @@ export class GameAudio {
   // Clips loaded by choice, by path under audio/ ("voice/en/kill-gaya", "meme/S1"): players'
   // voices and memes.
   private voices = new Map<string, Sample>();
-  occlusion: (from: Vec3, to: Vec3) => boolean = () => false;
+  // How much of a sound is lost between two points: 0 with a clear line, 1 behind a wall, and
+  // between the two through glass, a stall or round a corner (physics.soundLoss).
+  occlusion: (from: Vec3, to: Vec3) => number = () => 0;
 
   // The sound bank loads when a match is launched, from the files downloaded during setup.
   loadBank(): Promise<void> { return this.loading ??= this.load(); }
@@ -270,7 +273,7 @@ export class GameAudio {
     gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), now + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
     burst.connect(band).connect(gain);
-    if (at) gain.connect(this.panner(at, 2, 1.5)).connect(this.mix);
+    if (at) gain.connect(this.heard(at, 2, 1.5));
     else gain.connect(new StereoPannerNode(context, { pan })).connect(this.mix);
   }
 
@@ -385,11 +388,11 @@ export class GameAudio {
       if (!voice) continue;
       // A sign or a fan sits in its own collider, or against a wall, so the check stops a metre short.
       const at = entry.source.at, listener = this.listenerAt, short = Math.max(0, 1 - 1 / Math.max(1, distance));
-      const occluded = this.occlusion(listener, { x: listener.x + (at.x - listener.x) * short, y: listener.y + (at.y - listener.y) * short, z: listener.z + (at.z - listener.z) * short });
-      if (occluded !== voice.occluded) {
-        voice.occluded = occluded;
-        voice.cover.frequency.setTargetAtTime(occluded ? 700 : 18000, now, 0.12);
-        voice.shade.gain.setTargetAtTime(occluded ? 0.5 : 1, now, 0.12);
+      const loss = this.occlusion(listener, { x: listener.x + (at.x - listener.x) * short, y: listener.y + (at.y - listener.y) * short, z: listener.z + (at.z - listener.z) * short });
+      if (Math.abs(loss - voice.loss) > 0.08) {
+        voice.loss = loss;
+        voice.cover.frequency.setTargetAtTime(18000 * Math.pow(700 / 18000, loss), now, 0.12);
+        voice.shade.gain.setTargetAtTime(1 - 0.5 * loss, now, 0.12);
       }
       if (entry.source.kind === "music") this.scheduleMusic(context, voice);
     }
@@ -564,7 +567,7 @@ export class GameAudio {
       this.musicStep = 0;
     }
     for (const node of nodes) if (!(node instanceof AudioBufferSourceNode)) node.start(now);
-    return { out, cover, shade, nodes, occluded: false };
+    return { out, cover, shade, nodes, loss: 0 };
   }
 
   private stopAmbient(entry: { voice: AmbientVoice | null }): void {
@@ -703,10 +706,10 @@ export class GameAudio {
     this.spatial(name, at, { gain: weapon === "pistol" ? 1 : 0.95, ref: 7, rolloff: 0.95, rate: 0.97 + Math.random() * 0.06, reverb: 0.3 + 0.35 * Math.min(1, distance / 60), priority: "high" });
   }
 
-  remoteStep(at: Vec3, surface: Surface, gait: Gait, occluded: boolean, wet = 0): void {
+  remoteStep(at: Vec3, surface: Surface, gait: Gait, loss: number, wet = 0): void {
     const gain = gait === "run" ? 0.45 : gait === "walk" ? 0.3 : 0.08;
-    this.spatial(surface === "hard" ? "step-hard" : "step-soft", at, { gain, ref: 2, rolloff: 1.6, rate: 0.94 + Math.random() * 0.1, occluded });
-    if (wet > 0.3) this.splash(at, gain * 0.9 * wet * (occluded ? 0.5 : 1));
+    this.spatial(surface === "hard" ? "step-hard" : "step-soft", at, { gain, ref: 2, rolloff: 1.6, rate: 0.94 + Math.random() * 0.1, loss });
+    if (wet > 0.3) this.splash(at, gain * 0.9 * wet * (1 - 0.5 * loss));
   }
 
   remoteLand(at: Vec3, surface: Surface): void {
@@ -776,7 +779,7 @@ export class GameAudio {
     if (kind === "magazine") { this.spatial("impact-metal", at, { gain: Math.min(0.45, 0.12 + speed * 0.08), ref: 1.5, rolloff: 1.6, rate: 0.72 + Math.random() * 0.1 }); return; }
     const level = Math.min(0.2, 0.03 + speed * 0.035), now = context.currentTime;
     const out = new GainNode(context, { gain: 1 });
-    out.connect(this.panner(at, 1.2, 1.6)).connect(this.mix);
+    out.connect(this.heard(at, 1.2, 1.6));
     const base = kind === "brass" ? 3700 : 2600;
     for (const [ratio, share, decay] of [[1, 1, 0.07], [1.73, 0.55, 0.05], [2.61, 0.35, 0.035], [3.9, 0.2, 0.02]]) {
       const oscillator = new OscillatorNode(context, { type: "sine", frequency: base * ratio * (0.95 + Math.random() * 0.1) });
@@ -808,7 +811,7 @@ export class GameAudio {
     gain.gain.exponentialRampToValueAtTime(0.12, now + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.9);
     const tone = new BiquadFilterNode(context, { type: "lowpass", frequency: 900 });
-    hum.connect(tone).connect(gain).connect(this.panner(at, 2.5, 1.3)).connect(this.mix);
+    hum.connect(tone).connect(gain).connect(this.heard(at, 2.5, 1.3));
     hum.start(now);
     hum.stop(now + 0.95);
   }
@@ -818,7 +821,7 @@ export class GameAudio {
     const context = this.live();
     if (!context || !this.noise || this.distanceTo(at) > 35) return;
     const now = context.currentTime, out = new GainNode(context, { gain: 1 });
-    out.connect(this.panner(at, 2, 1.4)).connect(this.mix);
+    out.connect(this.heard(at, 2, 1.4));
     for (let k = 0; k < Math.round(seconds * perSecond); k += 1) {
       const when = now + Math.random() * seconds;
       const burst = this.noiseSource(when, 0.006 + Math.random() * 0.01);
@@ -905,7 +908,7 @@ export class GameAudio {
     gain.gain.exponentialRampToValueAtTime(level * (rising ? 0.5 : 1), now + 0.05);
     if (rising) gain.gain.exponentialRampToValueAtTime(level, now + seconds);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds + (rising ? 0.05 : 0.6));
-    source.connect(filter).connect(gain).connect(this.panner(at, 2, 1.3)).connect(this.mix);
+    source.connect(filter).connect(gain).connect(this.heard(at, 2, 1.3));
     source.start(now, Math.random() * 0.5);
     source.stop(now + seconds + 0.7);
   }
@@ -921,9 +924,8 @@ export class GameAudio {
     if (!context || !this.noise) return;
     const distance = this.distanceTo(at);
     const now = context.currentTime;
-    const panner = this.panner(at, 6, 0.7);
     const out = new GainNode(context, { gain: 1 });
-    out.connect(panner).connect(this.mix);
+    out.connect(this.heard(at, 6, 0.7));
     out.connect(new GainNode(context, { gain: 0.6 + Math.min(0.4, distance / 60) })).connect(this.reverb);
     const crack = this.noiseSource(now, 0.05);
     const crackGain = new GainNode(context, { gain: 0 });
@@ -1084,6 +1086,27 @@ export class GameAudio {
     return voice.source;
   }
 
+  // What cover does to a sound from a point: the gain to multiply it by, and the frequency in
+  // hertz above which it is cut. With a clear line, nothing is taken. Behind a wall, the sound
+  // keeps 55% of its level and little above 1100 Hz. Through glass, a stall or round a corner,
+  // it is between the two.
+  private covered(at: Vec3, loss = this.occlusion(this.listenerAt, at)): { gain: number; cut: number } {
+    return { gain: 1 - 0.45 * loss, cut: 18000 * Math.pow(1100 / 18000, loss) };
+  }
+
+  // The last steps of every positioned sound that is made here and not played from a file: the
+  // cover between it and the listener, then its place round the listener. Returns the node to
+  // connect the sound to. Blasts, steam, fire and powder took no cover before.
+  private heard(at: Vec3, ref: number, rolloff: number): AudioNode {
+    const panner = this.panner(at, ref, rolloff);
+    panner.connect(this.mix);
+    const cover = this.covered(at);
+    if (cover.cut >= 17000) return panner;
+    const filter = new BiquadFilterNode(this.context!, { type: "lowpass", frequency: cover.cut, Q: 0.5 });
+    filter.connect(new GainNode(this.context!, { gain: cover.gain })).connect(panner);
+    return filter;
+  }
+
   private panner(at: Vec3, ref: number, rolloff: number): PannerNode {
     return new PannerNode(this.context!, {
       panningModel: "HRTF", distanceModel: "inverse", refDistance: ref, rolloffFactor: rolloff, maxDistance: 400,
@@ -1107,12 +1130,12 @@ export class GameAudio {
       this.spatialVoices.splice(oldest, 1)[0].source.stop();
     }
     const distance = this.distanceTo(at);
-    const occluded = options.occluded ?? this.occlusion(this.listenerAt, at);
-    const voice = this.sampleSource(sample, { ...options, gain: (options.gain ?? 1) * (occluded ? 0.55 : 1) });
+    const cover = this.covered(at, options.loss);
+    const voice = this.sampleSource(sample, { ...options, gain: (options.gain ?? 1) * cover.gain });
     if (!voice) return;
     const air = new BiquadFilterNode(context, { type: "lowpass", frequency: Math.max(2400, 18000 * Math.exp(-distance / 90)), Q: 0.4, channelCount: 1, channelCountMode: "explicit" });
     let chain: AudioNode = voice.gain.connect(air);
-    if (occluded) chain = chain.connect(new BiquadFilterNode(context, { type: "lowpass", frequency: 1100, Q: 0.5 }));
+    if (cover.cut < 17000) chain = chain.connect(new BiquadFilterNode(context, { type: "lowpass", frequency: cover.cut, Q: 0.5 }));
     chain.connect(this.panner(at, options.ref ?? 2, options.rolloff ?? 1)).connect(this.mix);
     const entry = { source: voice.source, priority };
     this.spatialVoices.push(entry);
@@ -1193,7 +1216,7 @@ export class GameAudio {
     gain.gain.exponentialRampToValueAtTime(level * 0.25, now + 0.85);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.3);
     source.connect(filter).connect(gain);
-    if (at) gain.connect(this.panner(at, 2, 1.6)).connect(this.mix);
+    if (at) gain.connect(this.heard(at, 2, 1.6));
     else gain.connect(this.mix);
     source.start(now, Math.random() * 0.5);
     source.stop(now + 1.35);
