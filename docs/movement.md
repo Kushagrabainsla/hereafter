@@ -8,6 +8,8 @@ The game reads each key by its place on the keyboard (`event.code`, in `src/keys
 
 Ctrl is a crouch key, so every action key also works with Ctrl held: a crouched player can reload, throw a grenade, bandage, interact and switch weapons. In full screen, Chromium browsers pass the game's keys to the page (`navigator.keyboard.lock` in `src/mouseLock.ts`), so Ctrl with W does not close the tab. Escape is not locked: it leaves full screen and frees the mouse at once.
 
+**Pause menu.** When the mouse comes free in play, the pause menu opens (`openPause` in `src/play.ts`). That happens on Escape, and also when another window takes the keyboard. With the mouse already free, Escape opens the menu. The menu has Resume, Settings, Controls, Invite and Leave match. Resume locks the mouse again; the click on the button is the gesture that the browser asks for. A second Escape only closes the menu, because the browser does not accept Escape as that gesture. Settings, Controls and Invite go back to the menu when they close. In a solo game the practice targets stand still while any dialog is open, but the clock of the world does not stop: a fire burns on and a wound bleeds on. In a room the match goes on, and the menu says so. Leave match leaves the room and continues solo. In a solo game that button goes to the setup screen, where graphics, time of day and mode are set.
+
 ## Slide
 
 Press C or Ctrl while running to slide. The slide keeps the direction you were running, adds 1.8 m/s on top of your speed (at most 10.5 m/s) and bleeds off 8.5 m/s every second. It ends when you let go of crouch, leave the ground, drop below 3.2 m/s, hit a wall or after 1.3 s. A full slide covers about 5 m in 0.8 s. Strafe keys steer it slightly, and the view stays free.

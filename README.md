@@ -82,6 +82,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Crouch (while running: slide) | hold <kbd>C</kbd> or <kbd>Ctrl</kbd> |
 | Lean | hold <kbd>Q</kbd> or <kbd>E</kbd> |
 | Look | move the mouse: it locks, and the game goes full screen, when you deploy. <kbd>Esc</kbd> frees it and leaves full screen, a click brings both back; unlocked, drag to look |
+| Pause menu | <kbd>Esc</kbd> opens it: Resume, Settings, Controls, Invite and Leave match. A solo game waits while it is open; a room's match goes on |
 | Fire | click or <kbd>F</kbd> |
 | Aim down the sights | hold right-click (on a Mac trackpad, press and hold with two fingers) |
 | Pistol, carbine | <kbd>1</kbd> <kbd>2</kbd> |

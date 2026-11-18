@@ -28,6 +28,19 @@ function element<T extends HTMLElement>(id: string): T {
 }
 
 const controlsDialog = element<HTMLDialogElement>("controls-dialog");
+const pauseDialog = element<HTMLDialogElement>("pause-dialog");
+const pauseEyebrow = element<HTMLElement>("pause-eyebrow");
+const pauseTitle = element<HTMLElement>("pause-title");
+const pauseNote = element<HTMLElement>("pause-note");
+const pauseResumeButton = element<HTMLButtonElement>("pause-resume");
+const pauseSettingsButton = element<HTMLButtonElement>("pause-settings");
+const pauseControlsButton = element<HTMLButtonElement>("pause-controls");
+const pauseInviteButton = element<HTMLButtonElement>("pause-invite");
+const pauseLeaveButton = element<HTMLButtonElement>("pause-leave");
+const settingsDialog = element<HTMLDialogElement>("settings-dialog");
+const closeSettingsButton = element<HTMLButtonElement>("close-settings");
+const settingSound = element<HTMLInputElement>("setting-sound");
+const settingSetupButton = element<HTMLButtonElement>("setting-setup");
 const openControlsButton = element<HTMLButtonElement>("open-controls");
 const closeControlsButton = element<HTMLButtonElement>("close-controls");
 const roomDialog = element<HTMLDialogElement>("room-dialog");
@@ -196,13 +209,44 @@ const placeOf = (players: Readonly<Record<string, CombatPlayer>>, id: string): n
 // The wait after a round is a ceasefire.
 const ceasefire = (): boolean => match?.round().phase === "over";
 
-const dialogOpen = (): boolean => controlsDialog.open || roomDialog.open;
+const dialogOpen = (): boolean => controlsDialog.open || roomDialog.open || pauseDialog.open || settingsDialog.open;
 
 function openControls(): void {
   if (dialogOpen()) return;
   controlsDialog.showModal();
   syncPause();
 }
+
+// The pause menu. Esc frees the mouse (the browser does that), and the menu opens with it: Resume,
+// Settings, Controls, Invite and Leave match. A solo game stops while any dialog is open. A
+// room's match cannot stop, and the menu says so.
+function openPause(): void {
+  if (!launched || dialogOpen()) return;
+  const solo = !peerRoom;
+  pauseEyebrow.textContent = solo ? "Solo practice" : `Room ${peerRoom?.code ?? ""}`;
+  pauseTitle.textContent = solo ? "Paused" : "Menu";
+  pauseNote.textContent = solo ? "The practice targets wait for you. A fire or a wound does not." : "The match goes on while this menu is open.";
+  pauseInviteButton.textContent = solo ? "Play together" : "Invite";
+  pauseLeaveButton.textContent = solo ? "Quit to the setup screen" : "Leave match";
+  settingSound.checked = !gameAudio.isMuted();
+  pauseDialog.showModal();
+  syncPause();
+}
+
+// A dialog opened from the pause menu goes back to it when it closes.
+let backToPause = false;
+function fromPause(open: () => void): void {
+  pauseDialog.close();
+  backToPause = true;
+  open();
+}
+function afterDialog(): void {
+  if (backToPause && !dialogOpen()) { backToPause = false; openPause(); }
+  syncPause();
+}
+
+// Whether the solo game stands still: a dialog is open and no other player is in the game.
+const soloPaused = (): boolean => !peerRoom && dialogOpen();
 
 function closeControls(): void {
   if (controlsDialog.open) controlsDialog.close();
@@ -223,7 +267,20 @@ function syncPause(): void {
 }
 // Touch screens cannot lock a pointer, so they get no hint.
 const mouseLookOffered = matchMedia("(pointer: fine)").matches;
-document.addEventListener("pointerlockchange", () => syncPause());
+// When the mouse comes free in play (Esc, or another window takes the keyboard), the pause menu opens.
+let mouseWasLocked = false;
+document.addEventListener("pointerlockchange", () => {
+  const locked = document.pointerLockElement !== null;
+  if (mouseWasLocked && !locked) openPause();
+  mouseWasLocked = locked;
+  syncPause();
+});
+// With the mouse already free, Esc opens the menu. In an open dialog, the browser's own Esc closes it.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !launched || dialogOpen() || document.pointerLockElement !== null) return;
+  event.preventDefault();
+  openPause();
+});
 
 function toast(message: string): void {
   combatToast.textContent = message;
@@ -791,10 +848,28 @@ async function leaveRoom(): Promise<void> {
 
 openControlsButton.addEventListener("click", openControls);
 closeControlsButton.addEventListener("click", closeControls);
-controlsDialog.addEventListener("close", syncPause);
+controlsDialog.addEventListener("close", afterDialog);
 openRoomButton.addEventListener("click", openRoom);
 closeRoomButton.addEventListener("click", () => roomDialog.close());
-roomDialog.addEventListener("close", syncPause);
+roomDialog.addEventListener("close", afterDialog);
+pauseDialog.addEventListener("close", syncPause);
+// Resume locks the mouse again: a click on the button is the gesture the browser asks for.
+pauseResumeButton.addEventListener("click", () => {
+  pauseDialog.close();
+  if (mouseLookOffered) { viewer?.lockPointer(); fillScreen(); }
+});
+pauseSettingsButton.addEventListener("click", () => fromPause(() => { settingsDialog.showModal(); syncPause(); }));
+pauseControlsButton.addEventListener("click", () => fromPause(openControls));
+pauseInviteButton.addEventListener("click", () => fromPause(openRoom));
+pauseLeaveButton.addEventListener("click", () => {
+  // Out of a room, the game is solo again. Out of a solo game, the setup screen starts a new one.
+  if (peerRoom) { pauseDialog.close(); void leaveRoom().then(() => toast("You left the room · solo practice")); }
+  else window.location.assign(window.location.pathname);
+});
+closeSettingsButton.addEventListener("click", () => settingsDialog.close());
+settingsDialog.addEventListener("close", afterDialog);
+settingSound.addEventListener("change", () => gameAudio.setMuted(!settingSound.checked));
+settingSetupButton.addEventListener("click", () => window.location.assign(window.location.pathname + window.location.search));
 createRoomButton.addEventListener("click", () => enterRoom(newRoomCode()));
 joinRoomButton.addEventListener("click", () => enterRoom(roomCodeInput.value));
 roomCodeInput.addEventListener("keydown", (event) => {
@@ -894,7 +969,8 @@ window.setInterval(() => {
   match.setPose(selfId, pose);
   peerRoom?.sendPose(pose);
   // A solo game has practice targets to shoot at; a room has real players.
-  if (!peerRoom && launched) (soloTargets ??= new SoloTargets(match, viewer, selfId)).update();
+  // They stand still while a solo game is paused, so nothing shoots a player who is in a menu.
+  if (!peerRoom && launched && !soloPaused()) (soloTargets ??= new SoloTargets(match, viewer, selfId)).update();
   if (launched && (match.player(selfId)?.health ?? 0) > 0) movementMemes(pose);
 }, 33);
 

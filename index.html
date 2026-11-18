@@ -57,7 +57,8 @@
           <div><dt>Respawn</dt><dd><kbd>Enter</kbd> after elimination</dd></div>
           <div><dt>Scoreboard</dt><dd>Hold <kbd>Tab</kbd></dd></div>
           <div><dt>Sound</dt><dd><kbd>M</kbd> mutes or unmutes</dd></div>
-          <div><dt>Mouse lock</dt><dd><kbd>Esc</kbd> frees the mouse and leaves full screen; click the world to lock it again, in full screen. Unlocked, drag to look</dd></div>
+          <div><dt>Pause menu</dt><dd><kbd>Esc</kbd> frees the mouse and opens the menu: Resume, Settings, Controls, Invite and Leave. A solo game waits; a room's match goes on</dd></div>
+          <div><dt>Mouse lock</dt><dd>Resume, or a click on the world, locks the mouse again, in full screen. Unlocked, drag to look</dd></div>
         </dl>
         <p class="dialog-footer"><span>Press <kbd>H</kbd> or <kbd>Esc</kbd> to close</span><span id="performance">Loading graphics…</span></p>
       </dialog>
@@ -93,6 +94,33 @@
           <div class="room-row room-actions"><button id="copy-invite" class="room-button room-button-primary" type="button">Copy invite</button><button id="leave-room" class="room-button" type="button">Leave room</button></div>
         </div>
         <p id="room-status" class="room-status" role="status" aria-live="polite">Create or join a room to play with friends.</p>
+      </dialog>
+
+      <dialog id="pause-dialog" class="controls-dialog pause-dialog" aria-labelledby="pause-title">
+        <div class="dialog-header">
+          <div><span id="pause-eyebrow" class="dialog-eyebrow">Solo practice</span><h1 id="pause-title">Paused</h1></div>
+        </div>
+        <p id="pause-note" class="dialog-intro">The practice targets wait for you. A fire or a wound does not.</p>
+        <div class="pause-actions">
+          <button id="pause-resume" class="room-button room-button-primary" type="button">Resume</button>
+          <button id="pause-settings" class="room-button" type="button">Settings</button>
+          <button id="pause-controls" class="room-button" type="button">Controls</button>
+          <button id="pause-invite" class="room-button" type="button">Invite</button>
+          <button id="pause-leave" class="room-button" type="button">Leave match</button>
+        </div>
+        <p class="dialog-footer"><span><kbd>Esc</kbd> closes this menu</span></p>
+      </dialog>
+
+      <dialog id="settings-dialog" class="controls-dialog settings-dialog" aria-labelledby="settings-title">
+        <div class="dialog-header">
+          <div><span class="dialog-eyebrow">Options</span><h1 id="settings-title">Settings</h1></div>
+          <button id="close-settings" class="close-button" type="button" aria-label="Close settings">×</button>
+        </div>
+        <label class="room-check"><input id="setting-sound" type="checkbox" /> <span>Sound. <kbd>M</kbd> also turns it on and off.</span></label>
+        <p class="room-label">Graphics, time of day and mode</p>
+        <p class="dialog-intro">The game sets these before it loads the market. The setup screen starts the game again.</p>
+        <button id="setting-setup" class="room-button" type="button">Go to the setup screen</button>
+        <p class="dialog-footer"><span><kbd>Esc</kbd> goes back</span></p>
       </dialog>
 
       <div id="combat-hud" class="combat-hud" aria-live="polite">
