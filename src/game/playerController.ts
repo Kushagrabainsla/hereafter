@@ -73,6 +73,8 @@ const SLIDE_ROLL = -0.06;
 // Leaning tilts the view this far (radians) at full lean and slows walking.
 const LEAN_ROLL = 0.14;
 const LEAN_SPEED = 0.7;
+// The share of the walking speed that a player keeps while moving backward.
+const BACKWARD_SPEED = 0.8;
 // A lean starts only after Q or E is held this long, in seconds. E is also the interact key, so
 // a tap of it to take a pickup or open a door does not tilt the view.
 const LEAN_HOLD = 0.15;
@@ -444,7 +446,8 @@ export class PlayerController {
       if (!crouchKey || !this.grounded || this.slideSpeed < SLIDE_END_SPEED || this.slideTime > SLIDE_LONGEST || jumpFromSlide) this.endSlide();
     }
     this.crouching = this.physics.setCrouched((crouchKey && !jumpFromSlide) || this.sliding);
-    const wantsRun = this.keys.has("shift") && !this.crouching && this.sprintHold <= 0 && !this.aimHeld && this.carried < CARRY_SPRINT_LIMIT && this.leg < NO_SPRINT_LEG;
+    // A sprint needs forward motion: nobody sprints backward or straight to the side.
+    const wantsRun = this.keys.has("shift") && forward > 0 && !this.crouching && this.sprintHold <= 0 && !this.aimHeld && this.carried < CARRY_SPRINT_LIMIT && this.leg < NO_SPRINT_LEG;
     // Q and E, held, lean while walking or standing; a wall at the side limits how far.
     const leanInput = this.running || this.sliding || !this.grounded ? 0 : Number(this.leanHeld.e >= LEAN_HOLD) - Number(this.leanHeld.q >= LEAN_HOLD);
     this.lean += (leanInput - this.lean) * Math.min(1, delta * 8);
@@ -465,7 +468,9 @@ export class PlayerController {
       // Looking down the sights, a player walks at little over half pace.
       const targetSpeed = (this.crouching ? 2.3 * this.load.walk : wantsRun ? 8.2 * this.load.sprint : 4.5 * this.load.walk) * slow * (this.aimHeld ? 0.55 : 1) * (this.rushLeft > 0 ? RUSH_SPEED : 1) * carrySpeed(this.carried)
         // A limp is slower on the bad leg's half of each stride.
-        * (wantsRun ? legEffects(this.leg).sprint : legEffects(this.leg).walk) * (1 - 0.25 * this.leg * Math.max(0, Math.sin(this.stride)));
+        * (wantsRun ? legEffects(this.leg).sprint : legEffects(this.leg).walk) * (1 - 0.25 * this.leg * Math.max(0, Math.sin(this.stride)))
+        // Backward is slower than forward, so backing away from a fight costs ground.
+        * (forward < 0 ? BACKWARD_SPEED : 1);
       const scale = targetSpeed / Math.max(1, Math.hypot(forward, strafe));
       const targetEast = (Math.sin(heading) * forward - Math.cos(heading) * strafe) * scale;
       const targetNorth = (Math.cos(heading) * forward + Math.sin(heading) * strafe) * scale;

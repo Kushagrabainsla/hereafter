@@ -2,6 +2,10 @@
 
 Walking, running, jumping and crouching run on the Rapier capsule controller in `src/game/playerController.ts` at a fixed 60 Hz. This note covers the slide, the mantle, firing out of a sprint, carried weight, how the held weapon moves, and the spread that movement adds to shots.
 
+## Speeds
+
+A player with the basic kit walks at 4.5 m/s forward and to the side, and at 3.6 m/s backward (`BACKWARD_SPEED`, 0.8 of the walk). A sprint is 8.2 m/s and needs forward motion: Shift with the forward key, alone or with a side key. Shift with only the backward key or only a side key walks. Before, Shift gave the sprint speed in every direction, so a player could back away from a fight at full speed with the gun on the enemy. Measured in the running game (`b12.mjs`): forward 4.5, backward 3.6, sideways 4.5, Shift forward 8.2, Shift backward 3.6, Shift forward and sideways 8.2.
+
 ## Keys
 
 The game reads each key by its place on the keyboard (`event.code`, in `src/keys.ts`), not by the letter printed on it. The controls sit under the same fingers on every layout: on an AZERTY keyboard, the key marked Z walks forward.
