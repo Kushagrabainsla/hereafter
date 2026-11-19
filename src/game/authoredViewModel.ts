@@ -48,10 +48,13 @@ const ATTACKS = ["fire"];
 // than the barrel line up on the view's centre, and how far the gun comes back toward the eye, in
 // metres. Measured in the game by projecting the front sight onto the screen (sightprobe in the
 // test kit): with 0.051 and no side the pistol's front sight stood 14 px high and 4 px right of
-// the centre, where the rounds go, and the carbine's 5 px high and 8 px right.
+// the centre, where the rounds go, and the carbine's 5 px high and 8 px right. The guns come
+// closer than they were (the pistol's front sight was 53 cm from the eye), so the iron sights are
+// large enough to aim with; moving the gun back also moves its sights, so all three are fitted
+// together.
 const SIGHTS: Record<WeaponKind, { height: number; side: number; back: number }> = {
-  pistol: { height: 0.0555, side: 0.0034, back: 0.02 },
-  rifle: { height: 0.0711, side: 0.0134, back: 0.02 },
+  pistol: { height: 0.074, side: -0.0257, back: 0.15 },
+  rifle: { height: 0.0714, side: -0.0001, back: 0.06 },
 };
 
 // How each weapon sits in the view: drawn through a narrower lens than the world and brought in
