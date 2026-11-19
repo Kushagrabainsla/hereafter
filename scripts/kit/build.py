@@ -114,6 +114,16 @@ def make_materials():
     material("hazard", 0xf2c230, 0.0, 0.5)
     for i, color in enumerate(SLEEVES):
         material(f"sleeve{i}", color, 0.0, 0.5)
+    # Stall goods in the dull, worn colours of real shop stock: lacquered tea tins (the game wears
+    # them as paint), paper labels and boxes (worn as fabric), and glazes that are not pure white.
+    for name, color in (("red", 0x6e2620), ("green", 0x3d4f2e), ("black", 0x1e1c1a), ("blue", 0x2b3f55), ("gold", 0x8c6a2c)):
+        material(f"tin_lacquer_{name}", color, 0.6, 0.38)
+    for name, color in (("cream", 0xd8ccae), ("red", 0xa8443a), ("yellow", 0xc9a24a), ("white", 0xe6e0d0)):
+        material(f"paper_label_{name}", color, 0.0, 0.75)
+    for name, color in (("red", 0x8a3a30), ("teal", 0x3b6a68), ("kraft", 0xa98a5e), ("yellow", 0xc4a24e)):
+        material(f"paper_box_{name}", color, 0.0, 0.8)
+    material("ceramic_cream", 0xe8dcc4, 0.0, 0.3)
+    material("ceramic_grey", 0xb9b3a7, 0.0, 0.35)
 
 
 # ---------------------------------------------------------------------------
@@ -574,13 +584,8 @@ def stall_body():
         for yy in (-1.0, 0.0, 1.0):
             parts.append(turned_box("bracket", (0.2, 0.02, 0.02), (-0.48, yy, z - 0.1), (0, RAD(35), 0), "wood_post"))
     parts.append(box("beam", 0.5, 0.6, -STALL_Y - 0.05, STALL_Y + 0.05, 2.38, 2.46, "wood_post", bev=0.006))
-    # A chalk price board hung from the beam, off to one side of the lamp.
-    parts.append(box("price", 0.555, 0.575, 0.35, 1.15, 2.0, 2.3, "chalkboard", bev=0.004))
-    parts.append(box("price_frame", 0.548, 0.556, 0.33, 1.17, 1.98, 2.32, "wood_post"))
-    for k in range(4):
-        parts.append(box("chalk", 0.547, 0.549, 0.42, 0.42 + 0.3 + (k % 2) * 0.25, 2.24 - k * 0.06, 2.255 - k * 0.06, "chalk"))
-    for yy in (0.45, 1.05):
-        parts.append(cylinder("hook", 0.004, 0.09, (0.565, yy, 2.34), "Z", "dark_steel", verts=6))
+    # (A chalk price board hung from the beam here. Seen from the alley it was a blank black slab,
+    # and a review of the market named it the most out-of-place thing in each stall, so it went.)
     return join(parts, "stall_body")
 
 
@@ -621,15 +626,31 @@ def awning_strips(torn):
             z = back[1] + (front[1] - back[1]) * t
             parts.append(turned_box("flap", (0.012, width * 0.8, 0.55), (x + 0.04, y0 + width / 2, z - 0.27), (0, RAD(8), RAD(random.uniform(-10, 10))), mat))
             continue
-        # Scallops: two hanging tongues per strip.
+        # The valance: a thin band of the strip's cloth hanging from the front edge, its hem cut in
+        # two soft scallops. It bellies out a little between the scallops' points and hangs a few
+        # millimetres unevenly, as cloth does. (It was two stiff 12 mm cut-outs per strip, which a
+        # review of the market said looked like folded card.)
         if torn and i in (0, 6):
             continue
-        for j in range(2):
-            yc = y0 + width * (0.25 + 0.5 * j)
-            profile = [(-width * 0.24, 0.0)] + [(math.cos(RAD(a)) * width * 0.24, -math.sin(RAD(a)) * 0.13) for a in range(180, 361, 30)]
-            tongue = prism("tongue", [(px, pz) for px, pz in profile], -0.006, 0.006, mat)
-            tongue.data.transform(Matrix.Translation((front[0] + 0.01, yc, front[1] - 0.01)) @ Matrix.Rotation(RAD(90), 4, "Z"))
-            parts.append(tongue)
+        cols, top = 16, front[1] - 0.005
+        bm = bmesh.new()
+        columns = []
+        for k in range(cols + 1):
+            f = k / cols
+            yy = y0 + 0.002 + (width - 0.004) * f
+            half = (f * 2) % 1.0
+            hem = 0.055 + 0.075 * math.sin(math.pi * half) + random.uniform(-0.004, 0.004)
+            belly = 0.012 * math.sin(math.pi * half) + random.uniform(0.0, 0.003)
+            columns.append([bm.verts.new((front[0] + 0.012 + belly * t, yy, top - hem * t)) for t in (0.0, 0.5, 1.0)])
+        for c0, c1 in zip(columns, columns[1:]):
+            for r in range(2):
+                bm.faces.new((c0[r], c1[r], c1[r + 1], c0[r + 1]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        band = mesh_object("valance", bm, mat)
+        mod = band.modifiers.new("Solid", "SOLIDIFY")
+        mod.thickness = 0.003
+        apply_modifiers(band)
+        parts.append(band)
     # Rafters and the back rail under the fabric.
     for yy in (-STALL_Y, -0.5, 0.5, STALL_Y):
         droop = -0.25 if torn and yy == 0.5 else 0.0
@@ -737,11 +758,48 @@ def goods_grill():
         parts.append(cylinder("skewer", 0.003, 0.62, (0.22, y, 1.2), "X", "wood_top", verts=5))
         for j in range(4):
             parts.append(box("meat", 0.06 + j * 0.08, 0.1 + j * 0.08, y - 0.02, y + 0.02, 1.18, 1.22, "meat", bev=0.006))
+    # The shelves: lidded jars of sauce and spice, and stacks of bowls, unevenly spaced.
+    rng = random.Random(41)
     for z in (1.45, 1.95):
-        for k in range(6):
-            parts.append(cylinder("cup", 0.04, 0.11, (-0.42, -1.1 + k * 0.42, z + 0.055), "Z", "ceramic", verts=10))
+        y = -1.3
+        while y < 1.25:
+            if rng.random() < 0.4:
+                r = 0.075
+                for k in range(rng.randint(2, 4)):
+                    parts.append(bowl("bowl", (-0.43 + rng.uniform(-0.005, 0.005), y + r, z + k * 0.03), r, rng.choice(["ceramic", "ceramic_cream", "ceramic_grey"])))
+                y += 2 * r + rng.uniform(0.03, 0.09)
+            else:
+                r, h = rng.uniform(0.038, 0.052), rng.uniform(0.09, 0.15)
+                x = -0.43 + rng.uniform(-0.03, 0.03)
+                parts.append(cylinder("jar", r, h, (x, y + r, z + h / 2), "Z", rng.choice(["ceramic_cream", "ceramic_grey", "ceramic_blue"]), verts=14, radius2=r * 0.88))
+                parts.append(cylinder("jar_lid", r * 0.92, 0.02, (x, y + r, z + h + 0.01), "Z", rng.choice(["wood_top", "dark_steel"]), verts=14))
+                parts.append(cylinder("jar_label", r * 1.03, h * 0.4, (x, y + r, z + h * 0.45), "Z", rng.choice(["paper_label_cream", "paper_label_red", "paper_label_yellow"]), verts=14, radius2=r * 0.95))
+                y += 2 * r + rng.uniform(0.02, 0.08)
     parts.append(box("cooler", -0.55, -0.3, 0.6, 1.2, 1.0, 1.35, "ceramic_blue", bev=0.02))
     return join(parts, "goods_grill")
+
+
+def cup(parts, center, mat, rng, upside=False):
+    """A tea cup: narrow at the foot, a rolled lip and a handle turned to a random side."""
+    x, y, z = center
+    low, high = (0.034, 0.025) if upside else (0.025, 0.034)
+    parts.append(cylinder("cup", low, 0.055, (x, y, z + 0.0275), "Z", mat, verts=14, radius2=high))
+    lip = z + (0.002 if upside else 0.053)
+    parts.append(ring("cup_lip", 0.034, 0.003, (x, y, lip), "Z", mat, verts=14, minor_verts=4))
+    turn = rng.uniform(0, math.tau)
+    handle = ring("cup_handle", 0.014, 0.0035, (0, 0, 0), "Y", mat, verts=10, minor_verts=4)
+    handle.data.transform(Matrix.Translation((x + math.cos(turn) * 0.036, y + math.sin(turn) * 0.036, z + 0.03)) @ Matrix.Rotation(turn, 4, "Z"))
+    parts.append(handle)
+
+
+def tin(parts, center, radius, height, lacquer, label, lid):
+    """A tea tin: a lacquered body, a paper label round its middle, a rolled foot and a lid."""
+    x, y, z = center
+    parts.append(cylinder("tin", radius, height, (x, y, z + height / 2), "Z", lacquer, verts=16))
+    parts.append(cylinder("tin_label", radius + 0.0015, height * 0.55, (x, y, z + height * 0.48), "Z", label, verts=16))
+    parts.append(ring("tin_foot", radius, 0.003, (x, y, z + 0.004), "Z", lid, verts=16, minor_verts=4))
+    parts.append(cylinder("tin_lid", radius + 0.002, 0.018, (x, y, z + height + 0.009), "Z", lid, verts=16))
+    parts.append(ring("tin_rim", radius + 0.002, 0.0025, (x, y, z + height + 0.018), "Z", lid, verts=16, minor_verts=4))
 
 
 def teapot(parts, center, mat):
@@ -761,14 +819,33 @@ def goods_tea():
     parts.append(cylinder("tap", 0.012, 0.08, (0.36, -0.9, 1.08), "X", "brass", verts=6))
     for k, mat in enumerate(["ceramic", "ceramic_blue", "ceramic"]):
         teapot(parts, (0.25, -0.3 + k * 0.32, 1.0), mat)
-    for k in range(8):
-        parts.append(cylinder("cup", 0.035, 0.06, (0.4, 0.75 + (k % 4) * 0.09, 1.03 + (k // 4) * 0.062), "Z", "ceramic" if k % 3 else "ceramic_blue", verts=10))
-    tins = ["sauce_red", "fruit_green", "hazard", "ceramic_blue"]
+    # Cups on the counter: two stacks, two cups set out, and one tipped on its side.
+    rng = random.Random(23)
+    glazes = ["ceramic", "ceramic_cream", "ceramic_blue", "ceramic_grey"]
+    for k, (y, n) in enumerate(((0.72, 3), (0.86, 4))):
+        mat = glazes[k]
+        for j in range(n):
+            cup(parts, (0.4, y, 1.0 + j * 0.032), mat, rng, upside=True)
+    cup(parts, (0.33, 1.0, 1.0), "ceramic_cream", rng)
+    cup(parts, (0.45, 1.08, 1.0), "ceramic", rng)
+    parts.append(cylinder("cup", 0.025, 0.055, (0.3, 0.82, 1.03), "X", "ceramic_blue", verts=14, radius2=0.034))
+    # The back shelves: tea tins of mixed sizes and makes, unevenly spaced, a few stacked or missing.
+    lacquers = ["tin_lacquer_red", "tin_lacquer_green", "tin_lacquer_black", "tin_lacquer_blue", "tin_lacquer_gold"]
+    labels = ["paper_label_cream", "paper_label_red", "paper_label_yellow", "paper_label_white"]
     for z in (1.45, 1.95):
-        for k in range(10):
-            mat = tins[(k + int(z * 10)) % len(tins)]
-            parts.append(cylinder("tin", 0.055, 0.15, (-0.44, -1.3 + k * 0.29, z + 0.075), "Z", mat, verts=12))
-            parts.append(cylinder("tin_lid", 0.057, 0.02, (-0.44, -1.3 + k * 0.29, z + 0.16), "Z", "brass", verts=12))
+        y = -1.32
+        while y < 1.26:
+            if rng.random() < 0.1:
+                y += rng.uniform(0.08, 0.16)
+                continue
+            r, h = rng.uniform(0.04, 0.062), rng.uniform(0.09, 0.17)
+            x = -0.44 + rng.uniform(-0.035, 0.035)
+            lid = rng.choice(["brass", "steel", "dark_steel"])
+            tin(parts, (x, y + r, z), r, h, rng.choice(lacquers), rng.choice(labels), lid)
+            if rng.random() < 0.15 and h < 0.13:
+                small = r * 0.8
+                tin(parts, (x, y + r, z + h + 0.018), small, h * 0.7, rng.choice(lacquers), rng.choice(labels), lid)
+            y += 2 * r + rng.uniform(0.012, 0.05)
     return join(parts, "goods_tea")
 
 
@@ -786,7 +863,10 @@ def goods_trinkets():
     for k in range(9):
         x, y = rng.uniform(0.05, 0.45), -1.3 + k * 0.3
         h = rng.uniform(0.06, 0.16)
-        parts.append(box("box", x - 0.07, x + 0.07, y - 0.09, y + 0.09, 1.0, 1.0 + h, rng.choice(["sauce_red", "ceramic_blue", "hazard", "fruit_green", "paper_yellow"]), bev=0.004))
+        # Paper gift boxes in dull colours, each with a lid that sits a little proud of the box.
+        mat = rng.choice(["paper_box_red", "paper_box_teal", "paper_box_kraft", "paper_box_yellow"])
+        parts.append(box("box", x - 0.07, x + 0.07, y - 0.09, y + 0.09, 1.0, 1.0 + h - 0.02, mat, bev=0.003))
+        parts.append(box("box_lid", x - 0.074, x + 0.074, y - 0.094, y + 0.094, 1.0 + h - 0.03, 1.0 + h, mat, bev=0.003))
     for z in (1.45, 1.95):
         for k in range(12):
             y = -1.35 + k * 0.245

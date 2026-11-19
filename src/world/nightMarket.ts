@@ -918,11 +918,19 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   // tubes, lit boxes with raised letters and blade signs on brackets. Its lit parts glow in its
   // colours at its intensity, and go dark when it is shot out. Returns those lit materials.
   const SIGNS = new Map(signCatalog.signs.map((entry) => [entry.id, entry]));
+  // Signs that hang inside a window, and the material that draws nothing.
+  const IN_WINDOW = new Set(["open"]);
+  const hiddenSurface = std({ color: 0x000000 });
+  hiddenSurface.visible = false;
   const placeSign = (id: string, mount: Matrix4, collider: { center: { x: number; y: number; z: number }; half: [number, number, number]; yaw: number }, lights?: number[]): MeshStandardMaterial[] => {
     const entry = SIGNS.get(id);
     const lit: MeshStandardMaterial[] = [];
     if (!entry) return lit;
     const object = kitObject(kit.get(`sign_${id}`), undefined, (material) => {
+      // A neon sign hung inside a window is glass tubes on a clear frame: its black backing showed
+      // as a blank slab from inside the room, so it is not drawn.
+      // (Its backing is the sign's only plain part, so the kit merges it under the shared name.)
+      if (IN_WINDOW.has(id) && (material.name === "sign_backer" || material.name === "kit:merged")) return hiddenSurface;
       if (!glowing(material)) return material;
       const color = (material as MeshStandardMaterial).color;
       const surface = std({ color, emissive: color, emissiveIntensity: entry.intensity, roughness: entry.style === "lightbox" ? 0.5 : 0.3 });
