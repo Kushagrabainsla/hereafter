@@ -77,7 +77,7 @@ def make_materials():
     material("insulation", 0xd9d2c2, 0.0, 0.85)
     material("valve_red", 0xa3261b, 0.3, 0.45)
     material("gauge_face", 0xf1ede2, 0.0, 0.4)
-    material("tag", 0xf2c230, 0.0, 0.6)
+    material("tag_enamel", 0xa98a3c, 0.0, 0.55)
     material("black", 0x101010, 0.0, 0.6)
     material("copper", 0xb5683a, 1.0, 0.35)
     material("plywood", 0xb58d5c, 0.0, 0.85)
@@ -333,7 +333,7 @@ def meter_box():
     parts.append(box("door_seam", -0.17, 0.17, -0.183, -0.179, 0.03, 0.52, "steel"))
     parts.append(cylinder("meter", 0.085, 0.03, (0, -0.19, 0.36), "Y", "glass_dark", verts=24))
     parts.append(ring("meter_rim", 0.088, 0.008, (0, -0.205, 0.36), "Y", "steel", verts=24))
-    parts.append(box("label", -0.08, 0.08, -0.185, -0.18, 0.12, 0.17, "tag"))
+    parts.append(box("label", -0.08, 0.08, -0.185, -0.18, 0.12, 0.17, "tag_enamel"))
     parts.append(tube("conduit_up", [(0.1, -0.05, 0.55), (0.1, -0.05, 1.5), (0.1, -0.03, 1.6), (0.1, 0.02, 1.62)], 0.018, "dark_steel", verts=10))
     parts.append(tube("conduit_down", [(-0.1, -0.05, 0.0), (-0.1, -0.05, -1.2)], 0.018, "dark_steel", verts=10))
     for z in (0.95, 1.3, -0.5):
@@ -382,7 +382,7 @@ def steam_valve():
     parts.append(cylinder("gauge", 0.06, 0.035, (0, STEAM_Y - 0.01, 0.24), "Y", "steel", verts=24))
     parts.append(cylinder("dial", 0.05, 0.004, (0, STEAM_Y - 0.03, 0.24), "Y", "gauge_face", verts=24))
     parts.append(turned_box("needle", (0.04, 0.003, 0.004), (0.008, STEAM_Y - 0.034, 0.245), (0, RAD(-30), 0), "valve_red"))
-    parts.append(box("tag", 0.07, 0.15, STEAM_Y - 0.1, STEAM_Y - 0.096, -0.18, -0.1, "tag"))
+    parts.append(box("tag", 0.07, 0.15, STEAM_Y - 0.1, STEAM_Y - 0.096, -0.18, -0.1, "tag_enamel"))
     parts.append(tube("tag_wire", [(0.06, STEAM_Y - 0.098, -0.05), (0.08, STEAM_Y - 0.098, -0.1)], 0.002, "steel", verts=4, caps=False))
     return join(parts, "steam_valve")
 
