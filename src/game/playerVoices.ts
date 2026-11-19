@@ -68,9 +68,11 @@ export class PlayerVoices {
     if ((roll % 1000) / 1000 >= chance) return;
     const now = performance.now();
     if (now < (this.quietUntil.get(speaker) ?? 0)) return;
-    // Every listener picks from all the lines, so all hear the same one; a listener with 18+ lines
-    // off hears a clean one in place of an 18+ pick.
-    const choices = LINES.filter((line) => line.moment === moment), clean = choices.filter((line) => line.tier !== "adult");
+    // Every listener picks from the same lines, so all hear the same one; a listener with 18+ lines
+    // off hears a clean one in place of an 18+ pick. Only lines recorded in the speaker's language
+    // are picked (every peer runs the same build), so a moment with one real recording uses it
+    // rather than falling silent on a line still waiting to be recorded.
+    const choices = LINES.filter((line) => line.moment === moment && publicExists(`audio/voice/${voice}/${line.id}.mp3`)), clean = choices.filter((line) => line.tier !== "adult");
     if (!clean.length) return;
     let line = choices[(roll >>> 10) % choices.length];
     if (line.tier === "adult" && !this.adult) line = clean[(roll >>> 20) % clean.length];

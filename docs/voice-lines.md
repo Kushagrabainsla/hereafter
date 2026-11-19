@@ -1,6 +1,6 @@
 # Voice lines: recording sheet
 
-Every line a player can say, in the order of the match, and the [memes](#memes) played on top. The game plays the language each player picks on the setup screen or in the room dialog, Hindi or English; a player who turns voice lines off makes only the grunts and cries. The English lines are placeholders made by text-to-speech until they are recorded; the Hindi lines are silent until they are recorded, as no synthesised Hindi is good enough. Recordings drop in by file name. The jump, climb, pain and death sounds are recordings already ([sources](data-sources.md#voices)).
+Every line a player can say, in the order of the match, and the [memes](#memes) played on top. The game plays the language each player picks on the setup screen or in the room dialog, Hindi or English; a player who turns voice lines off makes only the grunts and cries. Every voice is a real person. Thirteen English lines are a professional actor's callouts from Kenney's Voiceover Pack (CC0, male voice; `STOCK_EN` in `scripts/audio/voices.py`), and their English text below is what he says. Every other line, English or Hindi, is silent until it is recorded: the text-to-speech placeholders sounded synthetic and were taken out. The game picks a line only from those recorded in the speaker's language, so a moment with one recording uses it. Recordings drop in by file name and replace a stock take. The jump, climb, pain and death sounds are recordings already ([sources](data-sources.md#voices)).
 
 **Tiers.** Clean and Spicy lines always play. 18+ lines play only for listeners who turn on "Hear 18+ lines" in the room dialog; everyone else hears a clean line from the same moment instead.
 
@@ -16,37 +16,37 @@ Record one take per line; the game varies the pitch a little each time it plays.
 
 | File | When | Tier | Hindi | Say it as | English |
 |---|---|---|---|---|---|
-| `round-go` | A round starts | Clean | चलो, शुरू करते हैं! | Chalo, shuru karte hain! | Let's do this! |
-| `round-ready` | A round starts | Clean | तैयार हो जाओ! | Taiyaar ho jao! | Get ready! |
+| `round-go` | A round starts | Clean | चलो, शुरू करते हैं! | Chalo, shuru karte hain! | Go, go, go! (stock take) |
+| `round-ready` | A round starts | Clean | तैयार हो जाओ! | Taiyaar ho jao! | Ready? (stock take) |
 | `round-band` | A round starts | Spicy | आज सबकी बैंड बजेगी! | Aaj sabki band bajegi! | Everybody's going down today! |
-| `win-jeet` | Wins the round | Clean | जीत गए! | Jeet gaye! | We won! |
+| `win-jeet` | Wins the round | Clean | जीत गए! | Jeet gaye! | Mission completed. (stock take) |
 | `win-bhagwan` | Wins the round | Spicy | अपुन ही भगवान है! | Apun hi bhagwan hai! | Who's the boss now? |
 | `win-jhakaas` | Wins the round | Spicy | झकास! | Jhakaas! | Sweet! |
-| `lose-agli` | Loses the round | Clean | अगली बार देख लेंगे। | Agli baar dekh lenge. | Next time, then. |
+| `lose-agli` | Loses the round | Clean | अगली बार देख लेंगे। | Agli baar dekh lenge. | Mission failed. (stock take) |
 | `lose-kismat` | Loses the round | Clean | किस्मत ही ख़राब है। | Kismat hi kharab hai. | Just bad luck. |
 | `lose-bakwaas` | Loses the round | Spicy | बकवास! | Bakwaas! | Garbage! |
 | `lose-harami` | Loses the round | 18+ | हरामी लोग! | Harami log! | Bastards! |
-| `reload-kar` | Reloads | Clean | रीलोड कर रहा हूँ! | Reload kar raha hoon! | Reloading! |
-| `reload-cover` | Reloads | Clean | कवर दे! | Cover de! | Cover me! |
+| `reload-kar` | Reloads | Clean | रीलोड कर रहा हूँ! | Reload kar raha hoon! | Reloading! (stock take) |
+| `reload-cover` | Reloads | Clean | कवर दे! | Cover de! | Cover me! (stock take) |
 | `empty-goli` | Out of ammunition | Clean | गोली ख़त्म! | Goli khatam! | I'm out! |
 | `empty-khaali` | Out of ammunition | Clean | अरे, ख़ाली है! | Arre, khaali hai! | It's empty! |
-| `grenade-hato` | Throws a frag | Clean | ग्रेनेड! हटो! | Grenade! Hato! | Grenade out! |
+| `grenade-hato` | Throws a frag | Clean | ग्रेनेड! हटो! | Grenade! Hato! | Fire in the hole! (stock take) |
 | `grenade-sambhaal` | Throws a frag | Spicy | ले, संभाल! | Le, sambhaal! | Catch this! |
 | `smoke-dhuaan` | Throws smoke | Clean | धुआँ डाल रहा हूँ! | Dhuaan daal raha hoon! | Smoke out! |
-| `near-bhaago` | A frag lands within 6 m | Clean | भागो! | Bhaago! | Run! |
+| `near-bhaago` | A frag lands within 6 m | Clean | भागो! | Bhaago! | Look out! (stock take) |
 | `miss-baap` | A round passes within 1.5 m | Clean | अरे बाप रे! | Arre baap re! | Whoa! |
-| `miss-bal` | A round passes within 1.5 m | Clean | बाल-बाल बचे! | Bal-bal bache! | That was close! |
-| `miss-kaun` | A round passes within 1.5 m | Clean | कौन मार रहा है? | Kaun maar raha hai? | Who's shooting? |
+| `miss-bal` | A round passes within 1.5 m | Clean | बाल-बाल बचे! | Bal-bal bache! | Get down! (stock take) |
+| `miss-kaun` | A round passes within 1.5 m | Clean | कौन मार रहा है? | Kaun maar raha hai? | Sniper! (stock take) |
 | `miss-pagal` | A round passes within 1.5 m | Spicy | पागल है क्या? | Pagal hai kya? | Are you crazy? |
 | `miss-gaandu` | A round passes within 1.5 m | 18+ | गांडू, ढंग से मार! | Gaandu, dhang se maar! | Learn to aim, asshole! |
-| `hurt-lag` | Hit | Clean | लग गई! | Lag gayi! | I'm hit! |
+| `hurt-lag` | Hit | Clean | लग गई! | Lag gayi! | Medic! (stock take) |
 | `hurt-teri` | Hit | Spicy | तेरी तो...! | Teri toh...! | Oh, you...! |
 | `hurt-bc` | Hit | 18+ | बहनचोद! | Behenchod! | Son of a bitch! |
-| `low-jaan` | Hit down to 25 health or less, once a life | Clean | बस थोड़ी सी जान बची है। | Bas thodi si jaan bachi hai. | I'm barely standing. |
+| `low-jaan` | Hit down to 25 health or less, once a life | Clean | बस थोड़ी सी जान बची है। | Bas thodi si jaan bachi hai. | Call for backup! (stock take) |
 | `death-gaya` | Last words, after the death cry | Clean | गया मैं... | Gaya main... | I'm done... |
 | `death-kamina` | Last words, after the death cry | Spicy | कमीना... | Kamina... | Jerk... |
 | `death-mc` | Last words, after the death cry | 18+ | मादरचोद... | Madarchod... | Motherfucker... |
-| `kill-gaya` | Gets a kill | Clean | गया! | Gaya! | Gotcha! |
+| `kill-gaya` | Gets a kill | Clean | गया! | Gaya! | Target destroyed. (stock take) |
 | `kill-ekaur` | Gets a kill | Clean | एक और! | Ek aur! | One more! |
 | `kill-mazaa` | Gets a kill | Clean | मज़ा आ गया! | Mazaa aa gaya! | That was fun! |
 | `kill-beta` | Gets a kill | Spicy | ले बेटा! | Le beta! | Take that! |

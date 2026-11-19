@@ -41,4 +41,11 @@ for f in en_US-norman-medium.onnx en_US-norman-medium.onnx.json MODEL_CARD; do
   [ -f "$SRC/piper-norman/$f" ] || curl -fsSL "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/norman/medium/$f" -o "$SRC/piper-norman/$f"
 done
 echo "b9739443232a80a59c7d18810dd856899bf16a7964725f5ab81ea49b1351cb71  $SRC/piper-norman/en_US-norman-medium.onnx" | shasum -a 256 -c -
+# Kenney's "Voiceover Pack" (CC0): a male and a female actor's callouts; the male takes voice the
+# English lines that have the same meaning (STOCK_EN in scripts/audio/voices.py).
+mkdir -p "$SRC/kenney-voiceover"
+VOICEOVER="$SRC/kenney-voiceover/voiceover.zip"
+[ -f "$VOICEOVER" ] || curl -fsSL -A "$UA" "https://opengameart.org/sites/default/files/Voiceover%20Pack.zip" -o "$VOICEOVER"
+echo "2ff0c8c51a959a754df698c4ee1e7c2db007c4abde4d600fd19545a1aea9d835  $VOICEOVER" | shasum -a 256 -c -
+[ -d "$SRC/kenney-voiceover/x" ] || unzip -q -o "$VOICEOVER" -d "$SRC/kenney-voiceover/x"
 echo "Sources downloaded to $SRC"

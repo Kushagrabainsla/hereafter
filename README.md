@@ -134,7 +134,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - A scoreboard on <kbd>Tab</kbd> with kills, deaths and ping, a round clock, and a kill feed naming who got whom.
 
 **▸ COMMS**
-- Players have voices: grunts and cries, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. English lines are placeholders and Hindi lines are silent until recorded; see the [recording sheet](docs/voice-lines.md).
+- Players have voices: grunts and cries, and calls, taunts and banter in **Hindi or English**, with an opt-in 18+ tier of gaalis and swearing. Every voice is a real person: thirteen English lines are a professional actor's CC0 callouts, and the other lines are silent until recorded; see the [recording sheet](docs/voice-lines.md).
 - Meme sounds on top: a vine boom on a headshot, an air horn on a double kill, a boing on a jump, a metal pipe on a hard landing, crickets after a round with no kills, and Hindi meme clips like "Aayein?", "Are baap re, yaad aaya" and the KGF theme, with more Hindi and English meme lines to come ([list](docs/voice-lines.md#memes)). At most one per player every 30 seconds, and they can be turned off.
 
 **▸ LOOK AND SOUND**

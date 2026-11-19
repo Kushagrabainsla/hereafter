@@ -4,9 +4,9 @@ src/game/memes.json.
 
 Voice lines (public/audio/voice/<hi|en>/<line id>.mp3) come from a recording if there is one:
   assets-src/voices/<hi|en>/<line id>.<wav|mp3|m4a|ogg|flac|aiff>   recorded take
-  English placeholder: Piper TTS, voice "norman" (public-domain LibriVox data), run with
-                       PIPER_PYTHON (a Python that has `pip install piper-tts`).
-  Hindi: no placeholder. A Hindi line is silent until it is recorded.
+  No synthesised placeholders: a line, Hindi or English, is silent until it is recorded. (PIPER=1
+  still makes English Piper TTS placeholders for testing, voice "norman", run with PIPER_PYTHON, a
+  Python that has `pip install piper-tts`; they are not shipped.)
 Wordless efforts (jump, climb, pain, death) are cut from the CC0 "Male Grunt/Yelling sounds"
 pack by HaelDB, vocalist 3, downloaded by scripts/audio/fetch.sh.
 Memes (public/audio/meme/<code>.mp3) come from a clip named after the meme's code, or for a
@@ -55,8 +55,26 @@ def first(folder, name):
     return None
 
 
+# English lines a professional actor recorded for Kenney's "Voiceover Pack" (CC0), male voice:
+# each line's own take, else this clip of the same meaning (the line's English text in
+# voiceLines.json says what the actor says). Fetched by scripts/audio/fetch.sh.
+KENNEY = os.path.join(SRC, "audio", "kenney-voiceover", "x", "Male")
+STOCK_EN = {
+    "round-go": "war_go_go_go", "round-ready": "ready", "win-jeet": "mission_completed", "lose-agli": "mission_failed",
+    "reload-kar": "war_reloading", "reload-cover": "war_cover_me", "grenade-hato": "war_fire_in_the_hole",
+    "near-bhaago": "war_look_out", "miss-bal": "war_get_down", "miss-kaun": "war_sniper",
+    "hurt-lag": "war_medic", "low-jaan": "war_call_for_backup", "kill-gaya": "war_target_destroyed",
+}
+
+
 def recording(lang, line_id):
-    return first(os.path.join(RECORDINGS, lang), line_id)
+    take = first(os.path.join(RECORDINGS, lang), line_id)
+    if take or lang != "en" or line_id not in STOCK_EN:
+        return take
+    stock = os.path.join(KENNEY, f"{STOCK_EN[line_id]}.ogg")
+    if not os.path.exists(stock):
+        sys.exit(f"Missing {stock}: run scripts/audio/fetch.sh first.")
+    return stock
 
 
 def meme_source(meme):
@@ -122,13 +140,18 @@ def main():
     try:
         lines = LINES["lines"]
         if ONLY in (None, "en"):
+            # Real voices only: an English line plays from a human recording (the author's own take,
+            # or a CC0 one listed in docs/data-sources.md) and is silent without one. The Piper
+            # placeholders sounded synthetic and were taken out; PIPER=1 brings them back for testing.
             todo = {}
             for line in lines:
                 target, take = os.path.join(OUT, "en", f"{line['id']}.mp3"), recording("en", line["id"])
                 if take and stale(target, take):
                     finish(take, target); built["en"] += 1; built["recorded"] += 1
-                elif not take and stale(target):
+                elif not take and os.environ.get("PIPER") == "1" and stale(target):
                     todo[line["id"]] = line["en"]
+                elif not take and os.path.exists(target):
+                    os.remove(target)
             if todo:
                 if not os.path.exists(PIPER_MODEL):
                     sys.exit(f"Missing {PIPER_MODEL}: run scripts/audio/fetch.sh first.")

@@ -1,15 +1,15 @@
 {
   "efforts": { "jump": 3, "climb": 3, "pain": 6, "death": 5 },
   "lines": [
-    { "id": "round-go", "moment": "roundStart", "tier": "clean", "hi": "चलो, शुरू करते हैं!", "hiLatin": "Chalo, shuru karte hain!", "en": "Let's do this!" },
-    { "id": "round-ready", "moment": "roundStart", "tier": "clean", "hi": "तैयार हो जाओ!", "hiLatin": "Taiyaar ho jao!", "en": "Get ready!" },
+    { "id": "round-go", "moment": "roundStart", "tier": "clean", "hi": "चलो, शुरू करते हैं!", "hiLatin": "Chalo, shuru karte hain!", "en": "Go, go, go!" },
+    { "id": "round-ready", "moment": "roundStart", "tier": "clean", "hi": "तैयार हो जाओ!", "hiLatin": "Taiyaar ho jao!", "en": "Ready?" },
     { "id": "round-band", "moment": "roundStart", "tier": "spicy", "hi": "आज सबकी बैंड बजेगी!", "hiLatin": "Aaj sabki band bajegi!", "en": "Everybody's going down today!" },
 
-    { "id": "win-jeet", "moment": "roundWin", "tier": "clean", "hi": "जीत गए!", "hiLatin": "Jeet gaye!", "en": "We won!" },
+    { "id": "win-jeet", "moment": "roundWin", "tier": "clean", "hi": "जीत गए!", "hiLatin": "Jeet gaye!", "en": "Mission completed." },
     { "id": "win-bhagwan", "moment": "roundWin", "tier": "spicy", "hi": "अपुन ही भगवान है!", "hiLatin": "Apun hi bhagwan hai!", "en": "Who's the boss now?" },
     { "id": "win-jhakaas", "moment": "roundWin", "tier": "spicy", "hi": "झकास!", "hiLatin": "Jhakaas!", "en": "Sweet!" },
 
-    { "id": "lose-agli", "moment": "roundLose", "tier": "clean", "hi": "अगली बार देख लेंगे।", "hiLatin": "Agli baar dekh lenge.", "en": "Next time, then." },
+    { "id": "lose-agli", "moment": "roundLose", "tier": "clean", "hi": "अगली बार देख लेंगे।", "hiLatin": "Agli baar dekh lenge.", "en": "Mission failed." },
     { "id": "lose-kismat", "moment": "roundLose", "tier": "clean", "hi": "किस्मत ही ख़राब है।", "hiLatin": "Kismat hi kharab hai.", "en": "Just bad luck." },
     { "id": "lose-bakwaas", "moment": "roundLose", "tier": "spicy", "hi": "बकवास!", "hiLatin": "Bakwaas!", "en": "Garbage!" },
     { "id": "lose-harami", "moment": "roundLose", "tier": "adult", "hi": "हरामी लोग!", "hiLatin": "Harami log!", "en": "Bastards!" },
@@ -20,27 +20,27 @@
     { "id": "empty-goli", "moment": "empty", "tier": "clean", "hi": "गोली ख़त्म!", "hiLatin": "Goli khatam!", "en": "I'm out!" },
     { "id": "empty-khaali", "moment": "empty", "tier": "clean", "hi": "अरे, ख़ाली है!", "hiLatin": "Arre, khaali hai!", "en": "It's empty!" },
 
-    { "id": "grenade-hato", "moment": "grenade", "tier": "clean", "hi": "ग्रेनेड! हटो!", "hiLatin": "Grenade! Hato!", "en": "Grenade out!" },
+    { "id": "grenade-hato", "moment": "grenade", "tier": "clean", "hi": "ग्रेनेड! हटो!", "hiLatin": "Grenade! Hato!", "en": "Fire in the hole!" },
     { "id": "grenade-sambhaal", "moment": "grenade", "tier": "spicy", "hi": "ले, संभाल!", "hiLatin": "Le, sambhaal!", "en": "Catch this!" },
     { "id": "smoke-dhuaan", "moment": "smoke", "tier": "clean", "hi": "धुआँ डाल रहा हूँ!", "hiLatin": "Dhuaan daal raha hoon!", "en": "Smoke out!" },
-    { "id": "near-bhaago", "moment": "grenadeNear", "tier": "clean", "hi": "भागो!", "hiLatin": "Bhaago!", "en": "Run!" },
+    { "id": "near-bhaago", "moment": "grenadeNear", "tier": "clean", "hi": "भागो!", "hiLatin": "Bhaago!", "en": "Look out!" },
 
     { "id": "miss-baap", "moment": "nearMiss", "tier": "clean", "hi": "अरे बाप रे!", "hiLatin": "Arre baap re!", "en": "Whoa!" },
-    { "id": "miss-bal", "moment": "nearMiss", "tier": "clean", "hi": "बाल-बाल बचे!", "hiLatin": "Bal-bal bache!", "en": "That was close!" },
-    { "id": "miss-kaun", "moment": "nearMiss", "tier": "clean", "hi": "कौन मार रहा है?", "hiLatin": "Kaun maar raha hai?", "en": "Who's shooting?" },
+    { "id": "miss-bal", "moment": "nearMiss", "tier": "clean", "hi": "बाल-बाल बचे!", "hiLatin": "Bal-bal bache!", "en": "Get down!" },
+    { "id": "miss-kaun", "moment": "nearMiss", "tier": "clean", "hi": "कौन मार रहा है?", "hiLatin": "Kaun maar raha hai?", "en": "Sniper!" },
     { "id": "miss-pagal", "moment": "nearMiss", "tier": "spicy", "hi": "पागल है क्या?", "hiLatin": "Pagal hai kya?", "en": "Are you crazy?" },
     { "id": "miss-gaandu", "moment": "nearMiss", "tier": "adult", "hi": "गांडू, ढंग से मार!", "hiLatin": "Gaandu, dhang se maar!", "en": "Learn to aim, asshole!" },
 
-    { "id": "hurt-lag", "moment": "hurt", "tier": "clean", "hi": "लग गई!", "hiLatin": "Lag gayi!", "en": "I'm hit!" },
+    { "id": "hurt-lag", "moment": "hurt", "tier": "clean", "hi": "लग गई!", "hiLatin": "Lag gayi!", "en": "Medic!" },
     { "id": "hurt-teri", "moment": "hurt", "tier": "spicy", "hi": "तेरी तो...!", "hiLatin": "Teri toh...!", "en": "Oh, you...!" },
     { "id": "hurt-bc", "moment": "hurt", "tier": "adult", "hi": "बहनचोद!", "hiLatin": "Behenchod!", "en": "Son of a bitch!" },
-    { "id": "low-jaan", "moment": "lowHealth", "tier": "clean", "hi": "बस थोड़ी सी जान बची है।", "hiLatin": "Bas thodi si jaan bachi hai.", "en": "I'm barely standing." },
+    { "id": "low-jaan", "moment": "lowHealth", "tier": "clean", "hi": "बस थोड़ी सी जान बची है।", "hiLatin": "Bas thodi si jaan bachi hai.", "en": "Call for backup!" },
 
     { "id": "death-gaya", "moment": "death", "tier": "clean", "hi": "गया मैं...", "hiLatin": "Gaya main...", "en": "I'm done..." },
     { "id": "death-kamina", "moment": "death", "tier": "spicy", "hi": "कमीना...", "hiLatin": "Kamina...", "en": "Jerk..." },
     { "id": "death-mc", "moment": "death", "tier": "adult", "hi": "मादरचोद...", "hiLatin": "Madarchod...", "en": "Motherfucker..." },
 
-    { "id": "kill-gaya", "moment": "kill", "tier": "clean", "hi": "गया!", "hiLatin": "Gaya!", "en": "Gotcha!" },
+    { "id": "kill-gaya", "moment": "kill", "tier": "clean", "hi": "गया!", "hiLatin": "Gaya!", "en": "Target destroyed." },
     { "id": "kill-ekaur", "moment": "kill", "tier": "clean", "hi": "एक और!", "hiLatin": "Ek aur!", "en": "One more!" },
     { "id": "kill-mazaa", "moment": "kill", "tier": "clean", "hi": "मज़ा आ गया!", "hiLatin": "Mazaa aa gaya!", "en": "That was fun!" },
     { "id": "kill-beta", "moment": "kill", "tier": "spicy", "hi": "ले बेटा!", "hiLatin": "Le beta!", "en": "Take that!" },

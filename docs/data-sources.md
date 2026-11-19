@@ -46,7 +46,8 @@ The gunshot takes start 3 ms before each detected onset and keep a short tail; t
 | Sounds | Source | Author | License |
 |---|---|---|---|
 | Wordless efforts: jump and climb grunts, pain and death cries (`voice/effort/*`) | [Male Grunt/Yelling sounds](https://opengameart.org/content/male-gruntyelling-sounds), vocalist 3: `3grunt1` to `3grunt6` and ten `3yell` takes | HaelDB | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) (also offered as OGA-BY 3.0) |
-| English lines, placeholders until recorded (`voice/en/*`) | Synthesised with [Piper](https://github.com/OHF-Voice/piper1-gpl) 1.3 and its voice [`en_US-norman-medium`](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/norman/medium), trained from scratch on public-domain LibriVox recordings | Bryce Beattie (voice) | Voice model MIT, training data public domain; the generated audio carries no licence |
+| Thirteen English lines (`voice/en/*`, the lines in `STOCK_EN` of `scripts/audio/voices.py`): the male takes of reloading, cover me, fire in the hole, look out, get down, sniper, medic, call for backup, target destroyed, go go go, ready, mission completed and mission failed | [Voiceover Pack](https://opengameart.org/node/48225), professionally voiced; fetched by `scripts/audio/fetch.sh` with a SHA-256 check | Kenney (kenney.nl) | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| The other English lines | Silent until recorded. They were text-to-speech placeholders (Piper, voice `en_US-norman-medium`), taken out because they sounded synthetic; `PIPER=1 python3 scripts/audio/voices.py --only en` still makes them for testing | | |
 | Hindi lines (`voice/hi/*`) | Recorded by the project's author; silent until recorded (no synthesised placeholder) | | |
 
 ## Memes
