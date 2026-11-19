@@ -2,7 +2,7 @@ import {
   ACESFilmicToneMapping, DirectionalLight, Group, HemisphereLight, Matrix4, Mesh, MeshBasicMaterial, Object3D, PCFShadowMap, PerspectiveCamera, PlaneGeometry, PointLight, Quaternion,
   RenderPipeline, Scene, Vector3, DefaultLoadingManager, WebGPURenderer, LineSegments, type BufferGeometry, type Node,
 } from "three/webgpu";
-import { float, getViewPosition, int, length, rtt, luminance, mix, mrt, normalize, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec2, vec3, vec4, fract, dot, screenCoordinate } from "three/tsl";
+import { clamp, float, getViewPosition, int, length, rtt, luminance, mix, mrt, normalize, normalView, output as sceneOutput, pass, renderOutput, screenUV, smoothstep, step as below, uniform, uv, vec2, vec3, vec4, fract, dot, screenCoordinate } from "three/tsl";
 import { radialBlur } from "three/addons/tsl/display/radialBlur.js";
 import { aimShafts, ATMOSPHERE, atmosphere, sunward } from "./atmosphere";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
@@ -190,6 +190,9 @@ function paint(): Promise<void> {
 
 // The tone mapping's exposure, which SMAA's edge detection also uses.
 const EXPOSURE = 1.0;
+// The puddles' smeared reflection, kept at full strength on the water and at this share on the wet
+// street round it, so a far puddle still ends at a line.
+const WATER_EDGE = { street: 0.2 };
 // The grade's tint for the shadows and for the highlights (mixed by brightness): cool, blue-grey
 // shadows and only a little warmth in the light, as in Saltline's frames. The lamps' sodium orange
 // is warm enough; warmer highlights and shadows turned whole walls orange in a blind test.
@@ -477,7 +480,14 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
       streaks = streaks.add(reflected.sample(uv().add(vec2(0, jitter.add(k + 0.5).mul(0.0042)))).rgb.mul(weight));
       total += weight;
     }
-    occluded = occluded.add(streaks.mul(2 / total));
+    // The smear is a fixed share of the screen, so far away it spans metres of street and carried the
+    // reflections out over the dry ground round each puddle: the far water had no edge and the whole
+    // street read as one sheet of mirror. The smeared reflection is kept only where this pixel is
+    // itself water, read at full resolution, so every puddle ends at its own line at any distance.
+    // The wet street round the puddles keeps a faint share of it (WATER_EDGE.street), as wet
+    // paving does give a dim, smeared reflection, much weaker than the water's.
+    const kept = mix(float(WATER_EDGE.street), float(1), clamp(water.div(0.9), 0, 1));
+    occluded = occluded.add(streaks.mul(2 / total).mul(kept));
   }
   const shaded = quality.smaa ? smaa(vec4(occluded.mul(EXPOSURE).max(0).pow(float(1 / 2.2)), 1)).getTextureNode().rgb.pow(float(2.2)).div(EXPOSURE) : occluded;
   // The clouds are lit by the scene's own sun and sky and by the lamps' light in the air.
