@@ -2,9 +2,9 @@ import {
   AdditiveBlending, BoxGeometry, BufferGeometry, CanvasTexture, Color, CylinderGeometry, DoubleSide, DynamicDrawUsage, Group, InstancedBufferAttribute,
   InstancedMesh, Matrix4, Mesh, MeshBasicMaterial, MeshStandardMaterial, Object3D,
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
-  Vector3, type Material as SurfaceMaterial,
+  Vector3, type Material as SurfaceMaterial, type Node,
 } from "three/webgpu";
-import { abs, clamp, color, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, transformNormalToView, vec2, vec3 } from "three/tsl";
+import { abs, clamp, color, dot, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, max, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, transformNormalToView, uv, vec2, vec3 } from "three/tsl";
 import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleNormal, setIndoors, WEATHER } from "./wetness";
 import { noiseVolume } from "./noiseVolume";
 import { SHOP_GLASS } from "./shopGlass";
@@ -615,6 +615,11 @@ export interface BuiltMap {
 
 type NodeOptions = ConstructorParameters<typeof MeshStandardNodeMaterial>[0];
 
+// The paving's evenness. blurLevel: the level of the 1024 px picture (4 m across) whose texels
+// span about a slab; even: how much of each slab's own shade is taken out (0 to 1); broad: the
+// gentle world-space unevenness put back (± this fraction).
+const PAVING = { blurLevel: 6, even: 0.85, broad: 0.07 };
+
 // By `day` the windows of the upper floors show no lit rooms, only dark glass.
 export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[], kit = new Map<string, KitPiece>(), day = false): BuiltMap {
   const owned: CanvasTexture[] = [];
@@ -661,16 +666,28 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const damp = dampNode(P);
   // A shade glossier than before (0.8 times the roughness), with the fewer puddles (wetness.ts).
   const sheen = mix(float(0.336), float(0.64), smoothstep(0.35, 0.65, texture3D(noiseVolume(), vec3(P.x.div(7), float(0.55), P.z.div(7))).g));
-  const street = (options: NodeOptions): MeshStandardNodeMaterial => {
+  const street = (options: NodeOptions, tone: Node<"float"> = float(1)): MeshStandardNodeMaterial => {
     const material = new MeshStandardNodeMaterial(options);
     material.normalScale.set(0.5, 0.5);
     // Dry by day (WEATHER.wet 0): the street keeps its own colour and roughness.
-    material.colorNode = materialColor.mul(mix(mix(mix(float(1), float(0.78), WEATHER.wet), float(0.64), damp), float(0.72), wet));
+    material.colorNode = materialColor.mul(tone).mul(mix(mix(mix(float(1), float(0.78), WEATHER.wet), float(0.64), damp), float(0.72), wet));
     const wetRough = materialRoughness.mul(mix(float(1), sheen, WEATHER.wet));
     material.roughnessNode = mix(mix(wetRough, wetRough.mul(0.55), damp), float(0.14), wet);
     material.normalNode = mix(materialNormal, transformNormalToView(rippleNormal(P)), wet);
     return material;
   };
+  // The paving photo's slabs each have their own shade, from pale to dark, so the street read as a
+  // checkerboard. Each pixel is scaled by how far its slab's average (a blurred level of the
+  // picture, about half a metre across) lies from the picture's average: the slabs come out near
+  // one shade while the grain, the chips and the joints stay. Broad patches a few metres across,
+  // laid in world space, give back a gentler unevenness that does not repeat with the tiles.
+  const paving = texture(textures.pavement, uv().mul(vec2(textures.pavement.repeat.x, textures.pavement.repeat.y)));
+  const LUMA = vec3(0.3, 0.59, 0.11);
+  const slabShade = dot(paving.level(float(PAVING.blurLevel)).rgb, LUMA);
+  const pictureShade = dot(paving.level(float(10)).rgb, LUMA);
+  const evened = mix(float(1), clamp(pictureShade.div(max(slabShade, 0.02)), 0.6, 1.6), PAVING.even);
+  const broad = mix(float(1 - PAVING.broad), float(1 + PAVING.broad), clamp(mx_fractal_noise_float(vec3(P.x.mul(0.28), 0.4, P.z.mul(0.28))).mul(0.5).add(0.5), 0, 1));
+  const pavingTone = evened.mul(broad);
   const brick = (color: number): MeshStandardNodeMaterial => wall({ map: textures.brick, normalMap: textures.brickNormal, color, roughness: 0.92 });
   const plaster = (color: number): MeshStandardNodeMaterial => wall({ map: textures.plaster, normalMap: textures.plasterNormal, color, roughness: 0.95 });
   const concrete = (color: number): MeshStandardNodeMaterial => wall({ map: textures.concrete, normalMap: textures.concreteNormal, color, roughness: 0.9 });
@@ -683,7 +700,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
     shopGreen: wall({ color: 0x1d3b36, metalness: 0.1, roughness: 0.55 }), barRed: wall({ color: 0x5a1a1f, metalness: 0.1, roughness: 0.55 }), tile: std({ map: textures.tiles, normalMap: textures.tilesNormal, roughness: 0.3 }),
     floor: std({ map: textures.woodFloor, normalMap: textures.woodFloorNormal, roughness: 0.62 }),
     lampGlow: glow(0xffc27a, 4), sconce: glow(0xffb070, 3.5), bottle: glow(0x6fd0c0, 0.9),
-    pavement: street({ map: textures.pavement, normalMap: textures.pavementNormal, color: 0xa29d97, roughness: 0.85 }),
+    pavement: street({ map: textures.pavement, normalMap: textures.pavementNormal, color: 0xa29d97, roughness: 0.85 }, pavingTone),
     asphalt: street({ map: textures.asphalt, normalMap: textures.asphaltNormal, color: 0x7d7d7d, roughness: 0.92 }),
     photoCafe: std({ map: textures.storefrontCafe, emissive: 0xffffff, emissiveMap: textures.storefrontCafe, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
     photoStone: std({ map: textures.storefrontStone, emissive: 0xffffff, emissiveMap: textures.storefrontStone, emissiveIntensity: 0.62, roughness: 0.15, metalness: 0.2 }),
