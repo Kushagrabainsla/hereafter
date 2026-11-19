@@ -15,6 +15,7 @@ import { QUALITY, type GraphicsQuality } from "./quality";
 import { puddleNode, rainTime, setWet } from "./wetness";
 import { LOOKS, type TimeOfDay } from "./timeOfDay";
 import { lampLight, Rain } from "./rain";
+import { safestSpawn } from "./collision";
 import { Blaze } from "./blaze";
 import { bakeSky } from "./skyVolume";
 import { LampHaze } from "./lampHaze";
@@ -91,7 +92,8 @@ export interface MapViewer {
   traceShot: (ray: ShotRay) => number;
   showShot: (event: CombatEvent, local: boolean) => void;
   setSpawnSlot: (slot: number) => void;
-  respawn: () => void;
+  // Back on the feet at the map's spawn farthest from the given enemies (their feet, east and north).
+  respawn: (enemies?: { east: number; north: number }[]) => void;
   // Hold to aim down the sights of the gun in hand; false to stop.
   setAiming: (aiming: boolean) => void;
   setWeapon: (kind: WeaponKind) => void;
@@ -878,8 +880,8 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     setSpawnSlot(slot) {
       player.setSpawnSlot(slot);
     },
-    respawn() {
-      player.reset(arena);
+    respawn(enemies = []) {
+      player.reset(arena, safestSpawn(data, enemies));
     },
     setAiming(aiming) { aimWanted = aiming; },
     setWeapon(kind) {

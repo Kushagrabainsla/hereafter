@@ -93,7 +93,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 | Throw what you carry | click, hold for more power |
 | Bandage your wounds | <kbd>B</kbd> |
 | Frag grenade, smoke grenade | <kbd>G</kbd>, <kbd>T</kbd> |
-| Respawn, three seconds after you fall | <kbd>Enter</kbd> |
+| Respawn, three seconds after you fall (by itself after five) | click, <kbd>Space</kbd> or <kbd>Enter</kbd> |
 | Scoreboard | hold <kbd>Tab</kbd> |
 | Mute | <kbd>M</kbd> |
 | Show the controls | <kbd>H</kbd> |

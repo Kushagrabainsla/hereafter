@@ -18,6 +18,11 @@ export interface WeaponDefinition {
   reloadMs: number;
 }
 
+// How long a fallen player waits before they can respawn; how long a respawned player takes no
+// damage (it ends at once when they fire or throw); and when the game respawns a fallen player by
+// itself. All counted in milliseconds, the last from the fall.
+export const RESPAWN = { waitMs: 3000, protectMs: 2000, autoMs: 5000 };
+
 // How many milliseconds early the host accepts a shot (see the attack rule in matchState.ts).
 export const FIRE_TOLERANCE_MS = 25;
 

@@ -3,7 +3,7 @@ import {
   targetHit, damageAt, shotRay, makeWeaponPickups, bloomAfterShot, currentBloom, deviateAim, spreadDegrees, carriedMass, loadEffects, smashShare, strikeDamage, strikeKnock, armSpread, reloadTime, burnSeconds, catchesAt, EXTINGUISHER_RETURN_MS, POWDER_SECONDS, SPRAY_MS, SPRAY_REACH, BURN_DAMAGE, BURN_MS,
   DOUSE_RADIUS, EXPLOSIVE_CATCHES, FIRE_DAMAGE, FIRE_HEAT, FIRE_REACH, FIRE_STEP_MS, FRAG_HEAT, FRAG_LIGHTS, FUEL_HEAT, MAX_FIRES, POOL_MS, POOL_RADIUS, SCRAPS_MS, SCRAPS_RADIUS,
   ARM_WOUND_DAMAGE, BANDAGE_MS, BANDAGES_PER_LIFE, BLEED_DRIP_MS, BLEED_LONGEST_MS, BLEED_MIN_DAMAGE, BLEED_PER_WOUND_MS, LEG_WOUND_DAMAGE,
-  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, FIRE_TOLERANCE_MS,
+  EAT_MS, FOOD, FOOD_KINDS, FOOD_RETURN_MS, FULL_HEALTH, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, FIRE_TOLERANCE_MS, RESPAWN,
   type FoodKind, type GunKind, type HitZone, type WeaponKind, type WeaponPickup,
 } from "./combatRules";
 import { type ShotRay } from "../world/physics";
@@ -364,6 +364,8 @@ export class MatchState {
   private present = new Set<string>();
   // Practice targets: in the match, but never enough to start a round.
   private dummies = new Set<string>();
+  // Until when each player who has just respawned takes no damage (RESPAWN.protectMs).
+  private shielded = new Map<string, number>();
   private now = 0;
 
   constructor(private data: ArenaData, private onChange: (snapshot: CombatSnapshot) => void, private world?: CombatWorld) {
@@ -386,6 +388,7 @@ export class MatchState {
     this.heat.clear();
     this.present.clear();
     this.dummies.clear();
+    this.shielded.clear();
     this.onChange(this.snapshot);
   }
 
@@ -613,6 +616,8 @@ export class MatchState {
       const { kills, deaths, intent: handled, name, voice } = player;
       Object.assign(player, freshPlayer(), { kills, deaths, intent: handled, name, voice });
       this.removePose(actor);
+      // A player who has just come back takes no damage for a moment, until they fire or throw.
+      this.shielded.set(actor, now + RESPAWN.protectMs);
       this.emit({ kind: "respawn", actor });
       this.changed();
       return true;
@@ -738,6 +743,7 @@ export class MatchState {
     }
     // The wait after a round is a ceasefire.
     if ((intent.kind === "throw" || intent.kind === "attack") && this.snapshot.round.phase === "over") return false;
+    if (intent.kind === "throw" || intent.kind === "attack") this.shielded.delete(actor);
     if (intent.kind === "throw") {
       const aim = intent.aim, smoke = intent.smoke === true, fuse = smoke ? SMOKE_FUSE_MS : GRENADE_FUSE_MS;
       if (!pose || !fresh || (smoke ? player.smokes : player.grenades) <= 0 || now - (this.lastThrow.get(actor) ?? 0) < THROW_COOLDOWN_MS
@@ -960,12 +966,13 @@ export class MatchState {
     const victim = this.snapshot.players[targetId];
     const damage = Math.min(victim?.health ?? 0, Math.max(0, Math.round(amount)));
     if (!victim || damage <= 0) return;
+    if ((this.shielded.get(targetId) ?? 0) > this.now) return;
     victim.health -= damage;
     this.bandaging.delete(targetId);
     if (victim.health > 0) this.wound(victim, targetId, damage, event);
     if (victim.health === 0) {
       victim.deaths += 1;
-      victim.respawnAfter = this.now + 3000;
+      victim.respawnAfter = this.now + RESPAWN.waitMs;
       victim.reloadUntil = 0;
       victim.bleedUntil = 0;
       victim.bleedBy = "";
@@ -1244,7 +1251,7 @@ export class MatchState {
     }
     Object.assign(this.snapshot, { taken: [], pickupReturns: {}, entities: {}, grenades: [], drops: [], open: {}, fires: [] });
     this.heat.clear();
-    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash, this.drips, this.bandaging]) map.clear();
+    for (const map of [this.lastAttack, this.lastThrow, this.bloom, this.equipUntil, this.lastUse, this.lastStruck, this.lastSmash, this.drips, this.bandaging, this.shielded]) map.clear();
     this.emit({ kind: "round", actor: "" });
   }
 

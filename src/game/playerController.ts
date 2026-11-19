@@ -187,10 +187,10 @@ export class PlayerController {
     this.reset(arena);
   }
 
-  reset(arena: Arena): void {
+  // `spawn` is where to start; left out, the spawn of this player's slot.
+  reset(arena: Arena, spawn = spawnPoint(this.data, this.spawnSlot)): void {
     this.arena = arena;
     this.physics.setArena(arena);
-    const spawn = spawnPoint(this.data, this.spawnSlot);
     const position = this.physics.reset(spawn.east, spawn.north);
     this.east = position.east;
     this.north = position.north;

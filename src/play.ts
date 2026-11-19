@@ -2,7 +2,7 @@ import { MARKET_ARENA } from "./world/nightMarket";
 import { createMapViewer, type MapViewer } from "./world/mapViewer";
 import { newRoomCode, normalizeRoomCode, PeerRoom } from "./network/peerRoom";
 import { selfId } from "trystero";
-import { BANDAGE_MS, BLEED_DRIP_MS, SPRAY_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, WEAPONS, type GunKind, type WeaponKind } from "./game/combatRules";
+import { BANDAGE_MS, BLEED_DRIP_MS, SPRAY_MS, carriedMass, EAT_MS, NO_SPRINT_LEG, reloadTime, FOOD, FULL_HEALTH, MAGAZINE_LABEL, MAGAZINES_PER_PICKUP, MAX_SPARE_MAGAZINES, PICKUP_HEIGHT, PICKUP_REACH, RESPAWN, WEAPONS, type GunKind, type WeaponKind } from "./game/combatRules";
 import { standings, KILL_LIMIT, MatchState, ROUND_MS, type CombatEvent, type CombatIntent, type CombatPlayer, type CombatSnapshot } from "./game/matchState";
 import { gameAudio } from "./game/gameAudio";
 import { PlayerVoices } from "./game/playerVoices";
@@ -113,6 +113,7 @@ let match: MatchState | null = null;
 let lastEventId = 0;
 let lastLocalAttack = 0;
 let lastDryFire = 0;
+let respawnAskedAt = 0;
 let pendingShot = 0;
 let triggerHeld = false;
 let sprayHeld = false;
@@ -417,7 +418,11 @@ function onMatchChange(state: CombatSnapshot): void {
   }
   deathOverlay.hidden = player.health > 0;
   viewer?.setLocalDead(player.health <= 0);
-  if (wasDead && player.health > 0) viewer?.respawn();
+  if (wasDead && player.health > 0) {
+    // Back at the spawn farthest from the living enemies, with a moment of protection.
+    viewer?.respawn(Object.entries(state.players).flatMap(([id, other]) => { const pose = id !== selfId && other.health > 0 ? match?.poseAt(id) : undefined; return pose ? [{ east: pose.east, north: pose.north }] : []; }));
+    toast("Back in · protected for 2 s or until you fire");
+  }
   syncPause();
   gameAudio.setDown(player.health <= 0);
   grenadeCount.textContent = player.grenades ? "● ".repeat(player.grenades).trim() : "—";
@@ -925,7 +930,9 @@ document.addEventListener("keydown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (!launched || event.repeat || event.altKey || event.metaKey || dialogOpen() || document.activeElement instanceof HTMLInputElement) return;
   const key = gameKey(event);
-  if (!["f", "e", "g", "t", "b", "1", "2", "r", "m", "enter"].includes(key)) return;
+  if (!["f", "e", "g", "t", "b", "1", "2", "r", "m", "enter", " "].includes(key)) return;
+  // Space respawns a fallen player; otherwise it is the jump, which the controller reads.
+  if (key === " " && (match?.player(selfId)?.health ?? 1) > 0) return;
   event.preventDefault();
   if (key === "m") {
     gameAudio.setMuted(!gameAudio.isMuted());
@@ -936,7 +943,7 @@ document.addEventListener("keydown", (event) => {
   else if (key === "b") bandage();
   else if (key === "e") { if (interact()) viewer?.skipLean(); }
   else if (key === "r") reload();
-  else if (key === "enter") submit({ kind: "respawn" });
+  else if (key === "enter" || key === " ") submit({ kind: "respawn" });
   else {
     // Reaching for a weapon lets go of whatever the hands hold.
     viewer?.putDown();
@@ -1048,7 +1055,10 @@ window.setInterval(() => {
   }
   if (player?.health === 0) {
     const seconds = Math.max(0, Math.ceil((player.respawnAfter - roomClock()) / 1000));
-    respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : "Press Enter to respawn";
+    // Enter, Space or a click respawns; the game does it by itself 5 s after the fall.
+    const automatic = Math.max(0, Math.ceil((player.respawnAfter - RESPAWN.waitMs + RESPAWN.autoMs - roomClock()) / 1000));
+    respawnHint.textContent = seconds > 0 ? `Respawn in ${seconds}…` : `Click or press Space to respawn · back in ${automatic} s`;
+    if (seconds <= 0 && automatic <= 0 && Date.now() - respawnAskedAt > 1000) { respawnAskedAt = Date.now(); submit({ kind: "respawn" }); }
   }
   // The coordinator keeps everyone's name and voice; this player's go again until they show there.
   if (player && (player.name !== playerName || player.voice !== voiceChoice) && Date.now() - nameSentAt > 1500) {
@@ -1173,6 +1183,8 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
         if (!launched) return;
         if (event.button === 2) { viewer?.setAiming(true); return; }
         if (event.button !== 0) return;
+        // A fallen player's click respawns them.
+        if ((match?.player(selfId)?.health ?? 1) <= 0) { submit({ kind: "respawn" }); return; }
         if (document.pointerLockElement === canvas) { triggerHeld = true; attack(); }
         else pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() };
       };
