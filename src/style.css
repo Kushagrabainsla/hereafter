@@ -50,6 +50,10 @@ button { font: inherit; }
 
 /* Incoming damage: a red arc around the crosshair pointing toward the attacker. */
 .damage-direction { position: absolute; z-index: 3; top: 50%; left: 50%; width: 0; height: 0; pointer-events: none; }
+/* Low health: the edges of the view darken and turn red below 35 health (`lowHealth` in play.ts sets --low, 0 to 1). Near death it beats slowly. */
+.low-health { position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: calc(var(--low, 0) * .9); background: radial-gradient(ellipse at center, transparent 45%, rgba(70, 0, 0, .35) 72%, rgba(120, 6, 4, .85) 100%); transition: opacity .35s ease-out; }
+.low-health.beat { animation: low-beat 1.1s ease-in-out infinite; }
+@keyframes low-beat { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.45); } }
 .damage-arc { position: absolute; left: -118px; top: -118px; width: 236px; height: 236px; border: 7px solid transparent; border-top-color: rgba(255, 58, 46, .92); border-radius: 50%; filter: drop-shadow(0 0 7px rgba(255, 40, 30, .7)); transform: rotate(var(--angle)); animation: damage-arc 1.3s ease-out forwards; }
 @keyframes damage-arc { 0% { opacity: 1; } 55% { opacity: .85; } 100% { opacity: 0; } }
 

@@ -60,6 +60,9 @@ const roomStatus = element<HTMLElement>("room-status");
 const healthNumber = element<HTMLElement>("health-number");
 const healthBar = element<HTMLElement>("health-bar");
 const healthFill = element<HTMLElement>("health-fill");
+const lowHealth = element<HTMLElement>("low-health");
+// The health below which the edges of the view turn red.
+const LOW_HEALTH = 35;
 const weaponName = element<HTMLElement>("weapon-name");
 const ammoCount = element<HTMLElement>("ammo-count");
 const scoreLabel = element<HTMLElement>("score-label");
@@ -311,20 +314,34 @@ function replay(target: HTMLElement, ...classes: string[]): void {
 }
 
 // Point an arc from the crosshair toward the attacker. Screen right is forward x up,
-// which is (-cos h, sin h) in east/north for heading h.
-function showDamageDirection(from: { x: number; z: number }): void {
-  if (!viewer) return;
+// which is (-cos h, sin h) in east/north for heading h. Null when the attacker is on top of you.
+function arcAngle(from: { x: number; z: number }): number | null {
+  if (!viewer) return null;
   const pose = viewer.playerPose();
   const heading = pose.heading * Math.PI / 180;
   const east = from.x - pose.east, north = from.z - pose.north;
-  if (Math.hypot(east, north) < 0.3) return;
-  const angle = Math.atan2(-east * Math.cos(heading) + north * Math.sin(heading), east * Math.sin(heading) + north * Math.cos(heading));
+  if (Math.hypot(east, north) < 0.3) return null;
+  return Math.atan2(-east * Math.cos(heading) + north * Math.sin(heading), east * Math.sin(heading) + north * Math.cos(heading));
+}
+
+// The place each arc on the screen points at. Every frame the arcs turn as the player turns, so
+// an arc keeps pointing at where the shot came from; before, it kept the angle it was drawn with.
+const arcSources = new Map<HTMLElement, { x: number; z: number }>();
+function showDamageDirection(from: { x: number; z: number }): void {
+  const angle = arcAngle(from);
+  if (angle === null) return;
   const arc = document.createElement("div");
   arc.className = "damage-arc";
   arc.style.setProperty("--angle", `${angle}rad`);
-  arc.addEventListener("animationend", () => arc.remove());
+  arcSources.set(arc, { x: from.x, z: from.z });
+  arc.addEventListener("animationend", () => { arcSources.delete(arc); arc.remove(); });
   damageDirection.appendChild(arc);
-  while (damageDirection.children.length > 4) damageDirection.firstElementChild?.remove();
+  while (damageDirection.children.length > 4) { const oldest = damageDirection.firstElementChild as HTMLElement | null; if (!oldest) break; arcSources.delete(oldest); oldest.remove(); }
+  if (arcSources.size === 1) requestAnimationFrame(turnArcs);
+}
+function turnArcs(): void {
+  for (const [arc, from] of arcSources) { const angle = arcAngle(from); if (angle !== null) arc.style.setProperty("--angle", `${angle}rad`); }
+  if (arcSources.size) requestAnimationFrame(turnArcs);
 }
 
 function showElimination(event: CombatEvent): void {
@@ -394,6 +411,10 @@ function onMatchChange(state: CombatSnapshot): void {
   healthBar.setAttribute("aria-valuenow", String(player.health));
   healthBar.classList.toggle("low", player.health <= 35);
   healthFill.style.width = `${player.health}%`;
+  // Below LOW_HEALTH the edges of the view turn red, more as health falls, and beat near death.
+  const low = player.health > 0 ? Math.sqrt(Math.max(0, Math.min(1, (LOW_HEALTH - player.health) / LOW_HEALTH))) : 0;
+  lowHealth.style.setProperty("--low", low.toFixed(2));
+  lowHealth.classList.toggle("beat", player.health > 0 && player.health <= 15);
   weaponName.textContent = player.powder > 0 ? "Fire extinguisher" : WEAPONS[player.active].label;
   showAmmo(player);
   if (player.powder > 0) ammoCount.textContent = `${Math.ceil(player.powder)} S OF POWDER`;

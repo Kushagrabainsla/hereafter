@@ -34,7 +34,7 @@ Positioned sounds are folded to mono, then pass an HRTF panner with inverse dist
 
 ## Visual feedback
 
-The hit marker is four strokes around the crosshair: white for a hit, amber for a headshot, and larger and red for an elimination, with the damage dealt underneath. An elimination also shows a banner with the player's name, headshot, weapon and distance, and bumps the kill count; every elimination in the room goes in the kill feed at the top right. Damage taken shows a red arc around the crosshair pointing at the attacker, computed from the shot's origin and the camera's screen-right vector, alongside the existing red vignette.
+The hit marker is four strokes around the crosshair: white for a hit, amber for a headshot, and larger and red for an elimination, with the damage dealt underneath. An elimination also shows a banner with the player's name, headshot, weapon and distance, and bumps the kill count; every elimination in the room goes in the kill feed at the top right. Damage taken shows a red arc around the crosshair pointing at the attacker, computed from the shot's origin and the camera's screen-right vector, alongside the existing red vignette. The arc turns every frame as the player turns, so it keeps pointing at where the shot came from (`turnArcs` in `src/play.ts`); before, it kept the angle it was drawn with. Below 35 health the edges of the view darken and turn red, more as health falls (opacity 0.34 at 30 health, 0.77 at 10), and at 15 health or less the red beats slowly (`LOW_HEALTH`, `.low-health` in `style.css`). Before, only the health bar turned red.
 
 ## Measurements
 
