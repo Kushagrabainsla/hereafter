@@ -110,8 +110,8 @@ def make_materials():
     material("paper_yellow", 0xe8b84a, 0.0, 0.7, emit=0xffb04a, strength=0.6)
     material("wicker", 0xb08850, 0.0, 0.85)
     material("extinguisher_red", 0xb3140f, 0.3, 0.35)
-    material("fuel_red", 0x9e1b14, 0.4, 0.45)
-    material("hazard", 0xf2c230, 0.0, 0.5)
+    material("fuel_red", 0x6e2418, 0.3, 0.55)
+    material("hazard", 0xa88a3a, 0.0, 0.75)
     for i, color in enumerate(SLEEVES):
         material(f"sleeve{i}", color, 0.0, 0.5)
     # Stall goods in the dull, worn colours of real shop stock: lacquered tea tins (the game wears
@@ -916,24 +916,46 @@ def extinguisher_held():
 
 def fuel_drum():
     r, h = 0.3, 0.9
-    parts = [cylinder("drum", r, h, (0, 0, h / 2), "Z", "fuel_red", verts=28)]
+    # The shell is cut in rings so it can carry the dents of years of knocks: a few round pushes
+    # inward, mostly low down where trolleys and boots hit, and a slight out-of-round.
+    # The dents keep clear of the hoops and the label. (angle, height, size, depth) in radians and m.
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=32, radius1=r, radius2=r, depth=h)
+    side = [e for e in bm.edges if abs(e.verts[0].co.z - e.verts[1].co.z) > h * 0.5]
+    bmesh.ops.subdivide_edges(bm, edges=side, cuts=17, use_grid_fill=False)
+    dents = [(1.9, 0.14, 0.09, 0.02), (3.6, 0.12, 0.07, 0.016), (4.9, 0.45, 0.08, 0.018), (2.6, 0.76, 0.07, 0.012)]
+    for v in bm.verts:
+        z = v.co.z + h / 2
+        rad = math.hypot(v.co.x, v.co.y)
+        if rad < r * 0.9 or z < 0.02 or z > h - 0.02:
+            continue
+        ang = math.atan2(v.co.y, v.co.x)
+        push = 0.004 * math.cos(2 * ang + 0.7)
+        for da, dz, size, depth in dents:
+            arc = (((ang - da + math.pi) % (2 * math.pi)) - math.pi) * r
+            push -= depth * math.exp(-(arc * arc + (z - dz) ** 2) / (size * size))
+        scale = (rad + push) / rad
+        v.co.x *= scale
+        v.co.y *= scale
+    bmesh.ops.translate(bm, vec=Vector((0, 0, h / 2)), verts=bm.verts)
+    parts = [mesh_object("drum", bm, "fuel_red")]
     for z in (0.3, 0.6):
         parts.append(ring("rib", r + 0.004, 0.012, (0, 0, z), "Z", "fuel_red", verts=28))
     for z in (0.015, h - 0.015):
         parts.append(ring("chime", r - 0.004, 0.014, (0, 0, z), "Z", "dark_steel", verts=28))
     parts.append(cylinder("bung", 0.03, 0.015, (0.17, 0.0, h + 0.005), "Z", "steel", verts=10))
     parts.append(cylinder("vent", 0.02, 0.015, (-0.17, 0.05, h + 0.005), "Z", "steel", verts=10))
-    # A hazard label on two sides: yellow with a black band.
-    for a in (0, 180):
+    # A printed hazard label on one side, faded and smaller than a stripe round the drum, between
+    # the hoops where no dent is.
+    for a in (35,):
         bm = bmesh.new()
-        bmesh.ops.create_cone(bm, cap_ends=False, segments=28, radius1=r + 0.002, radius2=r + 0.002, depth=0.24)
+        bmesh.ops.create_cone(bm, cap_ends=False, segments=64, radius1=r + 0.003, radius2=r + 0.003, depth=0.18)
         for v in list(bm.verts):
             ang = math.degrees(math.atan2(v.co.y, v.co.x))
-            if abs(((ang - a + 180) % 360) - 180) > 40:
+            if abs(((ang - a + 180) % 360) - 180) > 24:
                 bm.verts.remove(v)
         bmesh.ops.translate(bm, vec=Vector((0, 0, 0.45)), verts=bm.verts)
         parts.append(mesh_object("label", bm, "hazard"))
-    parts.append(ring("band", r + 0.004, 0.02, (0, 0, 0.45), "Z", "black", verts=28))
     return join(parts, "fuel_drum")
 
 PIECES = [door_glass, door_panel, door_french, door_steel, frame_steel, boards, ac_window, condenser, pipe_seg, pipe_shoe, pipe_head,

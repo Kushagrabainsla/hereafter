@@ -28,7 +28,7 @@ So a carbine round passes through a window, a crate, a bin, a stall seen from th
 | Cardboard box | 25 | flying cardboard |
 | Plastic crate | 45 | fragments |
 | Small and large wooden crate | 70 and 140 | splinters and planks |
-| Dining chair, folding table, dining table | 40, 70 and 120 | splinters and planks |
+| Dining chair, dining table | 40 and 120 | splinters and planks |
 | Plastic stool | 20 | fragments |
 | Market stall | 200 | its awning tears at 100; then splinters, planks and dust, and a low pile that stays as cover |
 | Fuel drum | 16 | vents burning fuel for 1.6 s, then bursts with a grenade's blast |
@@ -48,7 +48,7 @@ A stall takes 8 pistol hits or 12 carbine hits, or one grenade landing close by.
 
 ## Loose props
 
-Wooden crates, oil drums, trash cans, cardboard boxes and plastic crates are CC0 Poly Haven models (see [data sources](data-sources.md)), placed at fixed spots along the alley walls, in the cut-through, in the bar's upper room and in the restaurant kitchen. The furniture is loose too: dining chairs (5 kg), dining tables (18 kg), folding tables (9 kg), steel bar stools (9 kg) and plastic stools (1.2 kg), 54 pieces in the restaurant, the bar, the shops and the market alley. All 81 are Rapier rigid bodies with real masses, up to 95 kg for a part-filled drum (`src/world/nightMarket.ts`, `src/world/props.ts`).
+Wooden crates, oil drums, trash cans, cardboard boxes and plastic crates are CC0 Poly Haven models (see [data sources](data-sources.md)), placed at fixed spots along the alley walls, in the cut-through, in the bar's upper room and in the restaurant kitchen. The furniture is loose too: dining chairs (5 kg), dining tables (18 kg), steel-topped folding tables (9 kg), steel bar stools (9 kg) and plastic stools (1.2 kg), 54 pieces in the restaurant, the bar, the shops and the market alley. The steel tables and stools dent but do not break. All 81 are Rapier rigid bodies with real masses, up to 95 kg for a part-filled drum (`src/world/nightMarket.ts`, `src/world/props.ts`).
 
 **Each prop has one owner at a time** (`src/world/physics.ts`). A prop at rest has no owner and is held still on every peer, at no cost to anyone. The first peer to touch it owns it: its body becomes dynamic there and that peer simulates it, so the push responds at once with no wait on the network. A player's walk claims a prop through the character controller, which shoves it with the mass of the player's body and everything they carry. A shot or blast is resolved by the coordinating peer, which claims a free prop it hits; if someone else owns the prop, it forwards the impulse to the owner.
 

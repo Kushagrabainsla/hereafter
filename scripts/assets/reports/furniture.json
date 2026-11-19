@@ -53,7 +53,7 @@
    ],
    "materials": [
     "furn_alu",
-    "furn_laminate"
+    "furn_table_steel"
    ],
    "notes": "The market alley's folding tables, with magazines on top."
   },
@@ -287,5 +287,5 @@
   }
  },
  "triangles": 13842,
- "bytes": 467136
+ "bytes": 467976
 }

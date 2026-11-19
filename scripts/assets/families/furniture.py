@@ -33,6 +33,7 @@ def materials():
     material("furn_cushion", 0x5e1f2a, 0.0, 0.85)
     material("furn_fabric", 0x3d2a30, 0.0, 0.9)
     material("furn_laminate", 0xe9e2d0, 0.0, 0.4)
+    material("furn_table_steel", 0x8c9194, 1.0, 0.42)
     material("furn_alu", 0xb4b9bc, 0.9, 0.35)
     material("paint_plastic", 0xf2f2f2, 0.0, 0.35)
     material("furn_mirror", 0x6d7b84, 1.0, 0.06)
@@ -95,8 +96,9 @@ def bar_stool():
 
 
 def cafe_table():
-    """A street-food folding table: a cream laminate top on an aluminium frame."""
-    top = box("top", -0.55, 0.55, -0.55, 0.55, 0.73, 0.76, "furn_laminate", bev=0.01)
+    """A street-food folding table: a stainless steel top on an aluminium frame. A cream laminate
+    top read as a blank white slab under the street lights."""
+    top = box("top", -0.55, 0.55, -0.55, 0.55, 0.73, 0.76, "furn_table_steel", bev=0.01)
     edge = [box(f"edge{s}", -0.55, 0.55, s * 0.55 - 0.012, s * 0.55 + 0.012, 0.7, 0.73, "furn_alu") for s in (-1, 1)]
     edge += [box(f"edge_y{s}", s * 0.55 - 0.012, s * 0.55 + 0.012, -0.55, 0.55, 0.7, 0.73, "furn_alu") for s in (-1, 1)]
     legs = [tube(f"leg{i}", [(x, y, 0.7), (x * 1.04, y * 1.04, 0.0)], 0.014, "furn_alu", verts=6) for i, (x, y) in enumerate(((-0.48, -0.48), (0.48, -0.48), (-0.48, 0.48), (0.48, 0.48)))]

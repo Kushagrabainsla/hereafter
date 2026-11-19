@@ -1,5 +1,5 @@
 import { Color, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, MeshStandardNodeMaterial, Quaternion, Scene, Vector3, type BufferGeometry, type Material as SurfaceMaterial } from "three/webgpu";
-import { clamp, float, materialColor, materialRoughness, max, min, mix, normalWorld, positionGeometry, positionWorld, select, smoothstep, texture3D, uniform, vec2, vec3, vec4 } from "three/tsl";
+import { clamp, dot, float, materialColor, materialRoughness, max, min, mix, normalWorld, positionGeometry, positionWorld, select, smoothstep, texture3D, uniform, vec2, vec3, vec4 } from "three/tsl";
 import { skyShade } from "./skyVolume";
 import type { Node } from "three/webgpu";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -12,7 +12,7 @@ import { assetFetch } from "../assetStore";
 export interface PropModel { name: string; file: string; size: [number, number, number]; material: Material; mass: number }
 
 // Durability of breakable props; the rest dent and get thrown around but stay whole.
-const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16, dining_chair: 40, dining_table: 120, cafe_table: 70, plastic_stool: 20,
+const HEALTH: Record<string, number> = { crate_wood: 70, crate_wood_large: 140, cardboard_box: 25, plastic_crate: 45, fuel_drum: 16, dining_chair: 40, dining_table: 120, plastic_stool: 20,
   rubbish_bag: 30, pallet: 90, jerrycan: 40, water_bottle: 8, wet_floor_sign: 20, monobloc_chair: 35, clay_pot: 15, cement_sack: 60 };
 // Tyres lie flat and roll off a stack; pots are round too.
 const ROUND = new Set(["trash_can", "oil_drum", "fuel_drum", "tyre", "clay_pot"]);
@@ -24,11 +24,11 @@ export const FUEL_DRUM: PropModel = { name: "fuel_drum", file: "", size: [0.62, 
 // A timber pallet from the street family (scripts/assets/families/street.py), as found in alleys.
 export const PALLET: PropModel = { name: "pallet", file: "", size: [1.22, 0.144, 1.02], material: "wood", mass: 22 };
 // Furniture from the kit (scripts/assets/families/furniture.py), with what it really weighs. The
-// steel bar stools dent but do not break.
+// steel bar stools and the steel-topped folding tables dent but do not break.
 export const FURNITURE: PropModel[] = [
   { name: "dining_chair", file: "", size: [0.42, 0.85, 0.42], material: "wood", mass: 5 },
   { name: "dining_table", file: "", size: [0.8, 0.76, 0.8], material: "wood", mass: 18 },
-  { name: "cafe_table", file: "", size: [1.1, 0.76, 1.1], material: "wood", mass: 9 },
+  { name: "cafe_table", file: "", size: [1.1, 0.76, 1.1], material: "metal-thin", mass: 9 },
   { name: "bar_stool", file: "", size: [0.41, 0.75, 0.41], material: "metal-thin", mass: 9 },
   { name: "plastic_stool", file: "", size: [0.42, 0.46, 0.42], material: "plastic", mass: 1.2 },
 ];
@@ -53,6 +53,11 @@ const GRIME = vec3(0.55, 0.49, 0.41);
 // are measured in the model's own frame (its file puts the base at zero), so they follow the drum
 // when it is knocked over.
 const HEAVY = new Set(["oil_drum", "trash_can", "aircon_unit"]);
+// Coloured plastic left out in the sun loses its colour: the crate's scan comes new from the shop,
+// bright amber. How far each prop is faded toward grey (0 to 1). Faded and dusted cement sacks
+// read as chalky pink and lost a blind test in both orders, so they keep their print.
+const FADE: Record<string, number> = { plastic_crate: 0.4 };
+const CUTOUT = new Set(["plastic_crate"]);
 function weathered(source: MeshStandardMaterial, model?: PropModel, matrix?: Matrix4): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial();
   material.copy(source);
@@ -66,6 +71,9 @@ function weathered(source: MeshStandardMaterial, model?: PropModel, matrix?: Mat
   const wet = clamp(up.mul(0.7).add(low.mul(0.6)), 0, 1).mul(smoothstep(0.97, 1, outdoorNode(positionWorld))).mul(WEATHER.wet);
   let color: Node<"vec3"> = materialColor.mul(mix(vec3(1), GRIME, dirty));
   let rough: Node<"float"> = materialRoughness.add(dirty.mul(0.15));
+  const fade = model ? FADE[model.name] : undefined;
+  // Faded toward a slightly darker, warm grey: paper and plastic dull as they bleach.
+  if (fade) color = mix(color, vec3(dot(color.xyz, vec3(0.3, 0.59, 0.11))).mul(vec3(0.85, 0.82, 0.76)), fade);
   if (model && HEAVY.has(model.name)) {
     const P = uniform(matrix!).mul(vec4(positionGeometry, 1)).xyz;
     const height = model.size[1];
@@ -145,7 +153,9 @@ export class PropViews {
         gltf.scene.traverse((object) => {
           if (!(object instanceof Mesh)) return;
           const source = object.material as SurfaceMaterial;
-          const material = source instanceof MeshStandardMaterial && !source.transparent ? weathered(source, model, object.matrixWorld.clone()) : source;
+          // The crate's file blends its open slots; a hard cut-out sorts right and takes the weather.
+          if (CUTOUT.has(model.name) && source.transparent) { source.transparent = false; source.alphaTest = 0.5; source.depthWrite = true; }
+          const material =source instanceof MeshStandardMaterial && !source.transparent ? weathered(source, model, object.matrixWorld.clone()) : source;
           parts.push({ geometry: object.geometry, material, matrix: object.matrixWorld.clone() });
         });
         this.parts.set(model.name, parts);
