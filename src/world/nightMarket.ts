@@ -4,7 +4,7 @@ import {
   MeshStandardNodeMaterial, PlaneGeometry, PointLight, Quaternion, RepeatWrapping, SRGBColorSpace, Scene, Sprite, SpriteMaterial,
   Vector3, type Material as SurfaceMaterial, type Node,
 } from "three/webgpu";
-import { abs, clamp, color, dot, float, instancedDynamicBufferAttribute, materialColor, materialNormal, materialRoughness, max, mix, mx_fractal_noise_float, mx_noise_float, positionWorld, smoothstep, texture, texture3D, transformNormalToView, uv, vec2, vec3 } from "three/tsl";
+import { abs, clamp, color, dot, float, instancedDynamicBufferAttribute, materialColor, materialEmissive, materialNormal, materialRoughness, max, mix, mx_fractal_noise_float, mx_noise_float, normalLocal, normalView, positionLocal, positionWorld, sin, smoothstep, texture, texture3D, transformNormalToView, uv, vec2, vec3 } from "three/tsl";
 import { dampNode, outdoorAt, outdoorNode, puddleNode, rippleNormal, setIndoors, WEATHER } from "./wetness";
 import { noiseVolume } from "./noiseVolume";
 import { SHOP_GLASS } from "./shopGlass";
@@ -620,6 +620,10 @@ type NodeOptions = ConstructorParameters<typeof MeshStandardNodeMaterial>[0];
 // gentle world-space unevenness put back (± this fraction).
 const PAVING = { blurLevel: 6, even: 0.85, broad: 0.07 };
 
+// The paper lanterns' glow, as shares of the paper's lit strength: floor everywhere, band round the
+// middle, hot where the bulb shows through the side facing the eye; pleats and fibre vary it (±).
+const LANTERN = { floor: 0.55, band: 0.65, hot: 1.0, pleats: 0.07, fibre: 0.08 };
+
 // By `day` the windows of the upper floors show no lit rooms, only dark glass.
 export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propModels: PropModel[], kit = new Map<string, KitPiece>(), day = false): BuiltMap {
   const owned: CanvasTexture[] = [];
@@ -692,6 +696,24 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   const plaster = (color: number): MeshStandardNodeMaterial => wall({ map: textures.plaster, normalMap: textures.plasterNormal, color, roughness: 0.95 });
   const concrete = (color: number): MeshStandardNodeMaterial => wall({ map: textures.concrete, normalMap: textures.concreteNormal, color, roughness: 0.9 });
   const glow = (color: number, intensity: number): MeshStandardMaterial => std({ color: 0x000000, emissive: color, emissiveIntensity: intensity });
+  // A paper lantern is lit by one bulb inside: one even glow over the whole paper read as a lit
+  // blob. The paper is brightest round its middle and dims toward the caps, where it turns away
+  // from the bulb; the bulb shows as a hot spot through the side that faces the eye; the paper
+  // between the hoops is pleated, and its fibre is uneven. The middle band is found from the paper's
+  // slope, not its height: the paper stands upright round the middle and lies flat at the caps.
+  const lanternPaper = (color: number, intensity: number): MeshStandardNodeMaterial => {
+    const material = new MeshStandardNodeMaterial({ color: 0x000000, emissive: color, emissiveIntensity: intensity });
+    const y = positionLocal.y;
+    const band = smoothstep(0.9, 0.15, abs(normalLocal.y));
+    // Either way the lathe's normals point, the paper seen face on is the side toward the eye.
+    const facing = clamp(abs(normalView.z), 0, 1);
+    const hot = facing.mul(facing).mul(band);
+    const pleats = sin(y.mul(Math.PI * 2 / 0.026)).mul(LANTERN.pleats);
+    const fibre = texture3D(noiseVolume(), positionLocal.mul(6)).r.sub(0.5).mul(LANTERN.fibre * 2);
+    const shape = float(LANTERN.floor).add(band.mul(LANTERN.band)).add(hot.mul(LANTERN.hot)).mul(float(1).add(pleats).add(fibre));
+    material.emissiveNode = materialEmissive.mul(shape);
+    return material;
+  };
   const materials: Record<string, SurfaceMaterial> = {
     brickWarm: brick(0xc9a48c), brickDark: brick(0x9b7d6a), brickRed: brick(0xb08a74), brickCap: brick(0xa88672),
     plasterCream: plaster(0xe6cfaa), plasterTeal: plaster(0xa8c0b9), plasterSand: plaster(0xd9b98f), plasterOchre: plaster(0xc9a46a), plasterInside: plaster(0xe8dcc6),
@@ -1231,7 +1253,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
   });
   // Paper lanterns, orange and red, and the scorched, torn ones they become when shot.
   const lanternMeshes = [0, 1].map((color) => {
-    const spots = lanternSpots.filter((spot) => spot.color === color), paper = glow(color ? 0xff4a2a : 0xffa040, 2.6);
+    const spots = lanternSpots.filter((spot) => spot.color === color), paper = lanternPaper(color ? 0xff4a2a : 0xffa040, 2.6);
     const lit = instancedParts(kit.get("lantern"), spots.length, (material) => glowing(material) ? paper : material);
     const dark = instancedParts(kit.get("lantern_torn"), spots.length);
     root.add(...lit, ...dark);
@@ -1334,7 +1356,7 @@ export function buildNightMarket(scene: Scene, textures: SurfaceTextures, propMo
         // so lamps are told apart by name, not by place.
         lamps.daylight((id) => !/^lamp:(pendant|pass|records|pool-table|boba|dumplings|pho|noodles|tea|laundry)-?/.test(id));
         // Unlit by day, a paper lantern is coloured paper with only the sky glowing through it.
-        for (const { paper, hue } of lanternMeshes) { (paper as MeshStandardMaterial).color.setHex(hue); (paper as MeshStandardMaterial).emissiveIntensity = 0.12; }
+        for (const { paper, hue } of lanternMeshes) { paper.color.setHex(hue); paper.emissiveIntensity = 0.12; }
       }
       const list = manyLights ? many : pointLights.map(([x, y, z, color, intensity]) => [x, y, z, color, intensity * LAMP_LEVEL, 16] as [number, number, number, number, number, number]);
       const points = list.map((source) => {
