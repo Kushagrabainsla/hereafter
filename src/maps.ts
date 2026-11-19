@@ -31,8 +31,9 @@ export const MAPS: GameMap[] = [
 ];
 
 // Sounds every match uses, whatever the map: gunfire, footsteps, impacts and the like. Voices
-// and memes are loaded by choice instead.
+// and memes are loaded by choice instead, and the shops' music (8.5 MB) streams in when the
+// player first comes near a shop, so it never lengthens the loading screen.
 export const SHARED_FILES = ["audio/"];
-export const CHOSEN_FILES = ["audio/voice/", "audio/meme/"];
+export const CHOSEN_FILES = ["audio/voice/", "audio/meme/", "audio/music/"];
 
 export const mapById = (id: string): GameMap => MAPS.find((map) => map.id === id) ?? MAPS[0];

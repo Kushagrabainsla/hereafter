@@ -50,6 +50,21 @@ The gunshot takes start 3 ms before each detected onset and keep a short tail; t
 | The other English lines | Silent until recorded. They were text-to-speech placeholders (Piper, voice `en_US-norman-medium`), taken out because they sounded synthetic; `PIPER=1 python3 scripts/audio/voices.py --only en` still makes them for testing | | |
 | Hindi lines (`voice/hi/*`) | Recorded by the project's author; silent until recorded (no synthesised placeholder) | | |
 
+## Shop music
+
+`npm run build:music` (`scripts/audio/music.sh`) downloads each track into `assets-src/music`, checks it against its SHA-256, and makes `public/audio/music/<shop>.mp3`: the run-in and end cut off, two-second fades, mono at 24 kHz and 56 kbps, level evened. The 1920s records are public domain in the United States, where they were first published before 1926 (17 U.S.C. § 1401), with compositions published in 1923 and 1925.
+
+| Shop | Track | Author | License |
+|---|---|---|---|
+| Bar (`music/bar`) | [High on Loungin'](https://freemusicarchive.org/music/wax-lyricist/the-wax-lyricist/high-on-loungin/), first 150 s | Wax Lyricist | [CC0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| Noodle bar (`music/noodles`) | [Freeway Fumes](https://freemusicarchive.org/music/zane-little/new-peach-radio/freeway-fumes/), first 150 s | Zane Little | CC0 |
+| Boba shop (`music/boba`) | [Winter Blues](https://freemusicarchive.org/music/holiznacc0/winter-lofi/winter-blues), first 150 s | HoliznaCC0 | CC0 |
+| Tea house (`music/tea`) | [Floating Lanterns](https://freemusicarchive.org/music/John_Bartmann/chinese-valentine/floating-lanterns/), first 150 s | John Bartmann | CC0 |
+| Dumpling shop (`music/dumplings`) | [Dumplings For Two](https://freemusicarchive.org/music/John_Bartmann/chinese-valentine/dumplings-for-two/) | John Bartmann | CC0 |
+| Restaurant (`music/restaurant`) | [Long Way To Kunming](https://freemusicarchive.org/music/John_Bartmann/chinese-valentine/long-way-to-kunming/) | John Bartmann | CC0 |
+| Record shop (`music/records`) | [Tears](https://archive.org/details/78_tears_king-olivers-jazz-band-hardin-armstrong-joe-oliver-louis-armstrong-johnny-do_gbia0001053a) (OKeh 40000, 1923), Great 78 Project transfer | King Oliver's Jazz Band | Public domain in the US (published 1923) |
+| Laundry (`music/laundry`) | [The Midnight Waltz](https://archive.org/details/loc-jukebox-675580-the-midnight-waltz) (Columbia, 1925), Library of Congress National Jukebox | Selvin's Orchestra | Public domain in the US (published 1925; Public Domain Mark on the page) |
+
 ## Memes
 
 `npm run build:voices` also builds `public/audio/meme/` from `src/game/memes.json`: a clip added as `assets-src/memes/<code>.*` for a meme line, or the sound effect below. `npm run build:memes` (`scripts/audio/memes.sh`) downloads the sound effects' originals, checks each against its SHA-256, and makes `assets-src/memes/sfx/<name>.wav` from them with every step it took (pitch shifts, reverbs, the two arrangements), then builds them; run here it reproduced the shipped files byte for byte. Meme lines have no clips in the repository; see the [recording sheet](voice-lines.md#memes).

@@ -36,6 +36,13 @@ import { loadWeaponModels } from "../game/weaponModels";
 import { gameAudio, type AmbientSource } from "../game/gameAudio";
 import { GUN_FEEL, LANDING, SHAKE, ViewShake } from "../game/gunFeel";
 import { CONDENSER_SPOTS } from "./facades";
+
+// Each shop's music and where its speaker hangs, high in the room: [track, east, height, north].
+// The tracks are listed in docs/data-sources.md#shop-music.
+const SHOP_MUSIC: [string, number, number, number][] = [
+  ["bar", 22.8, 2.6, 8.5], ["records", 6.4, 2.5, -13.4], ["boba", 7, 2.5, 12.1], ["dumplings", 7, 2.5, 21],
+  ["noodles", -12.5, 2.5, 27.2], ["tea", -12.5, 2.5, -27], ["laundry", 21, 2.5, -20], ["restaurant", -12.6, 2.6, 2.4],
+];
 import { SoundStage } from "../game/soundStage";
 import { TOOL_MASS, armCarry, armSpread, armThrow, bloomAfterShot, CARRY_REACH, currentBloom, makeWeaponPickups, spreadDegrees, THROW_CHARGE_MS, throwSpeed, BODY_MASS, type GunKind, type WeaponKind } from "../game/combatRules";
 import { type Arena, type ArenaData } from "./arena";
@@ -863,11 +870,11 @@ export async function createMapViewer(container: HTMLElement, arena: Arena, even
     }
   });
 
-  // The market's own sounds: the condensers' fans and music from a speaker high in the bar's
-  // back corner.
+  // The market's own sounds: the condensers' fans, and music from a speaker high inside each shop,
+  // each its own recorded track (scripts/audio/music.sh), heard dull through the walls and glass.
   gameAudio.setAmbience([
     ...CONDENSER_SPOTS.map((at, index): AmbientSource => ({ id: `condenser-${index}`, kind: "condenser", at })),
-    { id: "bar-music", kind: "music", at: { x: 22.8, y: 2.6, z: 8.5 } },
+    ...SHOP_MUSIC.map(([shop, x, y, z]): AmbientSource => ({ id: `music-${shop}`, kind: "track", track: `music/${shop}`, at: { x, y, z } })),
   ]);
 
   return {

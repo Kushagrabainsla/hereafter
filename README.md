@@ -143,7 +143,7 @@ The map downloads while you choose. Press **DEPLOY**: the game goes full screen 
 - Dusk is a wet late afternoon: a low sun shines straight down the alleys through damp haze, the street is damp with a few puddles, and the city's taller blocks stand beyond the roofs. Day is a dry, clear afternoon. Choose either on the setup screen.
 - Surfaces age in code: walls weather in patches and darken at the foot, rust grows along edges and seams, and the air conditioners and drums yellow, grime over and rust at their rims. Windows show rooms with depth behind the glass.
 - Recorded gunshots, reloads and footsteps, placed in 3D: dulled by distance and walls, with close rounds cracking past you.
-- A market that sounds alive: traffic beyond the walls, whirring air conditioners, and music thumping from the bar. Inside the shops, shots and steps echo like a small room.
+- A market that sounds alive: traffic beyond the walls, whirring air conditioners, and real recorded music from the bar and the shops, each its own, dull through the walls. Inside the shops, shots and steps echo like a small room.
 
 ## 05 · Squad up
 
