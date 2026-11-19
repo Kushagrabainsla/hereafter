@@ -151,9 +151,13 @@ export const EXTINGUISHER_RETURN_MS = 45_000;
 
 // Hip-fire spread, as the half-angle of the cone in degrees. Moving, jumping and sliding
 // widen it, crouching steadies it, and sustained fire blooms it until the trigger rests.
-// Aiming down the sights halves it.
+//
+// Aimed down the sights, a round goes where the sights point: it keeps only AIM_SPREAD of the
+// stance's spread and none of the bloom. The recoil (gunFeel.ts) is what makes aimed fire hard,
+// and a player can learn to hold it. Before, aiming only halved the spread and the bloom, and an
+// aimed carbine burst still scattered at random by 0.6 degrees, 32 cm at 30 m.
 export interface AimState { moving: boolean; crouching: boolean; airborne: boolean; sliding: boolean; aiming?: boolean }
-export const AIM_SPREAD = 0.5;
+export const AIM_SPREAD = 0.15;
 
 const SPREAD: Record<WeaponKind, { base: number; moving: number; airborne: number; sliding: number; crouched: number; bloom: number; bloomMax: number; recovery: number }> = {
   pistol: { base: 0.3, moving: 2.2, airborne: 5, sliding: 3, crouched: 0.6, bloom: 0.35, bloomMax: 1.2, recovery: 3.5 },
@@ -164,7 +168,7 @@ const BLOOM_HOLD = 0.12;
 export function spreadDegrees(weapon: WeaponKind, state: AimState, bloom: number): number {
   const s = SPREAD[weapon];
   const factor = state.airborne ? s.airborne : state.sliding ? s.sliding : state.moving ? s.moving * (state.crouching ? 0.6 : 1) : state.crouching ? s.crouched : 1;
-  return (s.base * factor + bloom) * (state.aiming ? AIM_SPREAD : 1);
+  return state.aiming ? s.base * factor * AIM_SPREAD : s.base * factor + bloom;
 }
 
 // Bloom left from earlier shots once the trigger has rested for this many seconds.
