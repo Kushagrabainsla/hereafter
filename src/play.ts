@@ -1179,11 +1179,12 @@ function buildWorld(loading: Loading): Promise<MapViewer> {
     onStep(step) { loading.begin(STEP_OF[step] ?? "world"); },
     onStepProgress(step, fraction) { loading.progress(STEP_OF[step] ?? "world", fraction); },
     onHardLanding(speed) { submit({ kind: "fall", speed }); ownMeme("hardLanding"); },
-    // The crosshair's gap follows the spread, and it fades out as the sights come up: down the
-    // sights the gun's own sights mark the aim.
+    // The crosshair's gap follows the spread. As the sights come up its four strokes fade, and its
+    // centre dot stays, grows and turns red, on the top of the front sight: without it the small
+    // dark sights were lost against the street at dusk and the aim could not be seen.
     onAim(spreadPixels, aim) {
       crosshair?.style.setProperty("--gap", `${Math.max(3, spreadPixels).toFixed(1)}px`);
-      if (crosshair) crosshair.style.opacity = (1 - aim).toFixed(2);
+      crosshair?.style.setProperty("--aim", aim.toFixed(2));
     },
     onMetrics(metrics) {
       performanceLabel.textContent = `${metrics.renderer} · ${QUALITY_LABEL[qualityLevel]} · ${metrics.fps} FPS`;

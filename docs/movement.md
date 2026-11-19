@@ -118,7 +118,7 @@ A mouse move against the recoil is taken out of the recoil first. A player who h
 | Landing from a jump on the spot: dip of the eyes | 0 cm | 5.3 cm, lowest 42 ms after the landing, back after 330 ms |
 | Landing from a 2.5 m drop | 0 cm | 12.3 cm, lowest 58 ms after the landing, back after 350 ms |
 
-**Sights.** The zoom of the sights follows the aim (0 to 1) directly, and only the view's own field of view eases (wider in a sprint, narrower in a crouch; `AIM` in `gunFeel.ts`). The gun is drawn through a lens that depends on the aim alone. Before, the zoomed view eased on its own, behind the aim, and the gun's lens was worked out from both: on the way up, the gun shrank and then grew again, and the view went on zooming after the sights had arrived. The crosshair now fades out as the sights come up, and comes back as they go down.
+**Sights.** The zoom of the sights follows the aim (0 to 1) directly, and only the view's own field of view eases (wider in a sprint, narrower in a crouch; `AIM` in `gunFeel.ts`). The gun is drawn through a lens that depends on the aim alone. Before, the zoomed view eased on its own, behind the aim, and the gun's lens was worked out from both: on the way up, the gun shrank and then grew again, and the view went on zooming after the sights had arrived. As the sights come up, the crosshair's four strokes fade out, and its centre dot grows to 4 px and turns red, as an aim point on the top of the front sight. With the whole crosshair gone, the small dark sights were lost against the street at dusk and players could not see their aim. The sights were also a little off the point where the rounds go: the pistol's front sight stood 14 px high and 4 px right on a 1600 × 900 view, the carbine's 5 px high and 8 px right. `SIGHTS` in `authoredViewModel.ts` now has a side offset as well as a height, measured by projecting the front sight onto the screen while aiming and averaging 12 samples (`sightprobe.mjs` in the test kit). Both front sights now sit within 3 px of the centre on average; the steadied sway still moves them about 10 px either way.
 
 | Measured in play, every frame, carbine | Before | Now |
 |---|---|---|
@@ -126,7 +126,7 @@ A mouse move against the recoil is taken out of the recoil first. A player who h
 | Field of view the gun is drawn with, without the aim's own part: most it is off | 17.5° | 0.0° |
 | Gun size on screen on the way up | overshoots by 15.5% and comes back | changes one way only, no overshoot |
 | World zoom: time it goes on after the sights are up | 234 ms | 0 ms |
-| Crosshair opacity with the sights up | 1 | 0 |
+| Crosshair with the sights up | all of it | strokes gone; a 4 px red centre dot stays |
 | "Aiming" (steadier aim) starts when the sights are | past 50% | past 90% |
 
 ## Leaning, hit reactions and climbing

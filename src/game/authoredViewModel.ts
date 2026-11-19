@@ -44,9 +44,15 @@ function puffTexture(): CanvasTexture {
 interface Puff { sprite: Sprite; age: number; life: number; size: number; drift: Vector3; opacity: number }
 
 const ATTACKS = ["fire"];
-// Aiming down the sights: how far the sights stand above the bore, so they rather than the
-// barrel line up on the view's centre, and how far the gun comes back toward the eye, in metres.
-const SIGHTS: Record<WeaponKind, { height: number; back: number }> = { pistol: { height: 0.051, back: 0.02 }, rifle: { height: 0.07, back: 0.02 } };
+// Aiming down the sights: how far the sights stand above the bore and to its right, so they rather
+// than the barrel line up on the view's centre, and how far the gun comes back toward the eye, in
+// metres. Measured in the game by projecting the front sight onto the screen (sightprobe in the
+// test kit): with 0.051 and no side the pistol's front sight stood 14 px high and 4 px right of
+// the centre, where the rounds go, and the carbine's 5 px high and 8 px right.
+const SIGHTS: Record<WeaponKind, { height: number; side: number; back: number }> = {
+  pistol: { height: 0.0555, side: 0.0034, back: 0.02 },
+  rifle: { height: 0.0711, side: 0.0134, back: 0.02 },
+};
 
 // How each weapon sits in the view: drawn through a narrower lens than the world and brought in
 // and up, so it looks big low on the right and the arm runs off the edge of the screen with only
@@ -146,7 +152,7 @@ export class AuthoredViewModel {
   // screen), and tracers from the muzzle then leave along the barrel.
   // Returns how far to move the gun, in the camera's frame, to bring its sights onto the view's
   // centre: the barrel then runs along the line of sight, under the sights.
-  private straighten(root: Group, rig: Group, mixer: AnimationMixer, clips: Map<string, AnimationAction>, muzzle: Object3D | null, sights: { height: number; back: number }): Vector3 {
+  private straighten(root: Group, rig: Group, mixer: AnimationMixer, clips: Map<string, AnimationAction>, muzzle: Object3D | null, sights: { height: number; side: number; back: number }): Vector3 {
     const weapon = root.getObjectByName("weapon");
     if (!weapon) return new Vector3();
     const idle = clips.get("idle");
@@ -163,7 +169,7 @@ export class AuthoredViewModel {
     if (!end) return new Vector3();
     // The muzzle in the camera's frame, through the straightened rig.
     const at = new Vector3().setFromMatrixPosition(end).applyMatrix4(rig.matrix);
-    return new Vector3(-at.x, -at.y - sights.height, sights.back);
+    return new Vector3(-at.x - sights.side, -at.y - sights.height, sights.back);
   }
 
   // The thing to show in the empty hands when holding a tool, and whether to show it.
