@@ -17,11 +17,14 @@ import { outdoorNode, WEATHER } from "./wetness";
 //
 // Each material is given a kind from its name in the model files (docs/asset-pipeline.md).
 // Signs stay clean: they are lit and kept up.
-export const SurfaceKind = { plain: 0, painted: 1, stone: 2, wood: 3, metal: 4, rusted: 5, fabric: 6, appliance: 7 } as const;
+export const SurfaceKind = { plain: 0, painted: 1, stone: 2, wood: 3, metal: 4, rusted: 5, fabric: 6, appliance: 7, sprayed: 8, pasted: 9 } as const;
 
 export function surfaceKind(name: string): number {
   const n = name.toLowerCase();
   if (n.startsWith("glow_") || n.startsWith("card_") || n.startsWith("sign_")) return SurfaceKind.plain;
+  // Spray paint on a wall (the mural) and paper pasted on one (the posters and their tape).
+  if (n.startsWith("mural_")) return SurfaceKind.sprayed;
+  if (n.startsWith("poster_")) return SurfaceKind.pasted;
   if (n.includes("rust")) return SurfaceKind.rusted;
   if (n === "paint_ac") return SurfaceKind.appliance;
   if (/paint|enamel|lacquer|dumpster|bld_sash|bld_shop|extinguisher|fuel_red|hazard|street_lid|valve|teal|propane|^trim$|^red$|stencil/.test(n)) return SurfaceKind.painted;
@@ -47,7 +50,16 @@ const KINDS: Record<number, Record<(typeof LAYERS)[number], number>> = {
   [SurfaceKind.rusted]: { mottle: 0.12, chips: 0, rust: 1, grain: 0, dirt: 0.45, relief: 1.1, rough: 0.3, edge: 0.4, cavity: 1, soak: 0.3, grime: 0 },
   [SurfaceKind.fabric]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.55, relief: 0.5, rough: 0.15, edge: 0.15, cavity: 0.8, soak: 0.5, grime: 0 },
   [SurfaceKind.appliance]: { mottle: 0.08, chips: 0.15, rust: 0.05, grain: 0, dirt: 1, relief: 0.4, rough: 0.4, edge: 0.3, cavity: 1, soak: 0.12, grime: 1 },
+  [SurfaceKind.sprayed]: { mottle: 0.14, chips: 0, rust: 0, grain: 0, dirt: 0.9, relief: 1.1, rough: 0.2, edge: 0, cavity: 0, soak: 0.35, grime: 0 },
+  [SurfaceKind.pasted]: { mottle: 0.1, chips: 0, rust: 0, grain: 0, dirt: 0.7, relief: 0.5, rough: 0.15, edge: 0.2, cavity: 0.5, soak: 0.55, grime: 0 },
 };
+// Sprayed paint and pasted paper left out for years: how far each fades toward grey, and for the
+// mural how much of the paint has flaked off to the plaster under it.
+export const POSTED = { sprayFade: 0.35, paperFade: 0.3, flaked: 0.14, stains: 0.5 };
+// The grimy plaster that shows where the mural's paint has flaked away.
+const PLASTER_UNDER = vec3(0.3, 0.27, 0.22);
+// The brown of water stains in paper.
+const PAPER_STAIN = vec3(0.78, 0.68, 0.5);
 
 type FloatNode = Node<"float">;
 type ColorNode = Node<"vec3">;
@@ -163,6 +175,22 @@ export function layered(source: ColorNode, roughness: FloatNode, metalness: Floa
   const faded = up.mul(0.7).add(smoothstep(0.5, 2.5, P.y).mul(0.3)).mul(smoothstep(-0.5, 0.4, coarse)).mul(dirt.mul(0.45));
   const grey = color.x.mul(0.3).add(color.y.mul(0.59)).add(color.z.mul(0.11));
   color = mix(color, vec3(grey).mul(1.12).add(color.mul(0.08)), faded);
+  // Spray paint and posters: bright, clean, flat colour read as a picture laid on the wall. Paint and
+  // printed paper out in the weather fade toward a warm grey; the mural's paint has flaked off in
+  // ragged patches, more of them low down, down to the grimy plaster; the posters carry brown water
+  // stains with a darker tide line, gathered toward the bottom where the wet wicks up.
+  const sprayed = step(abs(kind.sub(SurfaceKind.sprayed)), float(0.5));
+  const pasted = step(abs(kind.sub(SurfaceKind.pasted)), float(0.5));
+  const greyNow = dot(color, vec3(0.3, 0.59, 0.11));
+  color = mix(color, vec3(greyNow).mul(vec3(1.04, 1, 0.9)), sprayed.mul(POSTED.sprayFade).add(pasted.mul(POSTED.paperFade)));
+  const flakeField = flake.mul(0.55).add(coarse.mul(0.3)).add(low.mul(0.25)).add(fine.mul(0.1));
+  const flaked = smoothstep(float(0.75 - POSTED.flaked), float(0.8 - POSTED.flaked), flakeField).mul(sprayed);
+  color = mix(color, PLASTER_UNDER.mul(float(1).add(medium.mul(0.15))), flaked);
+  const stainField = medium.mul(0.7).add(coarse.mul(0.3)).add(low.mul(0.5));
+  const stained = smoothstep(0.35, 0.55, stainField).mul(pasted).mul(POSTED.stains);
+  const tideLine = smoothstep(0.06, 0.0, abs(stainField.sub(0.45))).mul(pasted).mul(POSTED.stains);
+  color = mix(color, color.mul(PAPER_STAIN), stained);
+  color = mix(color, color.mul(PAPER_STAIN.mul(0.7)), tideLine.mul(0.6));
 
   // Wear that follows the shape (edges.ts): within a few centimetres of an outside edge, in
   // stretches broken up by noise, paint is rubbed through to dull primer and old dark metal, and
@@ -225,6 +253,7 @@ export function layered(source: ColorNode, roughness: FloatNode, metalness: Floa
   const surface = mix(dry, min(dry, beaded), wet.mul(0.8));
   const metal = metalness.mul(float(1).sub(rusty)).mul(float(1).sub(chipped.mul(deep).mul(0.5))).mul(float(1).sub(throughPaint.mul(0.7)));
   // Relief in metres: chips sink below the paint, rust and grain stand up a little.
-  const height = medium.mul(0.25).add(fine.mul(grain.mul(0.6).add(0.15))).sub(chipped.mul(0.8)).add(rusty.mul(0.5)).mul(relief).mul(0.0012);
+  // Flaked mural paint leaves a step down to the plaster.
+  const height = medium.mul(0.25).add(fine.mul(grain.mul(0.6).add(0.15))).sub(chipped.mul(0.8)).add(rusty.mul(0.5)).sub(flaked.mul(0.6)).mul(relief).mul(0.0012);
   return { color, roughness: surface, metalness: metal, normal: bumpMap(height) };
 }
